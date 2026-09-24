@@ -1,0 +1,25 @@
+{
+  "name": "@primio/intro-skipper",
+  "version": "0.2.0",
+  "description": "Native-player segment provider plugin for Primio, with IntroDB and AniSkip",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/index.js",
+    "dist/index.d.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "community.cinema",
+  "name": "Cinéma ivoire",
+  "version": "1.0.0",
+  "author": "Primio",
+  "description": "Une palette chaude, une page de sélection et un classement des sources françaises.",
+  "permissions": [
+    "theme",
+    "pages",
+    "sources"
+  ],
+  "theme": {
+    "accent": "#DAD4C5",
+    "background": "#101110",
+    "surface": "#1D1E1C",
+    "text": "#F3F1EB"
+  },
+  "pages": [
+    {
+      "id": "cinema",
+      "title": "Cinéma",
+      "blocks": [
+        {
+          "kind": "text",
+          "text": "Une sélection de films, depuis votre catalogue Cinemeta."
+        },
+        {
+          "kind": "catalog",
+          "title": "À découvrir",
+          "manifest": "https://v3-cinemeta.strem.io/manifest.json",
+          "type": "movie",
+          "catalogId": "top"
+        }
+      ]
+    }
+  ],
+  "sources": {
+    "prefer": [
+      "french",
+      "vff",
+      "multi"
+    ],
+    "hide": []
+  }
+}

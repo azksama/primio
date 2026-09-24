@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.pen -text
+*.png binary
+*.pdf binary
+*.jar binary

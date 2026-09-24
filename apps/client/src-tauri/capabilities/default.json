@@ -1,0 +1,11 @@
+{
+  "identifier": "main",
+  "description": "Local Primio window",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "deep-link:default"
+  ]
+}

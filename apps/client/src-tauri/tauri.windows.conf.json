@@ -1,0 +1,54 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Primio",
+        "width": 1280,
+        "height": 850,
+        "minWidth": 800,
+        "minHeight": 600,
+        "decorations": false,
+        "shadow": true,
+        "center": true,
+        "backgroundColor": "#101110"
+      }
+    ]
+  },
+  "bundle": {
+    "targets": [
+      "nsis"
+    ],
+    "resources": {
+      "resources/windows/mpv/primio-player.exe": "windows/mpv/primio-player.exe",
+      "resources/windows/mpv/d3dcompiler_43.dll": "windows/mpv/d3dcompiler_43.dll",
+      "resources/windows/player/": "windows/player/",
+      "resources/windows/licenses/": "windows/licenses/"
+    },
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": true,
+        "languages": [
+          "English",
+          "French",
+          "German",
+          "Spanish",
+          "Portuguese",
+          "Japanese",
+          "SimpChinese",
+          "TradChinese"
+        ]
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "primio",
+          "stremio"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,295 @@
+html.desktop,
+.desktop body,
+.desktop #root {
+  height: 100%;
+  overflow: hidden;
+}
+.desktop-shell {
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr);
+  background: var(--background);
+}
+.window-bar {
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+  min-height: 48px;
+  background: linear-gradient(110deg, #23251fe8, #171916);
+  border-bottom: 1px solid #ffffff12;
+  user-select: none;
+  z-index: 2000;
+}
+.window-drag {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex: 1;
+  padding: 0 18px;
+  min-width: 0;
+  font-size: 13px;
+  letter-spacing: 0.4px;
+}
+.window-drag img {
+  width: 27px;
+  height: 27px;
+  border-radius: 8px;
+  pointer-events: none;
+}
+.window-drag span {
+  pointer-events: none;
+}
+.window-actions {
+  display: flex;
+  gap: 3px;
+  padding: 5px 7px;
+}
+.window-actions button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  border-radius: 10px;
+  color: var(--muted);
+}
+.window-actions svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 1.5;
+}
+.window-actions button:hover {
+  background: #ffffff12;
+  color: var(--text);
+}
+.window-actions .window-close:hover {
+  background: #b14643;
+  color: white;
+}
+.window-error {
+  position: fixed;
+  top: 55px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 20px;
+  border-radius: 14px;
+  background: var(--surface);
+  z-index: 2100;
+}
+.desktop-workspace {
+  min-height: 0;
+  overflow: hidden;
+}
+.desktop .app {
+  height: 100%;
+  min-height: 0;
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.desktop .page-slide {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-bottom: 32px;
+  scrollbar-gutter: stable;
+  animation: none;
+}
+.desktop .page-slide > main,
+.desktop .page-slide > header,
+.desktop .page-slide > .home-hero {
+  max-width: none;
+  width: 100%;
+  margin-inline: auto;
+}
+.desktop .bottom-nav {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  transform: none;
+  flex: 0 0 72px;
+  height: 72px;
+  min-height: 72px;
+  width: min(680px, calc(100% - 48px));
+  max-width: none;
+  margin: 12px auto 16px;
+  padding: 7px;
+  z-index: 20;
+}
+.desktop .bottom-nav button {
+  min-width: 0;
+  padding: 7px 20px;
+}
+.desktop .bottom-nav span {
+  font-size: 12px;
+}
+.desktop .boot-screen,
+.desktop .onboarding,
+.desktop .profile-picker {
+  top: 48px;
+}
+.desktop .overlay {
+  top: 48px;
+}
+.desktop dialog {
+  max-height: calc(100dvh - 100px);
+}
+.desktop .toast {
+  bottom: 110px;
+}
+.desktop .notice,
+.desktop .offline {
+  flex: 0 0 auto;
+}
+.desktop * {
+  scrollbar-width: thin;
+  scrollbar-color: #aaa58d6e #181a16;
+}
+.desktop *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.desktop *::-webkit-scrollbar-track {
+  background: #181a16;
+  border-radius: 20px;
+}
+.desktop *::-webkit-scrollbar-thumb {
+  background: #aaa58d6e;
+  border: 3px solid #181a16;
+  border-radius: 20px;
+}
+.desktop *::-webkit-scrollbar-thumb:hover {
+  background: #d6ceb0a0;
+}
+.desktop *::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.desktop .chips,
+.desktop .poster-rail,
+.desktop .continue-grid {
+  scrollbar-width: thin;
+  padding-bottom: 10px;
+}
+.desktop .chips::-webkit-scrollbar,
+.desktop .poster-rail::-webkit-scrollbar {
+  display: block;
+  height: 6px;
+}
+.desktop .hero {
+  max-height: 650px;
+}
+.desktop .onboarding-body {
+  max-width: 720px;
+  margin-inline: auto;
+}
+.desktop .onboarding-footer {
+  max-width: 720px;
+  margin-inline: auto;
+  width: 100%;
+}
+@media (min-width: 1100px) {
+  .desktop .poster-grid {
+    gap: 22px;
+  }
+  .desktop .page-slide > main {
+    padding-inline: 0;
+  }
+}
+
+.desktop .page-content {
+  max-width: none;
+  margin-inline: 0;
+  padding-inline: 40px;
+}
+.desktop .page-head,
+.desktop .shelf {
+  padding-inline: 40px;
+}
+.desktop .hero {
+  margin-inline: 40px;
+  height: clamp(480px, 58vh, 700px);
+  min-height: 460px;
+  max-height: 700px;
+}
+.desktop .poster-rail {
+  grid-auto-columns: clamp(160px, 12.5vw, 245px);
+  gap: 20px;
+}
+.desktop .app .poster-grid {
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+.desktop .app.posters-compact .poster-grid {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+.desktop .addon-content {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 18px;
+}
+.desktop .addon-content > :not(.addon-card) {
+  grid-column: 1 / -1;
+}
+.desktop .addon-content > .primary {
+  width: 100%;
+  max-width: 420px;
+}
+.desktop .addon-content > .addon-card {
+  margin: 0;
+}
+.desktop .settings-hub {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.desktop .settings-hub .settings-intro,
+.desktop .settings-hub .about {
+  grid-column: 1 / -1;
+}
+.desktop .settings-hub .settings-link {
+  min-height: 112px;
+  margin: 0;
+  padding: 24px;
+}
+.desktop .settings-hub > .row {
+  margin: 0;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+}
+.desktop .detail-copy {
+  max-width: none;
+  padding-inline: 40px;
+}
+.desktop .detail-copy > .description {
+  max-width: 90ch;
+}
+.desktop .detail-copy > .primary {
+  max-width: 480px;
+}
+.desktop-modal {
+  position: fixed;
+  inset: 48px 0 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #0009;
+  backdrop-filter: blur(6px);
+}
+.desktop-modal dialog {
+  position: static;
+  margin: 0;
+  max-height: 100%;
+}
+@media (min-width: 1400px) {
+  .desktop .settings-hub {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .desktop .episode-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

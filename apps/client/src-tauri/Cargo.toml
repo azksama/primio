@@ -1,0 +1,31 @@
+[package]
+name = "primio"
+version = "0.2.6"
+description = "Primio streaming client"
+edition = "2021"
+license = "MIT"
+[lib]
+name = "primio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-deep-link = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+tokio = { version = "1", features = ["net", "time", "io-util", "fs", "macros"] }
+url = "2"
+primio-plugin-sdk = { path = "../../../packages/native-sdk" }
+[target.'cfg(target_os = "android")'.dependencies]
+libmpv2 = { version = "6", default-features = false }
+jni = "0.21"
+libc = "0.2"
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Security_Cryptography", "Win32_Foundation", "Win32_Storage_FileSystem"] }
+windows = { version = "0.61", features = ["Networking_Connectivity"] }
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-opener = "2"
+tauri-plugin-notification = "2"
+arboard = { version = "3", default-features = false }

@@ -27,11 +27,13 @@ import app.tauri.plugin.Invoke
 }
 @InvokeArg class DownloadArgs {var url:String="";var title:String="";var metadata:String="{}";var headers:Map<String,String> = emptyMap();var wifiOnly:Boolean=true}
 @InvokeArg class IdArgs {var id:String="";var options:String="{}"}
+@InvokeArg class UpdateArgs {var path:String=""}
 @InvokeArg class TextArgs {var text:String=""}
 @TauriPlugin
 class PrimioPlugin(private val activity:Activity):Plugin(activity) {
  private fun tr(s:String)=PrimioI18n.text(activity,s)
  private var auth:PrimioAuth?=null
+ @Command fun installUpdate(invoke:Invoke){val args=invoke.parseArgs(UpdateArgs::class.java);activity.runOnUiThread{try{PrimioUpdate.install(activity,args.path);invoke.resolve()}catch(e:Exception){invoke.reject(e.message?:"Installation impossible")}}}
  @Command fun notificationConfig(invoke:Invoke){try{PrimioNotifications.configure(activity,invoke.parseArgs(StoreArgs::class.java).value);invoke.resolve()}catch(e:Exception){invoke.reject("Notification configuration failed")}}
  @Command fun notificationPermission(invoke:Invoke){val request=invoke.parseArgs(NotificationArgs::class.java).request;activity.runOnUiThread{if(request&&!PrimioNotifications.allowed(activity)){val preferences=activity.getSharedPreferences("primio-notification-permission",0);if(android.os.Build.VERSION.SDK_INT>=33&&activity.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED&&(!preferences.getBoolean("asked",false)||activity.shouldShowRequestPermissionRationale(android.Manifest.permission.POST_NOTIFICATIONS))){preferences.edit().putBoolean("asked",true).apply();activity.requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),904)}else activity.startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,activity.packageName))};invoke.resolve(JSObject().put("enabled",PrimioNotifications.allowed(activity)) as JSObject)}}
  @Command fun authForm(invoke:Invoke){val args=invoke.parseArgs(AuthArgs::class.java);activity.runOnUiThread{val dialog=auth?.takeIf{it.isShowing}?:PrimioAuth(activity,args.register).also{auth=it;it.show()};dialog.awaitSubmission(invoke)}}

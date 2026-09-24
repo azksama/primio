@@ -1,10 +1,10 @@
-# Primio for Windows — 0.2.6 preview
+# Primio for Windows — 0.2.7 preview
 
 The Windows application shares the Android application's React client, addon SDK, account API, profiles, library and playback history. Platform-specific code lives in `desktop*.rs`, `desktop.tsx` and `desktop.css`.
 
 ## Installation
 
-Run `Primio_0.2.6_x64-setup.exe`. The installer includes the native media player and registers `primio://` and `stremio://` links. Microsoft Edge WebView2 is required; the installer handles its bootstrap if it is missing. This preview is not code-signed.
+Run `Primio-0.2.7-windows-x64-setup.exe`. The installer includes the native media player and registers `primio://` and `stremio://` links. Microsoft Edge WebView2 is required; the installer handles its bootstrap if it is missing. This preview is not code-signed.
 
 The portable archive must be extracted completely: keep the `windows` directory beside `primio.exe`. Starting only the executable without its resources will prevent playback. Portable use does not register protocol associations.
 
@@ -14,7 +14,7 @@ The portable archive must be extracted completely: keep the `windows` directory 
 - Dedicated content scroller. The title bar and bottom navigation occupy separate layout rows, so scrollbars cannot cover either bar.
 - Fluid page width with 40 px side margins, responsive poster grids and settings cards arranged in two or three columns. Poster size controls the desktop grid density; Android retains its explicit column setting.
 - Dialogs keep the window controls available while preventing interaction with the page behind them.
-- Bundled mpv and uosc run in a separate frameless playback window. Audio/subtitle track changes and subtitle styling happen directly in that player without reloading the media.
+- Bundled mpv runs in a separate fullscreen frameless playback window with Primio controls and a breathing content logo during loading. Audio/subtitle track changes and subtitle styling happen directly in that player without reloading the media.
 - Progress is saved every five seconds and on player closure using the content/episode ID. Changing the source URL does not change the resume key.
 - Episode selection returns to Primio's source picker. The next episode can be offered in the final 30 seconds or at a supplied outro marker.
 - Direct-file offline downloads, local playback, retention policies and optional deletion after watching. Interrupted transfers are marked failed on restart; automatic transfer resumption and offline HLS/DASH packaging are not implemented.
@@ -54,7 +54,7 @@ The script exercises Tauri commands and the bundled player's JSON IPC, uses expl
 
 ## Validation on 24 September 2026
 
-- Client: 38 tests passed; TypeScript and Vite production build passed.
+- Client: 48 tests passed; TypeScript and Vite production build passed.
 - Rust: library tests and formatting check passed.
 - Browser regression harness: navigation, source filters, descriptions, profiles, calendar, library, density and scrolling passed with mock providers/native bridge. This is not an Android device test.
 - Native integration: 12 checks passed, including playback, pause, track changes without reload, subtitle style, episode menu, end-of-file prompt, progress, alternative-source resume, download integrity, local playback, deletion and invalid input rejection.
@@ -62,3 +62,7 @@ The script exercises Tauri commands and the bundled player's JSON IPC, uses expl
 - NSIS installation completed with exit code 0. Native integration checks also passed against the installed application, including its bundled player. The `primio://` registry command resolves to the installed executable.
 
 These checks use a generated local media fixture. Arbitrary provider streams, DRM playback, Windows 10, and physical Android devices were not validated by this Windows pass.
+
+## 0.2.7 checks
+
+Six Rust tests, twelve native Windows playback checks, and 28 onboarding viewport captures passed. MyAnimeList XML/gzip parsing and a clean public SDK installation were verified. Stremio and AniList account imports have not been exercised with real provider accounts. The update download is size/SHA-256 checked before handing off to the system installer; a complete future-version upgrade still needs field validation.

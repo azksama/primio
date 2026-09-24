@@ -23,3 +23,7 @@ scripts/prepare-native.ps1 ne conserve que les bibliothèques natives du paquet 
 
 Avant une redistribution publique stable, reproduire et archiver les sources correspondantes des bibliothèques effectivement livrées, vérifier les options GPL/LGPL et préparer les mentions/relinking nécessaires. Cette première préversion reste dans un dépôt privé et ne constitue pas une déclaration de conformité Google Play.
 
+
+## Language flags
+
+Flag assets from [flag-icons](https://github.com/lipis/flag-icons), MIT License. License included in `apps/client/public/flags/LICENSE`.

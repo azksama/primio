@@ -1,3 +1,4 @@
+import { LanguageFlag } from './language-flag'
 import { cleanDescription } from './content'
 import { DialogShell } from './dialog-shell'
 import { isDesktop } from './platform'
@@ -54,12 +55,14 @@ export function AddonIcon({ logo }: { logo?: string }) {
 export function Choice({
   label,
   separateLabel = false,
+  flags = false,
   value,
   options,
   onChange,
 }: {
   label: string
   separateLabel?: boolean
+  flags?: boolean
   value: string
   options: readonly (readonly [string, string])[]
   onChange: (value: string) => void
@@ -92,6 +95,7 @@ export function Choice({
       >
         {!separateLabel && <span>{label}</span>}
         <span className="choice-value">
+          {flags && <LanguageFlag code={value} />}
           <span>
             {appLanguages.some(([id, name]) => id === value && options.some((o) => o[1] === name))
               ? options.find(([id]) => id === value)?.[1]
@@ -113,6 +117,7 @@ export function Choice({
               }}
             >
               <span title={name}>
+                {flags && <LanguageFlag code={id} />}
                 {appLanguages.some(([value, label]) => value === id && name === label)
                   ? name
                   : languageName(id, name)}
@@ -201,9 +206,37 @@ export function Preferences({
           <Choice
             label={t('Langue audio')}
             value={settings.audioLanguage}
-            options={[['auto', t('Piste par défaut')], ...languages]}
+            options={[
+              ['original', t('Langue d’origine')],
+              ['auto', t('Piste par défaut')],
+              ...languages,
+            ]}
+            flags
             onChange={(v) => update('audioLanguage', v)}
           />
+          {(['movie', 'series', 'anime'] as const).map((kind) => (
+            <Choice
+              key={kind}
+              flags
+              label={t(
+                kind === 'movie'
+                  ? 'Audio · Films'
+                  : kind === 'series'
+                    ? 'Audio · Séries'
+                    : 'Audio · Animes',
+              )}
+              value={settings.audioByType?.[kind] ?? 'inherit'}
+              options={[
+                ['inherit', t('Réglage général')],
+                ['original', t('Langue d’origine')],
+                ['auto', t('Piste par défaut')],
+                ...languages,
+              ]}
+              onChange={(value) =>
+                update('audioByType', { ...settings.audioByType, [kind]: value })
+              }
+            />
+          ))}
           <Toggle
             label={t('Afficher les sous-titres')}
             checked={settings.subtitles}
@@ -520,6 +553,7 @@ export function Episodes({
                       validDate
                         ? `${future ? t('Prévu le ') : ''}${date.toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`
                         : null,
+                      v.releaseUnconfirmed ? t('Date à confirmer') : null,
                     ]
                       .filter(Boolean)
                       .join(' · ')}

@@ -35,6 +35,7 @@ export interface Meta {
   cast?: string[]
   director?: string[]
   runtime?: string
+  originalLanguage?: string
   category?: 'anime'
   trailers?: { source?: string; ytId?: string; url?: string; externalUrl?: string }[]
   trailerStreams?: { source?: string; ytId?: string; url?: string; externalUrl?: string }[]
@@ -44,6 +45,7 @@ export interface Meta {
     name?: string
     season?: number
     episode?: number
+    releaseUnconfirmed?: boolean
     released?: string
     thumbnail?: string
     overview?: string
@@ -61,7 +63,10 @@ export interface Stream {
   title?: string
   description?: string
   subtitles?: { id: string; url: string; lang: string }[]
+  audioLanguages?: string[]
+  subtitleLanguages?: string[]
   behaviorHints?: {
+    bingeGroup?: string
     videoSize?: number
     filename?: string
     notWebReady?: boolean
@@ -89,6 +94,8 @@ export interface Settings {
   subtitles: boolean
   reduceMotion: boolean
   audioLanguage: string
+  sourcePreferences?: import('./source-preferences').SourcePreference[]
+  audioByType?: Partial<Record<'movie' | 'series' | 'anime', string>>
   subtitleLanguage: string
   seekBackward: number
   seekForward: number

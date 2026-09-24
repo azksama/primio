@@ -8,6 +8,7 @@ mod extensions;
 mod network;
 #[cfg(target_os = "android")]
 mod player;
+mod updates;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 #[cfg(any(target_os = "android", target_os = "windows"))]
@@ -27,6 +28,10 @@ async fn fetch_json(url: String) -> Result<Value, String> {
         response = extension.resource(&url, response)?;
     }
     Ok(response)
+}
+#[tauri::command]
+async fn provider_request(operation: String, body: Value) -> Result<Value, String> {
+    network::provider_request(&operation, body).await
 }
 #[tauri::command]
 async fn api_request(
@@ -287,6 +292,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            updates::cleanup(app.handle());
             desktop_downloads::recover(app.handle());
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -322,6 +328,10 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             fetch_json,
+            provider_request,
+            updates::update_check,
+            updates::update_download,
+            updates::update_install,
             api_request,
             native_auth,
             notification_config,

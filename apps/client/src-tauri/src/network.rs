@@ -43,7 +43,7 @@ pub fn validate_media(raw: &str) -> Result<Url, String> {
     }
     Ok(url)
 }
-async fn client_for(url: &Url) -> Result<Client, String> {
+pub(crate) async fn client_for(url: &Url) -> Result<Client, String> {
     if url.scheme() != "https"
         || url.host_str().is_none()
         || !url.username().is_empty()
@@ -196,4 +196,48 @@ mod tests {
         assert!(validate_media("https://user:pass@example.org").is_err());
         assert!(validate_media("https://example.org/film.m3u8").is_ok());
     }
+}
+
+pub async fn provider_request(operation: &str, body: Value) -> Result<Value, String> {
+    let endpoint = match operation {
+        "anilist" => "https://graphql.anilist.co",
+        "stremioLogin" => "https://api.strem.io/api/login",
+        "stremioAddons" => "https://api.strem.io/api/addonCollectionGet",
+        "stremioLibrary" => "https://api.strem.io/api/datastoreGet",
+        _ => return Err("Unknown import provider".into()),
+    };
+    if body.to_string().len() > 16384 {
+        return Err("Import request too large".into());
+    }
+    if operation == "anilist"
+        && !body["query"]
+            .as_str()
+            .unwrap_or("")
+            .trim_start()
+            .starts_with("query ")
+    {
+        return Err("Read-only queries required".into());
+    }
+    let url = Url::parse(endpoint).map_err(|_| "Invalid provider")?;
+    let client = client_for(&url).await?;
+    let mut response = client
+        .post(url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|_| "Import provider unavailable")?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "Import provider HTTP {}",
+            response.status().as_u16()
+        ));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| "Import interrupted")? {
+        if bytes.len() + chunk.len() > 5_000_000 {
+            return Err("Import response too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&bytes).map_err(|_| "Invalid import response".into())
 }

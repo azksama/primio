@@ -1,3 +1,8 @@
+import { UpdatePanel } from './update-panel'
+import { ImportPanel } from './import-panel'
+import { equivalentSources, rememberSource } from './source-preferences'
+import { PasswordField } from './password-field'
+import { CopyTitle } from './copy-title'
 import { DialogShell } from './dialog-shell'
 import { trailerUrl } from './content'
 import { ViewingHistory } from './history'
@@ -9,7 +14,7 @@ import { GroupedSearch } from './search'
 import { setLocale } from './i18n'
 import { Recommendations } from './recommendations'
 import { Onboarding } from './onboarding'
-import { episodeQueue } from './episodes'
+import { episodeQueue, playbackTitle } from './episodes'
 import { version } from '../package.json'
 import { MediaImage, CardSkeleton } from './media-image'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
@@ -52,6 +57,7 @@ import { Downloads, playerOptions, type OfflineItem } from './downloads'
 import { Choice, Toggle, Description } from './components'
 import { AddonIcon, Episodes, Preferences, Profiles } from './components'
 import {
+  audioPreference,
   createState,
   avatarUrl,
   normalizeState,
@@ -148,7 +154,6 @@ function Empty({
 export default function App() {
   const [profileGate, setProfileGate] = useState(false)
   const [startupProfile, setStartupProfile] = useState('ask')
-  const [showPassword, setShowPassword] = useState(false)
   const startupChecked = useRef('')
   const handledEpisode = useRef('')
   const episodeRequest = useRef<(event: NativeProgress) => void>(() => {})
@@ -184,6 +189,7 @@ export default function App() {
   const [addOpen, setAddOpen] = useState(false),
     [addonInput, setAddonInput] = useState(''),
     [candidate, setCandidate] = useState<Addon | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const [authOpen, setAuthOpen] = useState(false),
     [register, setRegister] = useState(false),
     [token, setToken] = useState(''),
@@ -586,11 +592,10 @@ export default function App() {
       if (seq !== sourceSequence.current) return
       meta = fullMeta
       setSourceTarget({ meta, id })
-      const ranked = rankSources(r.items, plugins)
+      const matching = equivalentSources(rankSources(r.items, plugins), state.settings, meta)
+      const ranked = matching.items
       setSourceList(ranked)
-      const nextStream = preferredAddon
-        ? ranked.find((s) => s.addonName === preferredAddon && s.url)
-        : undefined
+      const nextStream = preferredAddon ? matching.equivalent : undefined
       if (nextStream) {
         await play(nextStream, { meta, id })
         return
@@ -656,7 +661,7 @@ export default function App() {
       if (isTauri()) {
         await invoke('play_media', {
           url,
-          title: target.meta.name,
+          title: playbackTitle(target.meta, target.id),
           external: state.settings.player === 'external' && isAndroid(),
           position,
           playerExtra: JSON.stringify({
@@ -677,7 +682,7 @@ export default function App() {
           }),
           headers: stream.behaviorHints?.proxyHeaders?.request ?? {},
           subtitles: subs,
-          language: state.settings.audioLanguage,
+          language: audioPreference(state.settings, target.meta),
           subtitleLanguage: state.settings.subtitleLanguage,
           seekBackward: state.settings.seekBackward,
           seekForward: state.settings.seekForward,
@@ -694,6 +699,10 @@ export default function App() {
         setPlayback(null)
         throw Error(t('Le choix des lecteurs externes est disponible dans l’application Android.'))
       }
+      setState((s) => ({
+        ...s,
+        settings: rememberSource(s.settings, target.meta, target.id, stream),
+      }))
       setSourceTarget(null)
     } catch (e) {
       setPlayback(null)
@@ -1118,7 +1127,11 @@ export default function App() {
                   <span className="imdb-rating">IMDb · ★ {selected.imdbRating}/10</span>
                 )}
               </span>
-              <h1 className="serif">{selected.name}</h1>
+              <CopyTitle
+                title={selected.name}
+                onCopied={() => notify(t('Titre copié'))}
+                onError={fail}
+              />
               <p className="muted">
                 {[selected.releaseInfo, selected.runtime].filter(Boolean).join(' · ')}
               </p>
@@ -1911,6 +1924,14 @@ export default function App() {
                       <ChevronRight />
                     </button>
                   ))}
+                  <button className="settings-link glass" onClick={() => setImportOpen(true)}>
+                    <Download />
+                    <span>
+                      <strong>{t('Importer une bibliothèque')}</strong>
+                      <small>Stremio · MyAnimeList · AniList · Trakt</small>
+                    </span>
+                    <ChevronRight />
+                  </button>
                   <button className="row" onClick={() => setProfileGate(true)}>
                     {t('Changer de profil')}
                     <UserRound />
@@ -1921,6 +1942,14 @@ export default function App() {
                   </button>
                   <div className="about">
                     <span className="wordmark">PRIMIO</span>
+                    {isTauri() && (
+                      <button
+                        className="secondary"
+                        onClick={() => window.dispatchEvent(new Event('primio-check-update'))}
+                      >
+                        {t('Rechercher une mise à jour')}
+                      </button>
+                    )}
                     <p>
                       {t('Version')} {version}
                     </p>
@@ -2231,6 +2260,19 @@ export default function App() {
           )}
         </Dialog>
       )}
+      <UpdatePanel ready={ready && !onboarding && !profileGate} />
+      {importOpen && (
+        <Dialog title={t('Importer une bibliothèque')} onClose={() => setImportOpen(false)}>
+          <ImportPanel
+            state={state}
+            setState={setState}
+            onDone={() => {
+              setImportOpen(false)
+              notify(t('Import terminé'))
+            }}
+          />
+        </Dialog>
+      )}
       {manifestCopy && (
         <Dialog title={t('Lien du manifeste')} onClose={() => setManifestCopy('')}>
           <p className="muted">
@@ -2274,9 +2316,8 @@ export default function App() {
             </label>
             <label className="field">
               {t('Mot de passe')}
-              <input
+              <PasswordField
                 name="password"
-                type={showPassword ? 'text' : 'password'}
                 autoComplete={register ? 'new-password' : 'current-password'}
                 minLength={register ? 12 : 1}
                 maxLength={128}
@@ -2288,9 +2329,8 @@ export default function App() {
                 <p className="muted">{t('12 caractères minimum.')}</p>
                 <label className="field">
                   {t('Confirmer le mot de passe')}
-                  <input
+                  <PasswordField
                     name="passwordConfirmation"
-                    type={showPassword ? 'text' : 'password'}
                     autoComplete="new-password"
                     minLength={12}
                     maxLength={128}
@@ -2313,14 +2353,6 @@ export default function App() {
                 </label>
               </>
             )}
-            <button
-              type="button"
-              className="text-button"
-              aria-pressed={showPassword}
-              onClick={() => setShowPassword((v) => !v)}
-            >
-              {showPassword ? t('Masquer les mots de passe') : t('Afficher les mots de passe')}
-            </button>
             <button className="primary" disabled={authBusy}>
               {authBusy ? <LoaderCircle /> : null}
               {register ? t('Créer mon compte') : t('Se connecter')}

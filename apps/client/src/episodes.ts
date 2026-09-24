@@ -13,6 +13,7 @@ export function episodeQueue(meta: Meta, currentId: string, now = Date.now()) {
           .find(
             (v) =>
               (v.season ?? 1) > 0 &&
+              !v.releaseUnconfirmed &&
               (!v.released ||
                 !Number.isFinite(Date.parse(v.released)) ||
                 Date.parse(v.released) <= now),
@@ -29,4 +30,16 @@ export function episodeQueue(meta: Meta, currentId: string, now = Date.now()) {
     currentVideoId: currentId,
     logo: meta.logo ?? '',
   }
+}
+
+export function playbackTitle(meta: Meta, id: string) {
+  const video = meta.videos?.find((v) => v.id === id)
+  if (meta.type === 'movie' || !video?.episode) return meta.name
+  const multiple = new Set(meta.videos?.map((v) => v.season ?? 1).filter((s) => s > 0)).size > 1
+  return (
+    meta.name +
+    ' - ' +
+    t('Épisode {n}', { n: video.episode }) +
+    (multiple ? ' (' + t('Saison {n}', { n: video.season ?? 1 }) + ')' : '')
+  )
 }

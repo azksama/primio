@@ -157,7 +157,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
  private fun command(vararg args:String){if(handle==0L)return;try{nativeCommand(handle,JSONArray(args.toList()).toString())}catch(e:Exception){feedback("Commande indisponible")}}
  private fun poll(){if(handle==0L)return;try{
   last=JSONObject(nativeState(handle));val nextPosition=last.optDouble("position",position);if(nextPosition!=position)stalledAt=SystemClock.elapsedRealtime();position=nextPosition;duration=last.optDouble("duration",duration)
-  if(!loaded&&last.optBoolean("loaded")){loaded=true;showControls();val subs=options.optJSONArray("subtitles")?:JSONArray();if(options.optBoolean("showSubtitles",true)){val preferred=options.optString("subtitleLanguage");val sub=(0 until subs.length()).map{subs.getJSONObject(it)}.firstOrNull{it.optString("lang")==preferred};if(sub!=null)selectExternalSubtitle(sub)}}
+  if(!loaded&&last.optBoolean("loaded")){loaded=true;showControls();if(options.optString("language")=="original"){val tracks=last.optJSONArray("tracks")?:JSONArray();val original=(0 until tracks.length()).map{tracks.getJSONObject(it)}.firstOrNull{it.optString("type")=="audio"&&Regex("(?i)\\boriginal\\b|\\bVO\\b").containsMatchIn(it.optString("title"))};original?.let{command("set","aid",it.optInt("id").toString())}};val subs=options.optJSONArray("subtitles")?:JSONArray();if(options.optBoolean("showSubtitles",true)){val preferred=options.optString("subtitleLanguage");val sub=(0 until subs.length()).map{subs.getJSONObject(it)}.firstOrNull{it.optString("lang")==preferred};if(sub!=null)selectExternalSubtitle(sub)}}
   loading.visibility=if(!reportedError&&!loaded)View.VISIBLE else View.GONE;buffering.visibility=if(loaded&&!reportedError&&last.optBoolean("buffering"))View.VISIBLE else View.GONE;if(!loaded)overlay.visibility=View.GONE
   if(!dragging){seek.fraction=if(duration>0)(position/duration).toFloat() else 0f;seek.buffered=if(duration>0)(last.optDouble("bufferedUntil",position)/duration).toFloat() else 0f;time.text=format(position)+" / "+format(duration);remaining.text=if(duration>position)"−"+format(duration-position) else ""}
   if(last.optBoolean("eof")){if(duration>0)position=duration;if(options.optBoolean("autoNextEpisode",true)&&options.optString("nextVideoId").isNotBlank())requestEpisode(options.getString("nextVideoId"),true)else{emit(true);finish()};return}
@@ -240,18 +240,53 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   command("set","sub-visibility","yes")
  }
  private fun tracks(){
-  handler.removeCallbacks(hide);sheet?.dismiss();val dialog=PrimioSheet(this,tr("Audio et sous-titres"));val all=last.optJSONArray("tracks")?:JSONArray();val entries=(0 until all.length()).map{all.getJSONObject(it)}
-  for(type in listOf("audio","sub")){dialog.section(tr(if(type=="audio")"PISTES AUDIO" else "SOUS-TITRES"));val tracks=entries.filter{it.optString("type")==type&&it.optString("externalUrl").isBlank()}
-   if(type=="sub")dialog.option(tr("Désactivés"),tracks.none{it.optBoolean("selected")}){command("set","sid","no");dialog.dismiss()}
-   if(tracks.isEmpty())dialog.section(tr(if(type=="audio")"Aucune piste audio disponible" else "Aucun sous-titre disponible"))
-   tracks.forEachIndexed{i,t->dialog.option(trackName(t,i),t.optBoolean("selected")){command("set",if(type=="audio")"aid" else "sid",t.getInt("id").toString());if(type=="sub")command("set","sub-visibility","yes");dialog.dismiss()}}
+  handler.removeCallbacks(hide);sheet?.dismiss()
+  val dialog=PrimioSheet(this,tr("Audio et sous-titres"))
+  val all=last.optJSONArray("tracks")?:JSONArray();val entries=(0 until all.length()).map{all.getJSONObject(it)}
+  val columns=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
+  fun option(column:LinearLayout,label:String,selected:Boolean=false,action:()->Unit){column.addView(PrimioStyle.button(this,(if(selected)"✓  " else "")+label,label){action()}.apply{gravity=Gravity.START or Gravity.CENTER_VERTICAL;textSize=13f},LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(8)})}
+  for(type in listOf("audio","sub")){
+   val column=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
+   columns.addView(column,LinearLayout.LayoutParams(0,-2,1f).apply{if(type=="audio")rightMargin=dp(12)})
+   column.addView(text(tr(if(type=="audio")"PISTES AUDIO" else "SOUS-TITRES"),12f).apply{setPadding(0,dp(4),0,dp(12))})
+   val tracks=entries.filter{it.optString("type")==type&&it.optString("externalUrl").isBlank()}
+   if(type=="sub")option(column,tr("Désactivés"),entries.none{it.optString("type")=="sub"&&it.optBoolean("selected")}){command("set","sid","no");dialog.dismiss()}
+   if(tracks.isEmpty())column.addView(text(tr(if(type=="audio")"Aucune piste audio disponible" else "Aucun sous-titre disponible"),12f))
+   tracks.forEachIndexed{i,track->option(column,trackName(track,i),track.optBoolean("selected")){command("set",if(type=="audio")"aid" else "sid",track.getInt("id").toString());if(type=="sub")command("set","sub-visibility","yes");dialog.dismiss()}}
+   if(type=="sub"){
+    val external=options.optJSONArray("subtitles")?:JSONArray()
+    for(i in 0 until external.length()){val sub=external.getJSONObject(i);val selected=entries.any{it.optString("externalUrl")==sub.optString("url")&&it.optBoolean("selected")};option(column,trackName(JSONObject().put("lang",sub.optString("lang")),i),selected){selectExternalSubtitle(sub);dialog.dismiss()}}
+   }
   }
+  dialog.content.addView(columns)
   dialog.section(tr("Style des sous-titres"))
-  dialog.option(tr("Style intégré"),!forceSubtitleStyle){forceSubtitleStyle=false;options.put("forceSubtitleStyle",false);command("set","sub-ass-override","no");dialog.dismiss()}
-  dialog.option(tr("Style Primio"),forceSubtitleStyle){forceSubtitleStyle=true;options.put("forceSubtitleStyle",true);command("set","sub-ass-override","force");dialog.dismiss()}
-  val external=options.optJSONArray("subtitles")?:JSONArray()
-  if(external.length()>0){dialog.section(tr("Sous-titres externes"));for(i in 0 until external.length()){val sub=external.getJSONObject(i);val selected=entries.any{it.optString("externalUrl")==sub.optString("url")&&it.optBoolean("selected")};dialog.option(trackName(JSONObject().put("lang",sub.optString("lang")),i),selected){selectExternalSubtitle(sub);dialog.dismiss()}}}
-  dialog.setOnDismissListener{sheet=null;showControls()};sheet=dialog;dialog.show()
+  val styles=LinearLayout(this)
+  styles.addView(button(tr("Style intégré")){forceSubtitleStyle=false;options.put("forceSubtitleStyle",false);command("set","sub-ass-override","no");dialog.dismiss()},LinearLayout.LayoutParams(0,-2,1f).apply{rightMargin=dp(12)})
+  styles.addView(button(tr("Style Primio")){forceSubtitleStyle=true;options.put("forceSubtitleStyle",true);command("set","sub-ass-override","force");dialog.dismiss()},LinearLayout.LayoutParams(0,-2,1f))
+  dialog.content.addView(styles)
+  dialog.option(tr("Réglages du style")){dialog.dismiss();subtitleStyle()}
+  dialog.setOnDismissListener{if(sheet===dialog)sheet=null;showControls()};sheet=dialog;dialog.show()
+ }
+ private fun subtitleStyle(){
+  val dialog=PrimioSheet(this,tr("Style des sous-titres"))
+  val preview=text(tr("Votre histoire commence."),options.optInt("subtitleSize",40)/2f).apply{gravity=Gravity.CENTER;setPadding(dp(12),dp(14),dp(12),dp(14))}
+  dialog.content.addView(preview)
+  fun applyStyle(){
+   forceSubtitleStyle=true;options.put("forceSubtitleStyle",true)
+   val font=when(options.optString("subtitleFont")){"serif"->"Noto Serif";"monospace"->"Droid Sans Mono";else->"Roboto"}
+   command("set","sub-ass-override","force");command("set","sub-font-size",options.optInt("subtitleSize",40).toString());command("set","sub-font",font);command("set","sub-color",options.optString("subtitleColor","#FFFFFF"));command("set","sub-border-size",options.optInt("subtitleOutline",2).toString());command("set","sub-back-color",if(options.optBoolean("subtitleBackground"))"#99000000" else "#00000000")
+   preview.textSize=options.optInt("subtitleSize",40)/2f;preview.typeface=android.graphics.Typeface.create(font,0);preview.setTextColor(Color.parseColor(options.optString("subtitleColor","#FFFFFF")));preview.setBackgroundColor(if(options.optBoolean("subtitleBackground"))0x99000000.toInt() else Color.TRANSPARENT);preview.setShadowLayer(options.optInt("subtitleOutline",2).toFloat(),0f,0f,Color.BLACK)
+  }
+  fun choices(label:String,key:String,values:List<Pair<Any,String>>){
+   dialog.section(tr(label));val row=LinearLayout(this)
+   values.forEach{(value,name)->row.addView(PrimioStyle.button(this,name){options.put(key,value);applyStyle()}.apply{textSize=12f;setPadding(dp(8),dp(8),dp(8),dp(8))},LinearLayout.LayoutParams(0,-2,1f).apply{rightMargin=dp(8)})};dialog.content.addView(row)
+  }
+  choices("Taille des sous-titres","subtitleSize",listOf(32 to tr("Petite"),40 to tr("Moyenne"),48 to tr("Grande"),56 to tr("Très grande")))
+  choices("Police","subtitleFont",listOf("sans-serif" to tr("Sans empattement"),"serif" to tr("Avec empattement"),"monospace" to tr("Monospace")))
+  choices("Couleur","subtitleColor",listOf("#FFFFFF" to tr("Blanc"),"#F5DE93" to tr("Ivoire"),"#BDE6FF" to tr("Bleu clair"),"#BFE3C2" to tr("Vert clair")))
+  choices("Contour","subtitleOutline",listOf(0 to tr("Aucun"),1 to tr("Fin"),2 to tr("Moyen"),4 to tr("Épais")))
+  choices("Fond","subtitleBackground",listOf(false to tr("Aucun"),true to tr("Noir")))
+  dialog.setOnDismissListener{if(sheet===dialog)sheet=null;showControls()};sheet=dialog;dialog.show()
  }
  override fun onPause(){resumeAfterPause=handle!=0L&&!last.optBoolean("paused");command("set","pause","yes");emit(false);super.onPause()}
  override fun onResume(){super.onResume();if(resumeAfterPause){command("set","pause","no");resumeAfterPause=false}}

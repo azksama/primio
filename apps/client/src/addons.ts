@@ -1,3 +1,4 @@
+import { correctAnimeDates } from './anime-dates'
 import { t } from './i18n'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { Addon, Manifest, Meta, Resource, Stream, Subtitle } from './types'
@@ -82,11 +83,42 @@ export function resourceUrl(
 }
 export const catalog = async (a: Addon, type: string, id: string, extra?: Record<string, string>) =>
   (await json<{ metas: Meta[] }>(resourceUrl(a, 'catalog', type, id, extra))).metas ?? []
+async function datedMetadata(meta: Meta): Promise<Meta> {
+  if (!meta.videos?.length) return meta
+  if (!/^kitsu:\d+$/.test(meta.id))
+    return meta.category === 'anime' ? correctAnimeDates(meta, new Map()) : meta
+  const seen = new Set<string>()
+  const duplicatePremiere = meta.videos.some((v) => {
+    if (!v.released) return false
+    const found = seen.has(v.released)
+    seen.add(v.released)
+    return found
+  })
+  if (!duplicatePremiere && !meta.videos.some((v) => !v.released || v.releaseUnconfirmed)) return meta
+  const dates = new Map<number, string | null>()
+  try {
+    const result = await json<{
+      data: { attributes: { number: number; airdate: string | null } }[]
+    }>(`https://kitsu.io/api/edge/anime/${meta.id.split(':')[1]}/episodes?page[limit]=20`)
+    result.data.forEach((v) => dates.set(v.attributes.number, v.attributes.airdate))
+  } catch {}
+  return correctAnimeDates(meta, dates)
+}
 export async function metadata(addons: Addon[], meta: Meta): Promise<Meta> {
+  if (/^mal:\d+$/.test(meta.id)) {
+    try {
+      const result = await json<{ data: { relationships: { item: { data: { id: string } } } }[] }>(
+        `https://kitsu.io/api/edge/mappings?filter[externalSite]=myanimelist/anime&filter[externalId]=${meta.id.slice(4)}`,
+      )
+      const kitsu = result.data?.[0]?.relationships.item.data.id
+      if (kitsu) return metadata(addons, { ...meta, id: 'kitsu:' + kitsu, category: 'anime' })
+    } catch {}
+  }
+
   for (const a of addons.filter((x) => supports(x, 'meta', meta.type, meta.id))) {
     try {
       const r = await json<{ meta: Meta }>(resourceUrl(a, 'meta', meta.type, meta.id))
-      if (r.meta) return { ...meta, ...r.meta }
+      if (r.meta) return datedMetadata({ ...meta, ...r.meta })
     } catch {}
   }
   if (/^kitsu:\d+$/.test(meta.id)) {
@@ -99,7 +131,7 @@ export async function metadata(addons: Addon[], meta: Meta): Promise<Meta> {
           meta.id,
         ),
       )
-      if (result.meta) return { ...meta, ...result.meta, category: 'anime' }
+      if (result.meta) return datedMetadata({ ...meta, ...result.meta, category: 'anime' })
     } catch {}
   }
   return meta

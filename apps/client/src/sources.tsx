@@ -1,3 +1,5 @@
+import { LanguageFlag } from './language-flag'
+import { languageName } from './i18n'
 import { useState } from 'react'
 import { Download, Play } from 'lucide-react'
 import { Choice } from './components'
@@ -43,6 +45,81 @@ export function sourceInfo(stream: Stream) {
             ({ m: 2, g: 3, t: 4 }[size[2][0].toLowerCase()] ?? 0)
         : null
   return { quality, format, bytes }
+}
+const languagePatterns: [string, RegExp][] = [
+  ['fra', /🇫🇷|\b(?:french|français|fra|fre|vff|vfq|truefrench|vf)\b/i],
+  ['eng', /🇬🇧|🇺🇸|\b(?:english|anglais|eng)\b/i],
+  ['jpn', /🇯🇵|\b(?:japanese|japonais|jpn|jap)\b/i],
+  ['deu', /🇩🇪|\b(?:german|deutsch|ger|deu)\b/i],
+  ['spa', /🇪🇸|\b(?:spanish|español|spa)\b/i],
+  ['por', /🇵🇹|🇧🇷|\b(?:portuguese|português|por)\b/i],
+  ['kor', /🇰🇷|\b(?:korean|kor)\b/i],
+  ['zho', /🇨🇳|\b(?:chinese|mandarin|zho|chi)\b/i],
+  ['ita', /🇮🇹|\b(?:italian|ita)\b/i],
+]
+export function sourceLanguages(stream: Stream) {
+  const lines = [stream.name, stream.title, stream.description]
+    .filter(Boolean)
+    .join('\n')
+    .split(/\n/)
+  const subs = lines
+    .filter((line) => /\b(?:subtitles?|subs?|sous.titres?)\b|💬/i.test(line))
+    .join(' ')
+  const audioText = lines
+    .filter((line) => !/\b(?:subtitles?|subs?|sous.titres?)\b|💬/i.test(line))
+    .join(' ')
+  const aliases: Record<string, string> = {
+    fr: 'fra',
+    fre: 'fra',
+    en: 'eng',
+    ja: 'jpn',
+    de: 'deu',
+    ger: 'deu',
+    es: 'spa',
+    pt: 'por',
+    ko: 'kor',
+    zh: 'zho',
+    it: 'ita',
+  }
+  const normalize = (codes: string[]) =>
+    codes.map((c) => aliases[c.toLowerCase()] ?? c.toLowerCase())
+  const audio = [
+    ...new Set([
+      ...normalize(stream.audioLanguages ?? []),
+      ...languagePatterns.filter(([, re]) => re.test(audioText)).map(([code]) => code),
+    ]),
+  ]
+  const subtitles = [
+    ...new Set([
+      ...normalize(stream.subtitleLanguages ?? []),
+      ...normalize((stream.subtitles ?? []).map((s) => s.lang)),
+      ...languagePatterns.filter(([, re]) => re.test(subs)).map(([code]) => code),
+      ...(/\bvostfr\b/i.test(audioText) ? ['fra'] : []),
+    ]),
+  ]
+  return { audio, subtitles }
+}
+function SourceLanguages({ stream }: { stream: Stream }) {
+  const languages = sourceLanguages(stream)
+  return (
+    <span className="source-languages">
+      {(['audio', 'subtitles'] as const).map((kind) => (
+        <span key={kind}>
+          <b>{t(kind === 'audio' ? 'Audio' : 'Sous-titres')}</b>
+          {languages[kind].length ? (
+            languages[kind].map((code) => (
+              <span key={code} title={languageName(code, code)}>
+                <LanguageFlag code={code} />
+                {languageName(code, code)}
+              </span>
+            ))
+          ) : (
+            <span>{t('Non précisé')}</span>
+          )}
+        </span>
+      ))}
+    </span>
+  )
 }
 export function Sources({
   items,
@@ -156,6 +233,7 @@ export function Sources({
                 <span className="source-description">
                   {s.title || s.description || t('Lecture directe')}
                 </span>
+                <SourceLanguages stream={s} />
                 <small>
                   {[
                     quality,

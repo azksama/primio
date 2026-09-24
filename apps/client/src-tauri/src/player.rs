@@ -136,14 +136,14 @@ pub extern "system" fn Java_fr_azks_primio_PlayerActivity_nativeCreate(
                 "alang",
                 o["language"]
                     .as_str()
-                    .filter(|v| *v != "auto")
+                    .filter(|v| *v != "auto" && *v != "original")
                     .unwrap_or(""),
             )?;
             m.set_option(
                 "slang",
                 o["subtitleLanguage"]
                     .as_str()
-                    .filter(|v| *v != "auto")
+                    .filter(|v| *v != "auto" && *v != "original")
                     .unwrap_or(""),
             )?;
             m.set_option(

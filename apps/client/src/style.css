@@ -2467,3 +2467,205 @@ main {
 .synopsis {
   white-space: pre-line;
 }
+
+/* Compact rhythm; only the content region scrolls when it genuinely needs to. */
+.password-field {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+.password-field input {
+  width: 100%;
+  padding-right: 52px;
+}
+.password-eye {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+}
+.terms-check .text-button {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.language-flag {
+  display: inline-block;
+  width: 22px;
+  height: 16px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex: 0 0 22px;
+  vertical-align: middle;
+}
+.choice-options button > span {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.copy-title {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.onboarding {
+  overflow: hidden;
+  min-height: 0;
+}
+.onboarding-top {
+  min-height: 60px;
+  padding: 10px 24px;
+}
+.onboarding-body {
+  min-height: 0;
+  overflow-y: auto;
+  flex: 1 1 0;
+  padding: 8px 24px 12px;
+}
+.onboarding-body h1 {
+  margin: 12px 0;
+  font-size: 32px;
+}
+.onboarding-body h1.serif {
+  font-size: 44px;
+}
+.onboarding-body p {
+  margin: 12px 0 18px;
+  line-height: 1.5;
+}
+.onboarding-body .welcome-logo {
+  width: clamp(64px, 13dvh, 100px);
+  height: clamp(64px, 13dvh, 100px);
+  margin: 0 auto 16px;
+}
+.onboarding-symbol {
+  width: 52px;
+  height: 52px;
+  margin: 4px 0 18px;
+}
+.welcome-features {
+  gap: 12px;
+  margin-top: 18px;
+}
+.onboarding-card {
+  padding: 18px;
+  margin: 16px 0;
+}
+.onboarding-footer {
+  padding: 10px 24px max(16px, env(safe-area-inset-bottom));
+  margin: 0 auto;
+}
+.step-dots {
+  margin-bottom: 12px;
+}
+.onboarding .row {
+  padding-block: 12px;
+  min-height: 48px;
+}
+.page-content > h2 {
+  margin-top: 24px;
+}
+.page-content .row {
+  padding-block: 14px;
+}
+.page-content .field {
+  margin-block: 12px;
+}
+@media (max-height: 600px) and (min-width: 600px) {
+  .onboarding-body {
+    width: min(100%, 760px);
+  }
+  .onboarding-body .welcome-logo,
+  .onboarding-symbol {
+    float: right;
+    margin: 8px 0 12px 24px;
+  }
+  .welcome-features {
+    display: flex;
+    flex-wrap: wrap;
+  }
+}
+/* Width in CSS pixels follows Android's density and split-screen window bounds. */
+@media (min-width: 600px) and (pointer: coarse) {
+  html:not(.desktop) .app {
+    max-width: none;
+    margin-left: 92px;
+    padding-bottom: 24px;
+  }
+  html:not(.desktop) .bottom-nav {
+    left: 12px;
+    right: auto;
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+    width: 72px;
+    height: auto;
+    flex-direction: column;
+    border-radius: 28px;
+    padding: 8px;
+    gap: 12px;
+  }
+  html:not(.desktop) .bottom-nav button {
+    width: 56px;
+    min-width: 0;
+    padding: 10px 0;
+  }
+  html:not(.desktop) .bottom-nav span {
+    font-size: 9px;
+  }
+  .page-content,
+  .home-content {
+    padding-inline: 28px;
+  }
+  .poster-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 18px;
+  }
+  .settings-hub {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .profile-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .continue-grid {
+    grid-auto-columns: minmax(210px, 30%);
+  }
+  .onboarding-body {
+    width: min(100%, 560px);
+  }
+  .onboarding-footer {
+    width: min(100%, 560px);
+  }
+  dialog {
+    max-width: min(740px, calc(100% - 48px));
+  }
+}
+
+.source-languages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.source-languages > span,
+.source-languages > span > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.source-languages b {
+  font-weight: 500;
+}
+.source-languages .language-flag {
+  width: 17px;
+  height: 12px;
+  flex-basis: 17px;
+}

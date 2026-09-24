@@ -19,3 +19,8 @@ if ($LASTEXITCODE -ne 0) { throw 'mpv extraction failed' }
 Copy-Item -LiteralPath "$resourceRoot/mpv/mpv.exe" -Destination "$resourceRoot/mpv/primio-player.exe" -Force
 Expand-Archive -LiteralPath $uosc -DestinationPath "$resourceRoot/player" -Force
 Write-Host 'Verified Windows player resources are ready.'
+
+Copy-Item -LiteralPath "$projectRoot/apps/client/src-tauri/gen/android/app/src/main/assets/fonts/cormorant-garamond.ttf" -Destination "$resourceRoot/player/fonts/cormorant-garamond.ttf" -Force
+
+New-Item -ItemType Directory -Force -Path "$resourceRoot/player/locales" | Out-Null
+Copy-Item -Path "$projectRoot/apps/client/src/locales/*.json" -Destination "$resourceRoot/player/locales" -Force

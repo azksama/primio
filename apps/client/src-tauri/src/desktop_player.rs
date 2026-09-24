@@ -59,6 +59,15 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
     );
     let config = desktop::data_dir(app)?.join(format!("player-{generation}.json"));
     let mut settings = extra.clone();
+    settings["title"] = args["title"].clone();
+    settings["audioLanguage"] = args["language"].clone();
+    let logo_dir = desktop::data_dir(app)?.join(format!("logo-{generation}"));
+    settings["logoPath"] = json!(player_path(&logo_dir));
+    let logo_url = extra["logo"].as_str().unwrap_or("").to_owned();
+    let logo_task_dir = logo_dir.clone();
+    let logo_task = tauri::async_runtime::spawn(async move {
+        let _ = prepare_logo(&logo_url, &logo_task_dir).await;
+    });
     settings["skipSegments"] = args["skipSegments"].clone();
     settings["autoSkipIntro"] = args["autoSkipIntro"].clone();
     let cache = desktop::data_dir(app)?.join("cache");
@@ -82,7 +91,7 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
         .arg("--input-default-bindings=yes")
         .arg("--keep-open=no")
         .arg("--save-position-on-quit=no")
-        .arg("--autofit=85%x85%")
+        .arg("--fullscreen=yes")
         .arg("--geometry=50%:50%")
         .arg(format!("--config-dir={}", player_path(&config_dir)))
         .arg(format!("--input-ipc-server={pipe_name}"))
@@ -111,7 +120,10 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
         ))
         .arg(format!(
             "--alang={}",
-            args["language"].as_str().unwrap_or("en")
+            args["language"]
+                .as_str()
+                .filter(|v| *v != "original" && *v != "auto")
+                .unwrap_or("")
         ))
         .arg(format!(
             "--slang={}",
@@ -144,6 +156,8 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
     let child = match command.spawn() {
         Ok(child) => Arc::new(Mutex::new(child)),
         Err(e) => {
+            logo_task.abort();
+            let _ = std::fs::remove_dir_all(&logo_dir);
             let _ = std::fs::remove_file(&config);
             return Err(format!("Could not open the player: {e}"));
         }
@@ -181,6 +195,8 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
                 crate::desktop_downloads::remove_watched(&app, &context);
             }
         }
+        logo_task.abort();
+        let _ = std::fs::remove_dir_all(logo_dir);
         let _ = std::fs::remove_file(config);
     });
     Ok(json!({}))
@@ -288,6 +304,65 @@ async fn run(
             },
             _=timer.tick()=>{if generation!=GENERATION.load(Ordering::SeqCst){break} if child.lock().map_err(|e|e.to_string())?.try_wait().map_err(|e|e.to_string())?.is_some(){break} if *duration>0.0 {publish(app,context,*position,*duration,false,None);}}
         }
+    }
+    Ok(())
+}
+
+async fn prepare_logo(url: &str, directory: &std::path::Path) -> Result<(), String> {
+    let url = url::Url::parse(url).map_err(|_| "No logo")?;
+    let client = crate::network::client_for(&url).await?;
+    let mut response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|_| "Logo unavailable")?;
+    if !response.status().is_success() {
+        return Err("Logo unavailable".into());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| "Logo unavailable")? {
+        if bytes.len() + chunk.len() > 4_000_000 {
+            return Err("Logo too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|_| "Invalid logo")?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(4096);
+    limits.max_image_height = Some(4096);
+    limits.max_alloc = Some(64_000_000);
+    reader.limits(limits);
+    let image = reader
+        .decode()
+        .map_err(|_| "Invalid logo")?
+        .resize(320, 128, image::imageops::FilterType::Lanczos3)
+        .to_rgba8();
+    let mut canvas = image::RgbaImage::new(320, 128);
+    image::imageops::overlay(
+        &mut canvas,
+        &image,
+        ((320 - image.width()) / 2) as i64,
+        ((128 - image.height()) / 2) as i64,
+    );
+    std::fs::create_dir_all(directory).map_err(|_| "Logo cache unavailable")?;
+    for frame in 0..12 {
+        let opacity = 0.4 + frame as f32 / 11.0 * 0.6;
+        let mut data = Vec::with_capacity(320 * 128 * 4);
+        for pixel in canvas.pixels() {
+            let alpha = pixel[3] as f32 / 255.0 * opacity;
+            data.extend_from_slice(&[
+                (pixel[2] as f32 * alpha) as u8,
+                (pixel[1] as f32 * alpha) as u8,
+                (pixel[0] as f32 * alpha) as u8,
+                (alpha * 255.0) as u8,
+            ]);
+        }
+        let partial = directory.join(format!("{frame}.partial"));
+        std::fs::write(&partial, data).map_err(|_| "Logo cache unavailable")?;
+        std::fs::rename(partial, directory.join(format!("{frame}.bgra")))
+            .map_err(|_| "Logo cache unavailable")?;
     }
     Ok(())
 }

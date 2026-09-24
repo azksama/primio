@@ -27,7 +27,7 @@ npm test
 
 [Compiler Android](docs/ANDROID.md) · [Compiler Windows](docs/WINDOWS.md).
 
-Le backend de comptes et le site sont hébergés séparément et ne font pas partie de ce dépôt. Aucun secret de signature ou d’hébergement n’est fourni. Les commandes de compilation produisent des binaires de développement ; les mises à jour officielles utilisent la signature de distribution Primio.
+Le backend de comptes et le site sont hébergés séparément et ne font pas partie de ce dépôt. Aucun secret de signature ou d’hébergement n’est fourni. Les commandes de compilation produisent des binaires de développement ; les APK de préversion utilisent actuellement le certificat Android de développement. L’installateur Windows n’est pas signé.
 
 Les sources doivent fournir une URL HTTP(S). Les torrents `infoHash` seuls et les flux DRM ne sont pas pris en charge. Les notifications locales nécessitent une autorisation et restent soumises aux restrictions du système.
 

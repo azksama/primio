@@ -33,7 +33,19 @@ class PrimioAuth(private val activity:Activity,initialRegister:Boolean):Dialog(a
    inputType=if(password)InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD else if(key=="email")InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS else InputType.TYPE_CLASS_TEXT
    if(autofill!=null){setAutofillHints(autofill);importantForAutofill=View.IMPORTANT_FOR_AUTOFILL_YES}else importantForAutofill=View.IMPORTANT_FOR_AUTOFILL_NO
    background=PrimioStyle.glass(activity,16);setPadding(dp(16),dp(12),dp(16),dp(12))
-   content.addView(this,LinearLayout.LayoutParams(-1,dp(54)));fields[key]=this
+   if(password){
+    val input=this;var visible=false
+    val holder=FrameLayout(activity)
+    setPadding(dp(16),dp(12),dp(56),dp(12))
+    holder.addView(input,FrameLayout.LayoutParams(-1,dp(54)))
+    lateinit var eye:PrimioIconButton
+    eye=PrimioIconButton(activity,"eye",tr("Afficher le mot de passe")){
+     visible=!visible;val cursor=input.selectionStart;input.transformationMethod=if(visible)null else android.text.method.PasswordTransformationMethod.getInstance();input.setSelection(cursor.coerceIn(0,input.length()));eye.symbol=if(visible)"eye-off" else "eye";eye.contentDescription=tr(if(visible)"Masquer le mot de passe" else "Afficher le mot de passe")
+    }.apply{background=null}
+    holder.addView(eye,FrameLayout.LayoutParams(dp(48),dp(48),Gravity.END or Gravity.CENTER_VERTICAL).apply{rightMargin=dp(3)})
+    content.addView(holder,LinearLayout.LayoutParams(-1,dp(54)))
+   }else content.addView(this,LinearLayout.LayoutParams(-1,dp(54)))
+   fields[key]=this
   }
  }
  private fun render(){
@@ -49,12 +61,8 @@ class PrimioAuth(private val activity:Activity,initialRegister:Boolean):Dialog(a
    val consent=PrimioStyle.button(activity,"○","Accepter les conditions d’utilisation"){}
    consent.setOnClickListener{accepted=!accepted;consent.text=if(accepted)"✓" else "○";consent.contentDescription=if(accepted)tr("Conditions acceptées") else "Accepter les conditions d’utilisation"}
    row.addView(consent,LinearLayout.LayoutParams(dp(48),dp(48)))
-   row.addView(PrimioStyle.text(activity,"J’accepte les conditions d’utilisation",13f).apply{setPadding(dp(12),0,0,0);isClickable=true;isFocusable=true;setOnClickListener{PrimioSheet(activity,tr("Conditions d’utilisation")).apply{section(tr("Primio est un lecteur multimédia. Les addons et plugins sont fournis par des tiers. Primio ne fournit aucun droit d’accès aux œuvres. Utilisez uniquement des sources auxquelles vous êtes autorisé à accéder. Les données de compte, profils, listes et progressions sont enregistrées pour permettre la synchronisation. Vous pouvez supprimer votre compte dans Paramètres."));option(tr("Fermer")){dismiss()};show()}}},LinearLayout.LayoutParams(0,-2,1f));content.addView(row)
+   row.addView(PrimioStyle.text(activity,tr("J’accepte les")+" "+tr("conditions d’utilisation"),13f).apply{text=android.text.SpannableString(text).apply{val start=tr("J’accepte les").length+1;setSpan(android.text.style.UnderlineSpan(),start,length,0);setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD),start,length,0)};setPadding(dp(12),0,0,0);isClickable=true;isFocusable=true;setOnClickListener{PrimioSheet(activity,tr("Conditions d’utilisation")).apply{section(tr("Primio est un lecteur multimédia. Les addons et plugins sont fournis par des tiers. Primio ne fournit aucun droit d’accès aux œuvres. Utilisez uniquement des sources auxquelles vous êtes autorisé à accéder. Les données de compte, profils, listes et progressions sont enregistrées pour permettre la synchronisation. Vous pouvez supprimer votre compte dans Paramètres."));option(tr("Fermer")){dismiss()};show()}}},LinearLayout.LayoutParams(0,-2,1f));content.addView(row)
   }
-  var visible=false
-  val reveal=PrimioStyle.button(activity,"Afficher le mot de passe"){}
-  reveal.setOnClickListener{visible=!visible;fields.filterKeys{it=="password"||it=="passwordConfirmation"}.values.forEach{field->val cursor=field.selectionStart;field.transformationMethod=if(visible)null else android.text.method.PasswordTransformationMethod.getInstance();field.setSelection(cursor.coerceIn(0,field.length()))};reveal.text=if(visible)"Masquer le mot de passe" else "Afficher le mot de passe";reveal.isSelected=visible}
-  content.addView(reveal,LinearLayout.LayoutParams(-1,-2).apply{topMargin=dp(12)})
   error=PrimioStyle.text(activity,"",13f).apply{setTextColor(0xffe8ad9e.toInt());setPadding(0,dp(14),0,dp(10));visibility=View.GONE};content.addView(error)
   submit=PrimioStyle.button(activity,if(register)tr("Créer mon compte") else tr("Se connecter")){
    val emailValue=fields.getValue("email").text.toString().trim();val password=fields.getValue("password").text.toString()

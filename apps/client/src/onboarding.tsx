@@ -4,6 +4,7 @@ import { useState, type Dispatch, type SetStateAction } from 'react'
 import { ArrowLeft, ArrowRight, Check, Play, Puzzle, UserRound } from 'lucide-react'
 import { Choice, Toggle, AvatarPicker } from './components'
 import { languages, avatarUrl } from './preferences'
+import { ImportPanel } from './import-panel'
 import type { UserState } from './types'
 export function Onboarding({
   state,
@@ -20,8 +21,18 @@ export function Onboarding({
   onAddon: () => void
   onFinish: () => Promise<void>
 }) {
-  const steps = [t('Bienvenue'), t('Profil'), t('Compte'), t('Lecture'), t('Addons'), t('Prêt')]
+  const steps = [
+    t('Bienvenue'),
+    t('Profil'),
+    t('Compte'),
+    t('Lecture'),
+    t('Importer'),
+    t('Addons'),
+    t('Prêt'),
+  ]
   const [step, setStep] = useState(0)
+  const [imported, setImported] = useState(false)
+  const [importBusy, setImportBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const profile = state.profiles.find((p) => p.id === state.activeProfileId)!
   const updateProfile = (data: { name?: string; color?: string; avatar?: string }) =>
@@ -38,6 +49,7 @@ export function Onboarding({
           <button
             className="icon"
             aria-label={t('Étape précédente')}
+            disabled={importBusy}
             onClick={() => setStep(step - 1)}
           >
             <ArrowLeft />
@@ -57,6 +69,7 @@ export function Onboarding({
               label={t('Langue de l’application')}
               value={state.settings.uiLanguage}
               options={appLanguages}
+              flags
               onChange={(v) => updateSettings({ uiLanguage: v })}
             />
             <span className="eyebrow">{t('VOTRE CINÉMA, À VOTRE RYTHME')}</span>
@@ -142,7 +155,8 @@ export function Onboarding({
             <Choice
               label={t('Audio')}
               value={state.settings.audioLanguage}
-              options={languages}
+              options={[['original', t('Langue d’origine')], ...languages]}
+              flags
               onChange={(v) => updateSettings({ audioLanguage: v })}
             />
             <Choice
@@ -164,6 +178,28 @@ export function Onboarding({
           </>
         )}
         {step === 4 && (
+          <section className="onboarding-import">
+            <h1>{t('Importer une bibliothèque')}</h1>
+            {imported ? (
+              <div className="onboarding-card glass" role="status">
+                <Check />
+                <h2>{t('Import terminé')}</h2>
+                <p>
+                  {t('{n} titres', { n: state.library.length })} ·{' '}
+                  {t('{n} addons installés', { n: state.addons.length })}
+                </p>
+              </div>
+            ) : (
+              <ImportPanel
+                state={state}
+                setState={setState}
+                onDone={() => setImported(true)}
+                onBusyChange={setImportBusy}
+              />
+            )}
+          </section>
+        )}
+        {step === 5 && (
           <>
             <span className="onboarding-symbol">
               <Puzzle />
@@ -197,7 +233,7 @@ export function Onboarding({
             </div>
           </>
         )}
-        {step === 5 && (
+        {step === 6 && (
           <>
             <img className="welcome-logo small" src="/brand/primio.png" alt="" />
             <span className="eyebrow">{t('TOUT EST PRÊT')}</span>
@@ -231,9 +267,9 @@ export function Onboarding({
         </div>
         <button
           className="primary"
-          disabled={saving || (step === 1 && !profile.name.trim())}
+          disabled={saving || importBusy || (step === 1 && !profile.name.trim())}
           onClick={async () => {
-            if (step === 5) {
+            if (step === steps.length - 1) {
               setSaving(true)
               try {
                 await onFinish()
@@ -248,11 +284,13 @@ export function Onboarding({
         >
           {step === 0
             ? t('Commencer')
-            : step === 5
+            : step === steps.length - 1
               ? t('Explorer Primio')
               : step === 2 && !connected
                 ? t('Continuer sans compte')
-                : t('Continuer')}
+                : step === 4 && !imported
+                  ? t('Passer cette étape')
+                  : t('Continuer')}
           <ArrowRight />
         </button>
       </footer>

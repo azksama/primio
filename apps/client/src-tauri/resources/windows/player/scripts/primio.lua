@@ -4,7 +4,10 @@ local config = {}
 local file = io.open(os.getenv('PRIMIO_PLAYER_CONFIG') or '', 'r')
 if file then config = utils.parse_json(file:read('*a')) or {}; file:close() end
 local fr = (config.locale or config.language or ''):sub(1, 2) == 'fr'
-local function text(en, french) return fr and french or en end
+local translations = {}
+local language_file = io.open(mp.find_config_file('locales/' .. (config.locale or 'en') .. '.json') or '', 'r')
+if language_file then translations = utils.parse_json(language_file:read('*a')) or {}; language_file:close() end
+local function text(en, french) return fr and french or translations[french] or en end
 local requested, offered = false, false
 local handled = {}
 local cache_guard
@@ -15,9 +18,6 @@ cache_guard = mp.add_periodic_timer(0.1, function()
         cache_guard:kill()
     end
 end)
-local function menu(title, items)
-    mp.commandv('script-message-to', 'uosc', 'open-menu', utils.format_json({type='primio',title=title,items=items}))
-end
 local function episode(id, auto)
     if requested or not id or id == '' then return end
     requested = true
@@ -29,14 +29,7 @@ mp.register_script_message('next', function() episode(config.nextVideoId, true) 
 mp.add_key_binding('n', 'next', function() episode(config.nextVideoId, true) end)
 mp.add_key_binding(nil, 'back', function() mp.commandv('seek', -(config.seekBackward or 15), 'relative') end)
 mp.add_key_binding(nil, 'forward', function() mp.commandv('seek', config.seekForward or 30, 'relative') end)
-mp.add_key_binding('e', 'episodes', function()
-    local items = {}
-    for _, ep in ipairs(config.episodes or {}) do
-        table.insert(items, {title=string.format('%s · %s', ep.season and ('S'..ep.season..' E'..(ep.episode or '')) or '', ep.title or ''),active=ep.id==config.currentVideoId,value={'script-message-to','primio','episode',ep.id}})
-    end
-    if #items == 0 then mp.osd_message(text('No episodes','Aucun épisode'));return end
-    menu(text('Episodes','Épisodes'), items)
-end)
+mp.add_key_binding('e', 'episodes', function() mp.commandv('script-message-to','primio_ui','open','episodes') end)
 local function style(force)
     mp.set_property('sub-ass-override', force and 'force' or 'no')
     mp.set_property_number('sub-font-size', config.subtitleSize or 40)
@@ -48,7 +41,18 @@ local function style(force)
 end
 local forced = config.forceSubtitleStyle == true
 style(forced)
-mp.register_event('file-loaded', function() style(forced) end)
+mp.register_event('file-loaded', function()
+    style(forced)
+    if config.audioLanguage == 'original' then
+        for _, track in ipairs(mp.get_property_native('track-list', {})) do
+            local title = (track.title or ''):lower()
+            if track.type == 'audio' and (title:find('original',1,true) or title:match('%f[%a]vo%f[%A]')) then
+                mp.set_property_number('aid', track.id)
+                break
+            end
+        end
+    end
+end)
 mp.add_key_binding(nil, 'style', function()
     forced = not forced;style(forced)
     mp.osd_message(forced and text('Primio subtitle style','Style Primio des sous-titres') or text('Embedded subtitle style','Style intégré des sous-titres'))
@@ -56,10 +60,7 @@ end)
 local function offer_next()
     if offered or not config.nextVideoId or config.nextVideoId == '' then return end
     offered=true
-    menu(text('Next episode','Épisode suivant'), {
-        {title=text('Play next episode','Lire l’épisode suivant'),value={'script-message-to','primio','next'}},
-        {title=text('Keep watching','Continuer à regarder'),value={'script-message-to','uosc','close-menu'}}
-    })
+    mp.commandv('script-message-to','primio_ui','next-offer')
 end
 mp.observe_property('time-pos', 'number', function(_, pos)
     if not pos or requested then return end

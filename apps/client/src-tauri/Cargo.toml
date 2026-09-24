@@ -1,6 +1,6 @@
 [package]
 name = "primio"
-version = "0.2.6"
+version = "0.2.7"
 description = "Primio streaming client"
 edition = "2021"
 license = "MIT"
@@ -15,8 +15,9 @@ tauri-plugin-deep-link = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
-tokio = { version = "1", features = ["net", "time", "io-util", "fs", "macros"] }
+tokio = { version = "1", features = ["net", "time", "io-util", "fs", "macros", "sync"] }
 url = "2"
+sha2 = "0.10"
 primio-plugin-sdk = { path = "../../../packages/native-sdk" }
 [target.'cfg(target_os = "android")'.dependencies]
 libmpv2 = { version = "6", default-features = false }
@@ -28,4 +29,5 @@ windows = { version = "0.61", features = ["Networking_Connectivity"] }
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 arboard = { version = "3", default-features = false }

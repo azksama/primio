@@ -16,6 +16,7 @@ export interface ReleaseEntry {
   at: number
   season: number
   episode: number
+  unconfirmed?: boolean
 }
 export function releaseEntries(metas: Meta[]): ReleaseEntry[] {
   const unique = new Map<string, ReleaseEntry>()
@@ -32,6 +33,7 @@ export function releaseEntries(metas: Meta[]): ReleaseEntry[] {
         at,
         season: video.season ?? 1,
         episode: video.episode ?? 0,
+        unconfirmed: video.releaseUnconfirmed,
       })
     }
   return [...unique.values()].sort((a, b) => a.at - b.at)
@@ -174,7 +176,7 @@ export function useReleases(state: UserState, addons: Addon[], ready: boolean, a
   useEffect(() => {
     if (!ready || !inboxReady || loading || catalogLoadedKey !== catalogKey || !isTauri()) return
     const future = entries
-      .filter((e) => e.at >= inbox.since && e.at > now - 7 * 86400000)
+      .filter((e) => !e.unconfirmed && e.at >= inbox.since && e.at > now - 7 * 86400000)
       .slice(0, 1000)
       .map((e) => ({
         id: e.id,
@@ -231,6 +233,7 @@ function Entry({ entry, onSelect }: { entry: ReleaseEntry; onSelect: (meta: Meta
           {entry.season} {t('· E')}
           {entry.episode} ·{' '}
           {new Date(entry.at).toLocaleDateString(locale(), { day: 'numeric', month: 'short' })}
+          {entry.unconfirmed && ' · ' + t('Date à confirmer')}
         </small>
       </span>
     </button>
@@ -349,7 +352,7 @@ export function NotificationCenter({
     }
   }, [])
   const episodes = releases.entries
-    .filter((e) => e.at <= releases.now && e.at >= releases.inbox.since)
+    .filter((e) => !e.unconfirmed && e.at <= releases.now && e.at >= releases.inbox.since)
     .sort((a, b) => b.at - a.at)
     .slice(0, 100)
   return (

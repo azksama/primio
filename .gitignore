@@ -22,3 +22,9 @@ apps/client/src-tauri/resources/windows/player/ziggy*
 test-results/
 playwright-report/
 .codex-remote-attachments/
+
+!apps/client/src-tauri/resources/windows/player/fonts/
+apps/client/src-tauri/resources/windows/player/fonts/*
+!apps/client/src-tauri/resources/windows/player/fonts/inter.ttf
+
+releases/

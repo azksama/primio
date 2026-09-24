@@ -165,3 +165,10 @@ export function matchesCategory(meta: Meta, category: string) {
 export function seasons(meta: Meta) {
   return [...new Set((meta.videos ?? []).map((v) => v.season ?? 1))].sort((a, b) => a - b)
 }
+
+export function audioPreference(settings: Settings, meta: Meta) {
+  const type = isAnime(meta) ? 'anime' : meta.type === 'movie' ? 'movie' : 'series'
+  const specific = settings.audioByType?.[type]
+  const preference = specific && specific !== 'inherit' ? specific : settings.audioLanguage
+  return preference === 'original' ? meta.originalLanguage || 'original' : preference
+}

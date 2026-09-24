@@ -293,3 +293,47 @@ html.desktop,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.desktop .sources {
+  min-width: 0;
+}
+.desktop dialog:has(.sources) {
+  width: min(1060px, calc(100vw - 80px));
+  max-width: 1060px;
+}
+.desktop .source-addons {
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.desktop .source-filters {
+  gap: 18px;
+  margin-bottom: 20px;
+}
+.desktop .compact-source {
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  gap: 20px;
+}
+.desktop .source-play {
+  padding: 12px;
+  min-height: 104px;
+  gap: 24px;
+}
+.desktop .source-copy {
+  gap: 8px;
+}
+.desktop .source-copy strong {
+  font-size: 17px;
+}
+.desktop .source-description {
+  font-size: 14px;
+  -webkit-line-clamp: 3;
+}
+.desktop .source-download {
+  width: 48px;
+  height: 48px;
+}
+.desktop .onboarding-body {
+  flex: 1 1 0;
+  min-height: 0;
+}

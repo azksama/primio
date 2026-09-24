@@ -528,5 +528,11 @@
   "Noir": "Black",
   "Crème": "Cream",
   "Sombre": "Dark",
-  "Passer cette étape": "Skip this step"
+  "Passer cette étape": "Skip this step",
+  "Trier par": "Sort by",
+  "Note": "Rating",
+  "Nom": "Name",
+  "Réinitialiser les filtres": "Reset filters",
+  "Croissant": "Ascending",
+  "Décroissant": "Descending"
 }

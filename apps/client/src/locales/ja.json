@@ -527,5 +527,11 @@
   "Noir": "黒",
   "Crème": "クリーム",
   "Sombre": "暗い",
-  "Passer cette étape": "この手順をスキップ"
+  "Passer cette étape": "この手順をスキップ",
+  "Trier par": "並べ替え",
+  "Note": "評価",
+  "Nom": "名前",
+  "Réinitialiser les filtres": "フィルターをリセット",
+  "Croissant": "昇順",
+  "Décroissant": "降順"
 }

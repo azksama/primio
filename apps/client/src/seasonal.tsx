@@ -1,3 +1,4 @@
+import { sortCatalog, type CatalogSort } from './catalog-sort'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { json } from './addons'
 import { t } from './i18n'
@@ -46,9 +47,11 @@ export function SeasonalAnime({
   season,
   query,
   renderItem,
+  sort,
 }: {
   season: string
   query: string
+  sort?: CatalogSort
   renderItem: (m: Meta) => ReactNode
 }) {
   const [state, setState] = useState({
@@ -107,7 +110,7 @@ export function SeasonalAnime({
     <>
       <h2 className="season-heading">{seasonOptions().find(([id]) => id === season)?.[1]}</h2>
       <ProgressiveList
-        items={state.items}
+        items={sortCatalog(state.items, sort)}
         renderItem={renderItem}
         className="poster-grid"
         loading={state.loading}

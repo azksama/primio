@@ -35,6 +35,7 @@ export interface Meta {
   cast?: string[]
   director?: string[]
   runtime?: string
+  seasonCount?: number
   originalLanguage?: string
   category?: 'anime'
   trailers?: { source?: string; ytId?: string; url?: string; externalUrl?: string }[]
@@ -76,6 +77,10 @@ export interface Stream {
   addonKey?: string
 }
 export interface Progress extends Pick<Meta, 'id' | 'type' | 'name' | 'poster' | 'category'> {
+  episodeThumbnail?: string
+  episode?: number
+  season?: number
+  seasonCount?: number
   watched?: boolean
   videoId: string
   position: number
@@ -94,6 +99,8 @@ export interface Settings {
   subtitles: boolean
   reduceMotion: boolean
   audioLanguage: string
+  sourceFilters?: { provider: string; quality: string; format: string; size: string }
+  explorerSort?: { key: 'default' | 'name' | 'rating' | 'year'; direction: 'asc' | 'desc' }
   sourcePreferences?: import('./source-preferences').SourcePreference[]
   audioByType?: Partial<Record<'movie' | 'series' | 'anime', string>>
   subtitleLanguage: string

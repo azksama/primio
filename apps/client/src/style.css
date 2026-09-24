@@ -227,7 +227,7 @@ svg {
   padding: 16px;
 }
 .continue-grid {
-  align-items: start;
+  align-items: stretch;
 }
 .continue-card {
   display: flex;
@@ -240,7 +240,7 @@ svg {
 }
 .continue-card strong {
   line-height: 1.4;
-  min-height: 2.8em;
+  min-height: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -534,8 +534,8 @@ svg {
 .hero {
   position: relative;
   isolation: isolate;
-  height: 540px;
-  min-height: 500px;
+  height: 378px;
+  min-height: 350px;
   margin: 18px 20px 0;
   border-radius: 28px 28px 0 0;
   background-size: cover;
@@ -577,6 +577,10 @@ svg {
   margin: 18px 0 14px;
   max-width: 670px;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .hero-copy p {
   color: var(--muted);
@@ -673,12 +677,20 @@ svg {
   margin: 9px 0;
 }
 .continue-card progress {
+  flex-shrink: 0;
+  margin-top: auto;
   width: 100%;
   height: 3px;
   appearance: none;
   border: 0;
   display: block;
   margin-bottom: 9px;
+}
+.continue-card > small:last-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
 }
 .continue-card progress::-webkit-progress-bar {
   background: #ffffff26;
@@ -1159,7 +1171,7 @@ li {
 }
 @media (min-width: 700px) {
   .hero {
-    height: 640px;
+    height: 448px;
     margin: 12px 28px 0;
     background-position: center 30%;
   }
@@ -2668,4 +2680,74 @@ main {
   width: 17px;
   height: 12px;
   flex-basis: 17px;
+}
+
+.addon-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 12px 0;
+}
+.addon-actions .addon-order {
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+}
+.addon-actions > .icon {
+  flex: 0 0 44px;
+}
+.addon-actions .addon-order span {
+  white-space: nowrap;
+}
+.addon-tools .secondary {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 14px;
+  margin: 4px 0;
+}
+.addon-tools svg {
+  width: 16px;
+  height: 16px;
+}
+.addon-card .description p {
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 10px 0;
+}
+.continue-card .continue-episode {
+  margin: 0 0 10px;
+  font-size: 11px;
+}
+.explorer-sort {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 20px;
+  color: var(--muted);
+}
+.explorer-sort .choice {
+  flex: 1;
+  min-width: 0;
+}
+.explorer-sort .row {
+  border: 0;
+  padding: 8px 0;
+  min-height: 40px;
+  font-size: 12px;
+  gap: 10px;
+}
+.sort-direction {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 5px;
+  align-items: center;
+  min-height: 44px;
+  font-size: 11px;
+  padding: 4px;
+}
+.sort-direction svg {
+  width: 16px;
+  height: 16px;
 }

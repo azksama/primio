@@ -1,3 +1,5 @@
+import { ContinueCard } from './continue-card'
+import { defaultSort } from './catalog-sort'
 import { UpdatePanel } from './update-panel'
 import { ImportPanel } from './import-panel'
 import { equivalentSources, rememberSource } from './source-preferences'
@@ -44,6 +46,7 @@ import {
   WifiOff,
   LoaderCircle,
   Sparkles,
+  Copy,
   ArrowUp,
   ArrowDown,
 } from 'lucide-react'
@@ -163,7 +166,9 @@ export default function App() {
     [ready, setReady] = useState(false)
   const [addons, setAddons] = useState<Addon[]>([]),
     [catalogue, setCatalogue] = useState<Meta[]>([])
+  const [skipOpen, setSkipOpen] = useState(false)
   const [genre, setGenre] = useState('')
+  const sort = state.settings.explorerSort ?? defaultSort
   const [pluginCatalogs, setPluginCatalogs] = useState<Addon[]>([])
   const catalogAddons = useMemo(() => [...addons, ...pluginCatalogs], [addons, pluginCatalogs])
   const [catalogChoice, setCatalogChoice] = useState('all'),
@@ -677,6 +682,16 @@ export default function App() {
               name: target.meta.name,
               poster: target.meta.poster,
               category: target.meta.category,
+              seasonCount:
+                target.meta.seasonCount ??
+                (target.meta.videos
+                  ? new Set(
+                      target.meta.videos
+                        .filter((v) => (v.season ?? 1) > 0)
+                        .map((v) => v.season ?? 1),
+                    ).size
+                  : undefined),
+              videos: target.meta.videos?.filter((v) => v.id === target.id),
             },
             videoId: target.id,
           }),
@@ -1330,20 +1345,12 @@ export default function App() {
                       .sort((a, b) => b.updatedAt - a.updatedAt)
                       .slice(0, 10)
                       .map((p) => (
-                        <button
-                          key={p.videoId}
-                          className="continue-card"
-                          onClick={() => chooseSources(p, p.videoId)}
-                        >
-                          <MediaImage src={p.poster} />
-                          <strong>{p.name}</strong>
-                          <progress max={p.duration || 1} value={p.position} />
-                          <small>
-                            {p.duration > p.position
-                              ? t('{time} restantes', { time: minutes(p.duration - p.position) })
-                              : t('Reprendre')}
-                          </small>
-                        </button>
+                        <ContinueCard
+                          key={p.type + p.videoId}
+                          item={p}
+                          addons={catalogAddons}
+                          onPlay={() => chooseSources(p, p.videoId)}
+                        />
                       ))}
                   </div>
                 </section>
@@ -1509,12 +1516,54 @@ export default function App() {
                   onChange={setGenre}
                 />
               </div>
+              <div className="explorer-sort">
+                <Choice
+                  label={t('Trier par')}
+                  value={sort.key}
+                  options={[
+                    ['default', t('Par défaut')],
+                    ['rating', t('Note')],
+                    ['name', t('Nom')],
+                    ['year', t('Année')],
+                  ]}
+                  onChange={(key) =>
+                    setState((s) => ({
+                      ...s,
+                      settings: {
+                        ...s.settings,
+                        explorerSort: { ...sort, key: key as typeof sort.key },
+                      },
+                    }))
+                  }
+                />
+                <button
+                  className="sort-direction"
+                  aria-label={t(sort.direction === 'asc' ? 'Croissant' : 'Décroissant')}
+                  title={t(sort.direction === 'asc' ? 'Croissant' : 'Décroissant')}
+                  onClick={() =>
+                    setState((s) => ({
+                      ...s,
+                      settings: {
+                        ...s.settings,
+                        explorerSort: {
+                          ...sort,
+                          direction: sort.direction === 'asc' ? 'desc' : 'asc',
+                        },
+                      },
+                    }))
+                  }
+                >
+                  {sort.direction === 'asc' ? <ArrowUp /> : <ArrowDown />}
+                  <span>{t(sort.direction === 'asc' ? 'Croissant' : 'Décroissant')}</span>
+                </button>
+              </div>
               {catalogChoice === 'seasonal' && animeFilter ? (
                 <SeasonalAnime
                   key={genre + searchQuery}
                   season={genre || currentSeason()}
                   query={searchQuery}
                   renderItem={poster}
+                  sort={sort}
                 />
               ) : searchQuery ? (
                 <GroupedSearch
@@ -1523,6 +1572,7 @@ export default function App() {
                   query={searchQuery}
                   genre={genre}
                   renderItem={poster}
+                  sort={sort}
                 />
               ) : (
                 <CatalogFeed
@@ -1545,6 +1595,7 @@ export default function App() {
                   genre={genre}
                   query={searchQuery}
                   renderItem={poster}
+                  sort={sort}
                   empty={
                     <Empty title={t('Aucun résultat')}>
                       {tab === 'anime' ? (
@@ -1692,34 +1743,54 @@ export default function App() {
                         <span />
                       </button>
                     </div>
-                    <div className="addon-order">
+                    <div className="addon-actions">
                       <button
                         className="icon"
-                        aria-label={t('Monter ') + (a?.manifest.name ?? 'cet addon')}
-                        disabled={index === 0}
-                        onClick={() => moveAddon(index, -1)}
+                        title={t('Copier le manifeste')}
+                        aria-label={t('Copier le manifeste')}
+                        onClick={() => copyManifest(item.url)}
                       >
-                        <ArrowUp />
+                        <Copy size={18} />
                       </button>
-                      <span>
-                        {t('Priorité')} {index + 1}
-                      </span>
+                      <div className="addon-order">
+                        <button
+                          className="icon"
+                          aria-label={t('Monter ') + (a?.manifest.name ?? 'cet addon')}
+                          disabled={index === 0}
+                          onClick={() => moveAddon(index, -1)}
+                        >
+                          <ArrowUp />
+                        </button>
+                        <span>
+                          {t('Priorité')} {index + 1}
+                        </span>
+                        <button
+                          className="icon"
+                          aria-label={t('Descendre ') + (a?.manifest.name ?? 'cet addon')}
+                          disabled={index === state.addons.length - 1}
+                          onClick={() => moveAddon(index, 1)}
+                        >
+                          <ArrowDown />
+                        </button>
+                      </div>
                       <button
                         className="icon"
-                        aria-label={t('Descendre ') + (a?.manifest.name ?? 'cet addon')}
-                        disabled={index === state.addons.length - 1}
-                        onClick={() => moveAddon(index, 1)}
+                        aria-label={t('Désinstaller ') + (a?.manifest.name ?? 'cet addon')}
+                        onClick={() =>
+                          setState((s) => ({
+                            ...s,
+                            addons: s.addons.filter((x) => x.url !== item.url),
+                          }))
+                        }
                       >
-                        <ArrowDown />
+                        <Trash2 size={18} />
                       </button>
                     </div>
                     <Description
+                      limit={140}
                       text={a?.manifest.description ?? t('Le manifeste n’a pas pu être chargé.')}
                     />
                     <div className="addon-tools">
-                      <button className="secondary" onClick={() => copyManifest(item.url)}>
-                        {t('Copier le manifeste')}
-                      </button>
                       {a?.manifest.behaviorHints?.configurable && (
                         <button
                           className="secondary"
@@ -1740,18 +1811,6 @@ export default function App() {
                           </span>
                         ))}
                       </div>
-                      <button
-                        className="icon"
-                        aria-label={t('Désinstaller ') + (a?.manifest.name ?? 'cet addon')}
-                        onClick={() =>
-                          setState((s) => ({
-                            ...s,
-                            addons: s.addons.filter((x) => x.url !== item.url),
-                          }))
-                        }
-                      >
-                        <Trash2 size={18} />
-                      </button>
                     </div>
                   </article>
                 )
@@ -1783,7 +1842,7 @@ export default function App() {
                   <Check />
                 </div>
                 <p className="muted">{t('Passer les intros et les génériques.')}</p>
-                <button className="secondary" onClick={() => navigate('settings')}>
+                <button className="secondary" onClick={() => setSkipOpen(true)}>
                   {t('Configurer le saut des génériques')}
                 </button>
               </article>
@@ -2174,6 +2233,10 @@ export default function App() {
                 <Sources
                   key={sourceTarget.id}
                   items={sourceList}
+                  filters={state.settings.sourceFilters}
+                  onFiltersChange={(sourceFilters) =>
+                    setState((s) => ({ ...s, settings: { ...s.settings, sourceFilters } }))
+                  }
                   busy={launching}
                   onPlay={play}
                   onDownload={downloadSource}
@@ -2258,6 +2321,15 @@ export default function App() {
               </button>
             </form>
           )}
+        </Dialog>
+      )}
+      {skipOpen && (
+        <Dialog title={t('Configurer le saut des génériques')} onClose={() => setSkipOpen(false)}>
+          <Preferences
+            section="skip"
+            settings={state.settings}
+            onChange={(settings) => setState((s) => ({ ...s, settings }))}
+          />
         </Dialog>
       )}
       <UpdatePanel ready={ready && !onboarding && !profileGate} />

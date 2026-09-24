@@ -1,3 +1,4 @@
+import { type CatalogSort } from './catalog-sort'
 import { type ReactNode } from 'react'
 import { catalogTargets } from './catalog-pager'
 import { CatalogFeed } from './progressive'
@@ -10,11 +11,13 @@ export function GroupedSearch({
   genre,
   choice,
   renderItem,
+  sort,
 }: {
   addons: Addon[]
   query: string
   genre: string
   choice: string
+  sort?: CatalogSort
   renderItem: (meta: Meta) => ReactNode
 }) {
   return (
@@ -28,6 +31,7 @@ export function GroupedSearch({
             query={query}
             genre={genre}
             filterItem={(m) => matchesCategory(m, type)}
+            sort={sort}
             renderItem={renderItem}
             empty={<p className="muted">{t('Aucun résultat')}</p>}
           />

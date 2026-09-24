@@ -313,7 +313,7 @@
   "Réponse trop volumineuse.": "響應過於冗長。",
   "S": "S",
   "Saison": "季節",
-  "Saison {n}": "季節 {n}",
+  "Saison {n}": "第{n}季",
   "Sans empattement": "無襯線體",
   "Sans sous-titres": "無字幕",
   "Se connecter": "登入",
@@ -488,7 +488,7 @@
   "Regrouper par": "分組方式",
   "Jour": "日",
   "Mois": "月",
-  "Année": "年",
+  "Année": "年份",
   "Période": "時間範圍",
   "Tout l’historique": "全部紀錄",
   "Épisodes de séries": "影集集數",
@@ -527,5 +527,11 @@
   "Noir": "黑色",
   "Crème": "米白色",
   "Sombre": "深色",
-  "Passer cette étape": "略過此步驟"
+  "Passer cette étape": "略過此步驟",
+  "Trier par": "排序依據",
+  "Note": "評分",
+  "Nom": "名稱",
+  "Réinitialiser les filtres": "重設篩選",
+  "Croissant": "升冪",
+  "Décroissant": "降冪"
 }

@@ -1,3 +1,4 @@
+import { sortCatalog, type CatalogSort } from './catalog-sort'
 import { t } from './i18n'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { LoaderCircle } from 'lucide-react'
@@ -126,12 +127,14 @@ export function CatalogFeed({
   renderItem,
   empty,
   filterItem,
+  sort,
 }: {
   targets: CatalogTarget[]
   query: string
   genre?: string
   renderItem: (meta: Meta) => ReactNode
   empty: ReactNode
+  sort?: CatalogSort
   filterItem?: (meta: Meta) => boolean
 }) {
   const [state, setState] = useState({
@@ -171,7 +174,7 @@ export function CatalogFeed({
         </p>
       )}
       <ProgressiveList
-        items={filterItem ? state.items.filter(filterItem) : state.items}
+        items={sortCatalog(filterItem ? state.items.filter(filterItem) : state.items, sort)}
         renderItem={renderItem}
         className="poster-grid"
         hasMore={state.hasMore}

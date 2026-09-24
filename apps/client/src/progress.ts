@@ -1,5 +1,19 @@
 import type { Meta, Progress, UserState } from './types'
 
+export function episodeProgress(meta: Meta, videoId: string) {
+  const video = meta.videos?.find((v) => v.id === videoId)
+  return {
+    episodeThumbnail: video?.thumbnail,
+    episode: video?.episode,
+    season: video?.season,
+    seasonCount:
+      meta.seasonCount ??
+      (meta.videos
+        ? new Set(meta.videos.filter((v) => (v.season ?? 1) > 0).map((v) => v.season ?? 1)).size
+        : undefined),
+  }
+}
+
 export const progressKey = (type: string, videoId: string) => JSON.stringify([type, videoId])
 export const isWatched = (item?: Progress) =>
   !!item && (item.watched ?? (item.duration > 0 && item.position / item.duration >= 0.95))
@@ -35,6 +49,17 @@ export function recordProgress(
     name: meta.name,
     poster: meta.poster,
     category: meta.category,
+    ...Object.fromEntries(
+      Object.entries({
+        episodeThumbnail: previous?.episodeThumbnail,
+        episode: previous?.episode,
+        season: previous?.season,
+        seasonCount: previous?.seasonCount,
+        ...Object.fromEntries(
+          Object.entries(episodeProgress(meta, videoId)).filter(([, value]) => value !== undefined),
+        ),
+      }).filter(([, value]) => value !== undefined),
+    ),
     videoId,
     position: Math.min(position, duration),
     duration,

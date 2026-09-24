@@ -172,6 +172,22 @@ class PlayerFlowTest {
         for((label,mode) in listOf("Style intégré" to "no","Style Primio" to "force")){
             click("Audio et sous-titres")
             val target=find(label)!!
+            val settings = find("Réglages du style")!!
+            instrumentation.runOnMainSync {
+                val sheet = target.rootView
+                val location = IntArray(2)
+                sheet.getLocationOnScreen(location)
+                val bounds = activity!!.windowManager.currentWindowMetrics.bounds
+                assertTrue("Sheet must stay inside the left player edge", location[0] >= bounds.left)
+                assertTrue("Sheet must stay inside the right player edge", location[0] + sheet.width <= bounds.right)
+                assertTrue("Sheet must stay inside the bottom player edge", location[1] + sheet.height <= bounds.bottom)
+                val stylePosition = IntArray(2)
+                val settingsPosition = IntArray(2)
+                target.getLocationOnScreen(stylePosition)
+                settings.getLocationOnScreen(settingsPosition)
+                assertTrue("Style settings need a visible gap", settingsPosition[1] - stylePosition[1] - target.height >= PrimioStyle.dp(context, 16))
+            }
+            capture("native-audio-sheet")
             instrumentation.runOnMainSync { target.requestRectangleOnScreen(android.graphics.Rect(0,0,target.width,target.height),true) }
             click(label)
             waitUntil("Style did not apply"){playerState().optString("subtitleStyle")==mode}

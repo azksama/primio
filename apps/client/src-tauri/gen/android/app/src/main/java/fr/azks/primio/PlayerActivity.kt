@@ -263,7 +263,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   val styles=LinearLayout(this)
   styles.addView(button(tr("Style intégré")){forceSubtitleStyle=false;options.put("forceSubtitleStyle",false);command("set","sub-ass-override","no");dialog.dismiss()},LinearLayout.LayoutParams(0,-2,1f).apply{rightMargin=dp(12)})
   styles.addView(button(tr("Style Primio")){forceSubtitleStyle=true;options.put("forceSubtitleStyle",true);command("set","sub-ass-override","force");dialog.dismiss()},LinearLayout.LayoutParams(0,-2,1f))
-  dialog.content.addView(styles)
+  dialog.content.addView(styles,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(16)})
   dialog.option(tr("Réglages du style")){dialog.dismiss();subtitleStyle()}
   dialog.setOnDismissListener{if(sheet===dialog)sheet=null;showControls()};sheet=dialog;dialog.show()
  }

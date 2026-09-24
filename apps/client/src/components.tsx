@@ -161,7 +161,7 @@ export function Preferences({
   onChange,
   section = 'player',
 }: {
-  section?: 'player' | 'options' | 'storage'
+  section?: 'player' | 'options' | 'storage' | 'skip'
   settings: Settings
   onChange: (s: Settings) => void
 }) {
@@ -344,6 +344,10 @@ export function Preferences({
             checked={settings.rememberPosition}
             onChange={(v) => update('rememberPosition', v)}
           />
+        </>
+      )}
+      {(section === 'player' || section === 'skip') && (
+        <>
           <h2>{t('Enchaînement des épisodes')}</h2>
           <Toggle
             label={t('Épisode suivant automatiquement')}
@@ -830,16 +834,16 @@ export function Profiles({
   )
 }
 
-export function Description({ text }: { text: string }) {
+export function Description({ text, limit = 300 }: { text: string; limit?: number }) {
   const [expanded, setExpanded] = useState(false)
   text = cleanDescription(text)
   const chars = Array.from(text)
   return (
     <div className="description">
       <p className="synopsis">
-        {expanded || chars.length <= 300 ? text : chars.slice(0, 300).join('') + '…'}
+        {expanded || chars.length <= limit ? text : chars.slice(0, limit).join('') + '…'}
       </p>
-      {chars.length > 300 && (
+      {chars.length > limit && (
         <button
           className="text-button description-toggle"
           aria-expanded={expanded}

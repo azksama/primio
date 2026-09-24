@@ -34,7 +34,22 @@ class PrimioSheet(context:Context,title:String,private val lateral:Boolean=false
  }
  fun section(title:String){content.addView(PrimioStyle.text(context,title,12f).apply{setTextColor(0xffb7b8b1.toInt());setPadding(0,12.dp,0,10.dp)})}
  fun option(label:String,selected:Boolean=false,action:()->Unit){content.addView(PrimioStyle.button(context,(if(selected)"✓  " else "")+label,label){action()}.apply{gravity=Gravity.CENTER_VERTICAL or Gravity.START},LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=10.dp})}
- override fun onStart(){super.onStart();val metrics=context.resources.displayMetrics;val height=metrics.heightPixels-32.dp;val width=min(metrics.widthPixels-32.dp,if(lateral)380.dp else 800.dp);content.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED));window?.setLayout(width,if(lateral)height else min(height,content.measuredHeight+80.dp));if(lateral)window?.setGravity(Gravity.END or Gravity.CENTER_VERTICAL);window?.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);window?.setDimAmount(.48f)}
+ override fun onStart(){
+  super.onStart()
+  val manager=context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+  val metrics=context.resources.displayMetrics
+  val bounds=if(android.os.Build.VERSION.SDK_INT>=30)manager.currentWindowMetrics.bounds else Rect(0,0,metrics.widthPixels,metrics.heightPixels)
+  val insets=if(android.os.Build.VERSION.SDK_INT>=30)manager.currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()) else null
+  val height=(bounds.height()-(insets?.top?:0)-(insets?.bottom?:0)-32.dp).coerceAtLeast(120.dp)
+  val width=min(bounds.width()-(insets?.left?:0)-(insets?.right?:0)-32.dp,if(lateral)380.dp else 800.dp).coerceAtLeast(160.dp)
+  content.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
+  window?.decorView?.setPadding(0,0,0,0)
+  window?.setGravity(if(lateral)Gravity.END or Gravity.CENTER_VERTICAL else Gravity.CENTER)
+  window?.attributes=window?.attributes?.apply{x=if(lateral)16.dp else 0;y=0}
+  window?.setLayout(width,if(lateral)height else min(height,content.measuredHeight+80.dp))
+  window?.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);window?.setDimAmount(.48f)
+ }
+
 }
 
 class PrimioTimeline(context:Context):View(context) {

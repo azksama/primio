@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Download, Play } from 'lucide-react'
 import { Choice } from './components'
 import { t } from './i18n'
-import type { Stream } from './types'
+import type { Stream, Settings } from './types'
 
 export function sourceInfo(stream: Stream) {
   const text = [stream.name, stream.title, stream.description, stream.behaviorHints?.filename]
@@ -124,25 +124,38 @@ function SourceLanguages({ stream }: { stream: Stream }) {
 export function Sources({
   items,
   busy,
+  filters,
+  onFiltersChange,
   onPlay,
   onDownload,
 }: {
   items: Stream[]
   busy: boolean
+  filters?: Settings['sourceFilters']
+  onFiltersChange?: (filters: NonNullable<Settings['sourceFilters']>) => void
   onPlay: (s: Stream) => void
   onDownload: (s: Stream) => void
 }) {
   const providers = [
     ...new Map(
-      items.map((s) => [s.addonKey ?? s.addonName ?? '', s.addonName ?? t('Source')]),
+      items.map((s) => [s.addonKey ?? s.addonName ?? 'unknown', s.addonName ?? t('Source')]),
     ).entries(),
   ]
-  const [provider, setProvider] = useState(providers[0]?.[0] ?? '')
-  const [quality, setQuality] = useState('all'),
-    [format, setFormat] = useState('all'),
-    [size, setSize] = useState('all')
+  const [selection, setSelection] = useState(
+    filters ?? { provider: 'all', quality: 'all', format: 'all', size: 'all' },
+  )
+  const { quality, format, size } = selection
+  const provider =
+    selection.provider === 'all' || providers.some(([id]) => id === selection.provider)
+      ? selection.provider
+      : 'all'
+  const update = (change: Partial<typeof selection>) => {
+    const next = { ...selection, ...change }
+    setSelection(next)
+    onFiltersChange?.(next)
+  }
   const group = items
-    .filter((s) => (s.addonKey ?? s.addonName ?? '') === provider)
+    .filter((s) => provider === 'all' || (s.addonKey ?? s.addonName ?? 'unknown') === provider)
     .map((s) => ({ stream: s, ...sourceInfo(s) }))
   const options = (values: string[]) =>
     [
@@ -166,7 +179,9 @@ export function Sources({
   if (size === 'asc' || size === 'desc')
     visible.sort((a, b) =>
       a.bytes === null
-        ? 1
+        ? b.bytes === null
+          ? 0
+          : 1
         : b.bytes === null
           ? -1
           : (a.bytes - b.bytes) * (size === 'asc' ? 1 : -1),
@@ -174,21 +189,20 @@ export function Sources({
   return (
     <div className="sources">
       <div className="chips source-addons" aria-label={t('Addons')}>
-        {providers.map(([id, name]) => (
+        {[['all', t('Tous')], ...providers].map(([id, name]) => (
           <button
             key={id}
             aria-pressed={provider === id}
             className={provider === id ? 'selected' : ''}
             onClick={() => {
-              setProvider(id)
-              setQuality('all')
-              setFormat('all')
-              setSize('all')
+              update({ provider: id })
             }}
           >
             {name}
             <span className="source-count">
-              {items.filter((s) => (s.addonKey ?? s.addonName ?? '') === id).length}
+              {id === 'all'
+                ? items.length
+                : items.filter((s) => (s.addonKey ?? s.addonName ?? 'unknown') === id).length}
             </span>
           </button>
         ))}
@@ -198,8 +212,11 @@ export function Sources({
           separateLabel
           label={t('Qualité')}
           value={quality}
-          options={options(group.map((s) => s.quality))}
-          onChange={setQuality}
+          options={options([
+            ...group.map((s) => s.quality),
+            ...(quality === 'all' ? [] : [quality === 'unknown' ? '' : quality]),
+          ])}
+          onChange={(quality) => update({ quality })}
         />
         <Choice
           separateLabel
@@ -214,14 +231,17 @@ export function Sources({
             ['desc', t('Décroissante')],
             ['unknown', t('Non précisé')],
           ]}
-          onChange={setSize}
+          onChange={(size) => update({ size })}
         />
         <Choice
           separateLabel
           label={t('Type')}
           value={format}
-          options={options(group.map((s) => s.format))}
-          onChange={setFormat}
+          options={options([
+            ...group.map((s) => s.format),
+            ...(format === 'all' ? [] : [format === 'unknown' ? '' : format]),
+          ])}
+          onChange={(format) => update({ format })}
         />
       </div>
       <div className="source-results" aria-live="polite">
@@ -261,7 +281,19 @@ export function Sources({
             )}
           </article>
         ))}
-        {!visible.length && <p className="muted">{t('Aucune source pour ces filtres.')}</p>}
+        {!visible.length && (
+          <div>
+            <p className="muted">{t('Aucune source pour ces filtres.')}</p>
+            <button
+              className="secondary"
+              onClick={() =>
+                update({ provider: 'all', quality: 'all', format: 'all', size: 'all' })
+              }
+            >
+              {t('Réinitialiser les filtres')}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

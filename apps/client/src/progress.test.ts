@@ -3,6 +3,44 @@ import { createState, switchProfile, snapshotState } from './preferences'
 import { recordProgress, resumePosition, isWatched, mergeNativeProgress } from './progress'
 const movie = { id: 'tt1', type: 'movie', name: 'Film' }
 describe('playback history', () => {
+  it('retains episode artwork and numbering after a restart or source change', () => {
+    const meta = {
+      id: 'series',
+      type: 'series',
+      name: 'Series',
+      videos: [
+        { id: 's1e1', title: 'First', episode: 1, season: 1 },
+        {
+          id: 's2e3',
+          title: 'Third',
+          episode: 3,
+          season: 2,
+          thumbnail: 'https://example.org/episode.jpg',
+        },
+      ],
+    }
+    let items = recordProgress([], meta, 's2e3', 42, 1400, 1)
+    items = JSON.parse(JSON.stringify(items))
+    items = recordProgress(
+      items,
+      { id: 'series', type: 'series', name: 'Series' },
+      's2e3',
+      60,
+      1400,
+      2,
+    )
+    expect(items[0]).toMatchObject({
+      episode: 3,
+      season: 2,
+      seasonCount: 2,
+      episodeThumbnail: 'https://example.org/episode.jpg',
+      position: 60,
+    })
+    const next = recordProgress(items, meta, 's1e1', 30, 1400, 3)
+    expect(next[0].episode).toBe(1)
+    expect(next[0].episodeThumbnail).toBeUndefined()
+  })
+
   it('resumes by content identity and isolates different types and episodes', () => {
     let items = recordProgress([], movie, 'tt1', 135, 7200, 1)
     items = recordProgress(items, { ...movie, type: 'series' }, 'tt1', 45, 3600, 2)

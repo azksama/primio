@@ -210,9 +210,9 @@ html.desktop,
 }
 .desktop .hero {
   margin-inline: 40px;
-  height: clamp(480px, 58vh, 700px);
-  min-height: 460px;
-  max-height: 700px;
+  height: clamp(336px, 40.6vh, 490px);
+  min-height: 322px;
+  max-height: 490px;
 }
 .desktop .poster-rail {
   grid-auto-columns: clamp(160px, 12.5vw, 245px);

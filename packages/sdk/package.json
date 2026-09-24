@@ -4,9 +4,18 @@
   "type": "module",
   "license": "MIT",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
-  "files": ["dist/index.js", "dist/index.d.ts", "examples", "README.md"],
+  "files": [
+    "dist/index.js",
+    "dist/index.d.ts",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run src",
@@ -18,5 +27,10 @@
   "devDependencies": {
     "typescript": "~5.9.3",
     "vitest": "^4.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/azksama/primio.git",
+    "directory": "packages/sdk"
   }
 }

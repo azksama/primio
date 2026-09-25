@@ -17,6 +17,7 @@ import java.util.Locale
 import kotlin.math.*
 
 class PlayerActivity:Activity(),SurfaceHolder.Callback {
+ companion object {private var active:java.lang.ref.WeakReference<PlayerActivity>?=null}
  private external fun nativeCreate(surface:Surface,context:Context,options:String):Long
  private external fun nativeCommand(handle:Long,command:String)
  private external fun nativeState(handle:Long):String
@@ -72,6 +73,9 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
  private fun button(s:String,description:String=s,action:()->Unit)=PrimioStyle.button(this,s,description){action();showControls()}
  override fun onCreate(savedInstanceState:Bundle?) {
   super.onCreate(savedInstanceState)
+  active?.get()?.let{previous->previous.handler.removeCallbacksAndMessages(null);previous.emit(true);previous.release();previous.finish()}
+  active=java.lang.ref.WeakReference(this)
+  if(Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT){if(sheet!=null){sheet?.dismiss();sheet=null}else leavePlayer()}
   window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
   requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
   window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
@@ -90,7 +94,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   val gestureLayer=View(this);root.addView(gestureLayer,FrameLayout.LayoutParams(-1,-1));installGestures(gestureLayer)
   overlay=FrameLayout(this);root.addView(overlay,FrameLayout.LayoutParams(-1,-1))
   val top=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL;setPadding(dp(24),dp(14),dp(24),dp(8));background=GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,intArrayOf(0xbb000000.toInt(),Color.TRANSPARENT))}
-  top.addView(PrimioIconButton(this,"back",tr("Retour")){finish()},LinearLayout.LayoutParams(dp(48),dp(48)))
+  top.addView(PrimioIconButton(this,"back",tr("Retour")){leavePlayer()},LinearLayout.LayoutParams(dp(48),dp(48)))
   top.addView(text(options.optString("title","Primio"),24f).apply{typeface=android.graphics.Typeface.createFromAsset(assets,"fonts/cormorant-garamond.ttf");setPadding(dp(16),0,dp(12),0);maxLines=2},LinearLayout.LayoutParams(0,-2,1f))
   if((options.optJSONArray("episodes")?.length()?:0)>0)top.addView(button(tr("Épisodes"),tr("Choisir un épisode")){episodes()})
   overlay.addView(top,FrameLayout.LayoutParams(-1,dp(80),Gravity.TOP))
@@ -172,6 +176,8 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   if(loaded&&hasNext&&duration>0&&((duration-position).coerceAtLeast(0.0)<=30.0||currentSegment?.optString("kind")=="outro"))nextEpisodeOffered=true
   nextEpisodeButton.visibility=if(nextEpisodeOffered&&!reportedError&&!last.optBoolean("buffering"))View.VISIBLE else View.GONE
   if(nextEpisodeButton.visibility==View.VISIBLE)skipButton.visibility=View.GONE
+  if(isInPictureInPictureMode){overlay.visibility=View.GONE;skipButton.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;gestureLabel.visibility=View.GONE}
+  if(Build.VERSION.SDK_INT>=31)setPictureInPictureParams(pipParams())
   pause.symbol=if(last.optBoolean("paused"))"play" else "pause"
   // mpv's disk cache is append-only. Stop disk writes with headroom for packets in flight.
   if(cacheActive&&(last.optLong("cacheBytes")>=cacheLimit*9/10||cacheDir.usableSpace<256_000_000L)){command("set","cache-on-disk","no");cacheActive=false}
@@ -179,7 +185,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   if(SystemClock.elapsedRealtime()>=nextProgress){emit(false);nextProgress=SystemClock.elapsedRealtime()+5000}
  }catch(e:Exception){loadingLabel.text="Connexion au lecteur…"}}
  private fun format(seconds:Double):String {val n=seconds.toInt().coerceAtLeast(0);return if(n>=3600)String.format(Locale.ROOT,"%d:%02d:%02d",n/3600,n/60%60,n%60)else String.format(Locale.ROOT,"%02d:%02d",n/60,n%60)}
- private fun showControls(){if(!loaded||last.optBoolean("buffering")||reportedError)return;overlay.visibility=View.VISIBLE;handler.removeCallbacks(hide);handler.postDelayed(hide,4500)}
+ private fun showControls(){if(isInPictureInPictureMode||!loaded||last.optBoolean("buffering")||reportedError)return;overlay.visibility=View.VISIBLE;handler.removeCallbacks(hide);handler.postDelayed(hide,4500)}
  private fun emit(closed:Boolean){
   val payload=JSONObject().put("context",options.optJSONObject("context")?:JSONObject()).put("position",position).put("duration",duration).put("updatedAt",System.currentTimeMillis()).put("closed",closed).put("requestedVideoId",requestedVideoId).put("actionId",actionId).put("autoPlay",autoPlay)
   if(duration>0&&position.isFinite())try{PrimioStore.write(this,"playerProgress",payload.toString())}catch(e:Exception){android.util.Log.e("PrimioPlayer","Progress persistence failed",e)}
@@ -288,7 +294,31 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   choices("Fond","subtitleBackground",listOf(false to tr("Aucun"),true to tr("Noir")))
   dialog.setOnDismissListener{if(sheet===dialog)sheet=null;showControls()};sheet=dialog;dialog.show()
  }
- override fun onPause(){resumeAfterPause=handle!=0L&&!last.optBoolean("paused");command("set","pause","yes");emit(false);super.onPause()}
+ private fun unfinished():Boolean {
+  if(!loaded||reportedError||duration<=0||position/duration>=0.99||last.optBoolean("eof"))return false
+  val segments=options.optJSONArray("skipSegments")?:JSONArray()
+  return (0 until segments.length()).none{val s=segments.getJSONObject(it);val start=s.optDouble("start",-1.0);val end=s.optDouble("end",-1.0);val reference=s.optDouble("episodeLength",0.0);s.optString("kind")=="outro"&&start>=0&&end>start&&end<=duration&&position>=start&&(reference==0.0||abs(duration-reference)<max(10.0,duration*0.03))}
+ }
+ private fun pipParams():android.app.PictureInPictureParams {
+  val builder=android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16,9))
+  if(Build.VERSION.SDK_INT>=31)builder.setAutoEnterEnabled(unfinished()).setSeamlessResizeEnabled(true)
+  return builder.build()
+ }
+ private fun enterPip():Boolean {
+  if(!unfinished()||!packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE))return false
+  return try{sheet?.dismiss();emit(false);enterPictureInPictureMode(pipParams())}catch(e:Exception){false}
+ }
+ private fun leavePlayer(){if(!enterPip())finish()}
+ @Deprecated("Deprecated in Java") override fun onBackPressed(){if(sheet!=null){sheet?.dismiss();sheet=null}else leavePlayer()}
+ override fun onUserLeaveHint(){super.onUserLeaveHint();if(Build.VERSION.SDK_INT<31)enterPip()}
+ override fun onPictureInPictureModeChanged(inPip:Boolean,configuration:android.content.res.Configuration){
+  super.onPictureInPictureModeChanged(inPip,configuration)
+  if(inPip){overlay.visibility=View.GONE;skipButton.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;gestureLabel.visibility=View.GONE}else{if(lifecycleStopped){finish()}else showControls()}
+ }
+ private var lifecycleStopped=false
+ override fun onStart(){super.onStart();lifecycleStopped=false}
+ override fun onStop(){super.onStop();lifecycleStopped=true;if(isInPictureInPictureMode){command("set","pause","yes");emit(false)}}
+ override fun onPause(){if(isInPictureInPictureMode){emit(false);super.onPause();return};resumeAfterPause=handle!=0L&&!last.optBoolean("paused");command("set","pause","yes");emit(false);super.onPause()}
  override fun onResume(){super.onResume();if(resumeAfterPause){command("set","pause","no");resumeAfterPause=false}}
- override fun onDestroy(){if(duration>0&&position/duration>=0.95)DownloadStore(this).markWatched(options.optString("downloadId"));DownloadStore.playingId="";breathing?.cancel();handler.removeCallbacksAndMessages(null);sheet?.dismiss();emit(true);release();if(options.optBoolean("deleteWatched")&&options.optString("downloadId").isNotEmpty()&&duration>0&&position/duration>=0.95)DownloadStore(this).remove(options.getString("downloadId"));if(::focus.isInitialized)audio.abandonAudioFocusRequest(focus);super.onDestroy()}
+ override fun onDestroy(){if(duration>0&&position/duration>=0.95)DownloadStore(this).markWatched(options.optString("downloadId"));if(active?.get()===this){active=null;DownloadStore.playingId=""};breathing?.cancel();handler.removeCallbacksAndMessages(null);sheet?.dismiss();emit(true);release();if(options.optBoolean("deleteWatched")&&options.optString("downloadId").isNotEmpty()&&duration>0&&position/duration>=0.95)DownloadStore(this).remove(options.getString("downloadId"));if(::focus.isInitialized)audio.abandonAudioFocusRequest(focus);super.onDestroy()}
 }

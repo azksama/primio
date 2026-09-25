@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cleanDescription, trailerUrl } from './content'
+import { cleanDescription, trailerUrl, trailerEmbedUrl } from './content'
 import { seasonUrl, seasonOptions } from './seasonal'
 import { historyStats, periodKey } from './history'
 describe('content presentation', () => {
@@ -35,6 +35,21 @@ describe('content presentation', () => {
     expect(url.searchParams.get('page[offset]')).toBe('20')
     expect(() => seasonUrl('invalid', '', 0)).toThrow()
     expect(seasonOptions(new Date(2026, 8, 23)).some(([id]) => id === '2022-fall')).toBe(true)
+  })
+  it('embeds supported trailers without accepting a lookalike provider domain', () => {
+    expect(trailerEmbedUrl('https://youtu.be/abcdefghijk', 'https://tauri.localhost')).toContain(
+      '/embed/abcdefghijk?',
+    )
+    expect(
+      trailerEmbedUrl('https://www.youtube.com/watch?v=abcdefghijk', 'https://tauri.localhost'),
+    ).toContain('widget_referrer=')
+    expect(
+      trailerEmbedUrl(
+        'https://youtube.com.attacker.test/watch?v=abcdefghijk',
+        'https://tauri.localhost',
+      ),
+    ).toBe('')
+    expect(trailerEmbedUrl('javascript:alert(1)', 'https://tauri.localhost')).toBe('')
   })
   it('groups local dates without moving a late-night viewing to another day', () => {
     const stamp = new Date(2026, 8, 23, 23, 59).getTime()

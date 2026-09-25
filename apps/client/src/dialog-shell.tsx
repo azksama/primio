@@ -8,10 +8,12 @@ export function DialogShell({
   children,
   title,
   onClose,
+  className,
 }: {
   children: ReactNode
   title: string
   onClose: () => void
+  className?: string
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   const close = useRef(onClose)
@@ -63,6 +65,7 @@ export function DialogShell({
   const dialog = (
     <dialog
       ref={ref}
+      className={className}
       open={isDesktop() || undefined}
       aria-label={title}
       aria-modal="true"

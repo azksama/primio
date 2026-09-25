@@ -120,8 +120,13 @@ html.desktop,
   z-index: 20;
 }
 .desktop .bottom-nav button {
+  border-radius: 14px;
   min-width: 0;
   padding: 7px 20px;
+}
+.desktop .bottom-nav button:hover,
+.desktop .bottom-nav button:focus-visible {
+  background: #ffffff12;
 }
 .desktop .bottom-nav span {
   font-size: 12px;

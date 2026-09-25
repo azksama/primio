@@ -217,6 +217,7 @@ pub fn publish(
         event["actionId"] = json!(format!("windows-{}", desktop::now()));
     }
     let _ = desktop::write(app, "playerProgress", &event.to_string());
+    crate::playback_sync::publish(app, &event);
     let _ = app.emit("player-progress", event);
 }
 

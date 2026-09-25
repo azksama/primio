@@ -1,3 +1,9 @@
+import {
+  EmailVerification,
+  type VerificationChallenge,
+  type Authenticated,
+} from './email-verification'
+import { usePlaybackSync, mergePlaybackState } from './playback-sync'
 import { ContinueCard } from './continue-card'
 import { defaultSort } from './catalog-sort'
 import { UpdatePanel } from './update-panel'
@@ -7,6 +13,7 @@ import { PasswordField } from './password-field'
 import { CopyTitle } from './copy-title'
 import { DialogShell } from './dialog-shell'
 import { trailerUrl } from './content'
+import { TrailerPlayer } from './trailer-player'
 import { ViewingHistory } from './history'
 import { SeasonalAnime, seasonOptions, currentSeason } from './seasonal'
 import { Sources } from './sources'
@@ -155,6 +162,8 @@ function Empty({
   )
 }
 export default function App() {
+  const [trailer, setTrailer] = useState<{ url: string; name: string } | null>(null)
+  const [playbackSyncPaused, setPlaybackSyncPaused] = useState(false)
   const [profileGate, setProfileGate] = useState(false)
   const [startupProfile, setStartupProfile] = useState('ask')
   const startupChecked = useRef('')
@@ -223,6 +232,7 @@ export default function App() {
     token ? email : 'local',
   )
   const currentPlayback = useRef<Playback | null>(null)
+  usePlaybackSync(state, setState, token, ready && !conflict && !playbackSyncPaused)
   currentPlayback.current = playback
   const notify = (text: string) => {
     setToast(text)
@@ -831,37 +841,65 @@ export default function App() {
     setAddonInput('')
     notify(a.manifest.name + t(' installé'))
   }
+  const [verification, setVerification] = useState<
+    (VerificationChallenge & { register: boolean }) | null
+  >(null)
+  async function finishAuthentication(result: Authenticated, address: string, signup: boolean) {
+    setPlaybackSyncPaused(true)
+    setToken(result.token)
+    setEmail(address)
+    setAuthOpen(false)
+    setVerification(null)
+    const next = signup
+      ? {
+          ...state,
+          profiles: state.profiles.map((p) =>
+            p.id === state.activeProfileId ? { ...p, name: result.user.username ?? p.name } : p,
+          ),
+        }
+      : state
+    if (signup) setState(next)
+    try {
+      const remote = await api<{ version: number; state: UserState | null }>(
+        '/account/sync',
+        'GET',
+        undefined,
+        result.token,
+      )
+      setSyncVersion(remote.version)
+      if (remote.state) setConflict({ ...remote, state: remote.state })
+      else {
+        const saved = await api<{ version: number }>(
+          '/account/sync',
+          'PUT',
+          { version: remote.version, state: snapshotState(next) },
+          result.token,
+        )
+        setSyncVersion(saved.version)
+      }
+      notify(signup ? t('Compte créé') : t('Connexion réussie'))
+    } finally {
+      setPlaybackSyncPaused(false)
+    }
+  }
   const nativeAuthActive = useRef(false)
   useEffect(() => {
     if (!authOpen || !isAndroid() || nativeAuthActive.current) return
     nativeAuthActive.current = true
-    void invoke<{
-      cancelled?: boolean
-      token: string
-      email: string
-      register: boolean
-      user: { username?: string }
-    }>('native_auth', { register })
+    void invoke<
+      (Authenticated | VerificationChallenge) & {
+        cancelled?: boolean
+        email: string
+        register: boolean
+      }
+    >('native_auth', { register })
       .then(async (result) => {
         if (result.cancelled) return
-        setToken(result.token)
-        setEmail(result.email)
-        if (result.register)
-          setState((s) => ({
-            ...s,
-            profiles: s.profiles.map((p) =>
-              p.id === s.activeProfileId ? { ...p, name: result.user.username ?? p.name } : p,
-            ),
-          }))
-        notify(result.register ? t('Compte créé') : t('Connexion réussie'))
-        const remote = await api<{ version: number; state: UserState | null }>(
-          '/account/sync',
-          'GET',
-          undefined,
-          result.token,
-        )
-        setSyncVersion(remote.version)
-        if (remote.state) setConflict({ ...remote, state: remote.state })
+        if ('verificationRequired' in result) {
+          setVerification(result)
+          return
+        }
+        await finishAuthentication(result, result.email, result.register)
       })
       .catch(fail)
       .finally(() => {
@@ -879,10 +917,11 @@ export default function App() {
         password = String(f.get('password'))
       if (register && password !== f.get('passwordConfirmation'))
         throw Error(t('Les mots de passe ne correspondent pas.'))
-      const result = await api<{ token: string; user: { username?: string } }>(
+      const result = await api<Authenticated | VerificationChallenge>(
         '/auth/' + (register ? 'signup' : 'login'),
         'POST',
         {
+          emailVerification: true,
           email,
           password,
           ...(register
@@ -896,25 +935,10 @@ export default function App() {
             : {}),
         },
       )
-      if (register)
-        setState((s) => ({
-          ...s,
-          profiles: s.profiles.map((p) =>
-            p.id === s.activeProfileId ? { ...p, name: result.user.username ?? p.name } : p,
-          ),
-        }))
-      setToken(result.token)
-      setEmail(email)
-      setAuthOpen(false)
-      const remote = await api<{ version: number; state: UserState | null }>(
-        '/account/sync',
-        'GET',
-        undefined,
-        result.token,
-      )
-      setSyncVersion(remote.version)
-      if (remote.state) setConflict({ ...remote, state: remote.state })
-      else notify(register ? t('Compte créé') : t('Connexion réussie'))
+      if ('verificationRequired' in result) {
+        setAuthOpen(false)
+        setVerification({ ...result, register })
+      } else await finishAuthentication(result, email, register)
     } catch (e) {
       fail(e)
     } finally {
@@ -939,12 +963,14 @@ export default function App() {
         setConflict({ ...remote, state: remote.state })
         return
       }
+      const merged = mergePlaybackState(state, remote.state?.profiles ?? [])
       const result = await api<{ version: number }>(
         '/account/sync',
         'PUT',
-        { version: syncVersion, state: snapshotState(state) },
+        { version: syncVersion, state: snapshotState(merged) },
         token,
       )
+      setState((current) => mergePlaybackState(current, merged.profiles))
       setSyncVersion(result.version)
       notify(t('Bibliothèque synchronisée'))
     } catch (e) {
@@ -1118,7 +1144,7 @@ export default function App() {
                     <button
                       className="icon glass"
                       aria-label={t('Bande-annonce')}
-                      onClick={() => openLink(trailerUrl(selected)).catch(fail)}
+                      onClick={() => setTrailer({ url: trailerUrl(selected), name: selected.name })}
                     >
                       <Clapperboard />
                     </button>
@@ -2359,6 +2385,16 @@ export default function App() {
             onFocus={(e) => e.target.select()}
           />
         </Dialog>
+      )}
+      {trailer && <TrailerPlayer {...trailer} onClose={() => setTrailer(null)} />}
+      {verification && (
+        <EmailVerification
+          initial={verification}
+          onClose={() => setVerification(null)}
+          onVerified={(result) =>
+            finishAuthentication(result, verification.email, verification.register)
+          }
+        />
       )}
       {authOpen && !isAndroid() && (
         <Dialog

@@ -26,6 +26,7 @@ export function ImportPanel({
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
   const [preview, setPreview] = useState<ImportPreview | null>(null),
+    [selectedAddons, setSelectedAddons] = useState<string[]>([]),
     [addons, setAddons] = useState(true),
     [library, setLibrary] = useState(true)
   const load = async (action: () => Promise<ImportPreview>) => {
@@ -34,7 +35,9 @@ export function ImportPanel({
     setError('')
     setPreview(null)
     try {
-      setPreview(await action())
+      const result = await action()
+      setPreview(result)
+      setSelectedAddons(result.addons.map((addon) => addon.url))
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -138,6 +141,23 @@ export function ImportPanel({
           {!!preview.skipped && (
             <p className="muted">{t('{n} éléments non reconnus', { n: preview.skipped })}</p>
           )}
+          {addons &&
+            preview.addons.map((addon) => (
+              <label className="import-addon" key={addon.url}>
+                <input
+                  type="checkbox"
+                  checked={selectedAddons.includes(addon.url)}
+                  onChange={(e) =>
+                    setSelectedAddons((selected) =>
+                      e.target.checked
+                        ? [...selected, addon.url]
+                        : selected.filter((url) => url !== addon.url),
+                    )
+                  }
+                />
+                <span>{addon.name || new URL(addon.url).hostname}</span>
+              </label>
+            ))}
           <ul>
             {preview.library.slice(0, 8).map((m) => (
               <li key={m.type + m.id}>{m.name}</li>
@@ -145,10 +165,20 @@ export function ImportPanel({
           </ul>
           <button
             className="primary"
-            disabled={!((library && preview.library.length) || (addons && preview.addons.length))}
+            disabled={!((library && preview.library.length) || (addons && selectedAddons.length))}
             onClick={() => {
               try {
-                setState(mergeImport(state, preview, addons, library))
+                setState((current) =>
+                  mergeImport(
+                    current,
+                    {
+                      ...preview,
+                      addons: preview.addons.filter((addon) => selectedAddons.includes(addon.url)),
+                    },
+                    addons,
+                    library,
+                  ),
+                )
                 onDone()
               } catch (e) {
                 setError(e instanceof Error ? e.message : String(e))

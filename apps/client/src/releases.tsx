@@ -387,6 +387,10 @@ export function NotificationCenter({
             className="release-item glass"
             onClick={() => {
               releases.markRead('update:' + releases.update!.version)
+              if (isTauri()) {
+                window.dispatchEvent(new Event('primio-check-update'))
+                return
+              }
               void openLink(releases.update!.url).catch(() =>
                 setError(t('Impossible d’ouvrir le lien.')),
               )

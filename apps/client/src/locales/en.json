@@ -534,5 +534,17 @@
   "Nom": "Name",
   "Réinitialiser les filtres": "Reset filters",
   "Croissant": "Ascending",
-  "Décroissant": "Descending"
+  "Décroissant": "Descending",
+  "Vérifier votre adresse e-mail": "Verify your email address",
+  "Vérifiez votre boîte mail": "Check your inbox",
+  "Saisissez le code à 6 chiffres envoyé à": "Enter the 6-digit code sent to",
+  "Code de vérification": "Verification code",
+  "Le code expire dans 10 minutes. Pensez à vérifier vos courriers indésirables.": "The code expires in 10 minutes. Remember to check your spam folder.",
+  "Confirmer mon adresse": "Confirm my email",
+  "Renvoyer le code": "Resend code",
+  "Agrandir": "Expand",
+  "Code incorrect ou expiré. Demandez un nouveau code.": "Incorrect or expired code. Request a new code.",
+  "Reconnectez-vous pour recevoir un code.": "Sign in again to receive a code.",
+  "L’envoi du code est indisponible. Réessayez dans un instant.": "The code could not be sent. Please try again shortly.",
+  "Impossible de lire cette bande-annonce.": "Unable to play this trailer."
 }

@@ -533,5 +533,17 @@
   "Nom": "名稱",
   "Réinitialiser les filtres": "重設篩選",
   "Croissant": "升冪",
-  "Décroissant": "降冪"
+  "Décroissant": "降冪",
+  "Vérifier votre adresse e-mail": "驗證電子郵件地址",
+  "Vérifiez votre boîte mail": "請查看收件匣",
+  "Saisissez le code à 6 chiffres envoyé à": "輸入傳送至以下地址的6位驗證碼：",
+  "Code de vérification": "驗證碼",
+  "Le code expire dans 10 minutes. Pensez à vérifier vos courriers indésirables.": "驗證碼將在10分鐘後過期。請同時檢查垃圾郵件資料夾。",
+  "Confirmer mon adresse": "確認電子郵件",
+  "Renvoyer le code": "重新傳送驗證碼",
+  "Agrandir": "放大",
+  "Code incorrect ou expiré. Demandez un nouveau code.": "驗證碼錯誤或已過期。請取得新驗證碼。",
+  "Reconnectez-vous pour recevoir un code.": "請重新登入以接收驗證碼。",
+  "L’envoi du code est indisponible. Réessayez dans un instant.": "無法傳送驗證碼，請稍後重試。",
+  "Impossible de lire cette bande-annonce.": "無法播放此預告片。"
 }

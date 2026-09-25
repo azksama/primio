@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 const require = createRequire(new URL('../apps/client/package.json', import.meta.url))
 const { chromium, expect } = require('@playwright/test')
 const browser = await chromium.launch({ headless: true })
-const output = new URL('../tmp/validation-v028/', import.meta.url).pathname.replace(
+const output = new URL('../tmp/validation-v029/', import.meta.url).pathname.replace(
   /^\/([A-Z]:)/,
   '$1',
 )
@@ -38,7 +38,8 @@ const metas = Array.from({ length: 18 }, (_, i) => ({
           {
             id: 'qa' + i + ':1:1',
             title: 'New episode',
-            thumbnail: '/avatars/07.jpg',
+            thumbnail:
+              i === 1 ? '/missing-episode-image.jpg' : i === 2 ? undefined : '/avatars/07.jpg',
             season: 1,
             episode: 1,
             released: new Date(now - 1000).toISOString(),
@@ -183,10 +184,16 @@ await page.addInitScript(
   { metas, now },
 )
 await page.goto(process.argv[2] ?? 'http://127.0.0.1:1420')
+await expect(
+  page.locator('.continue-card').filter({ hasText: 'QA Series 1' }).locator('img'),
+).toHaveAttribute('src', '/avatars/02.jpg')
+await expect(
+  page.locator('.continue-card').filter({ hasText: 'QA Anime 2' }).locator('img'),
+).toHaveAttribute('src', '/avatars/03.jpg')
 const nav = page.getByRole('navigation')
 await expect(nav).toBeVisible()
 await expect(page.locator('.continue-card')).toHaveCount(10)
-await expect(page.locator('.continue-card').nth(1).locator('img')).toHaveAttribute(
+await expect(page.locator('.continue-card').nth(4).locator('img')).toHaveAttribute(
   'src',
   '/avatars/07.jpg',
 )
@@ -206,8 +213,15 @@ for (const [width, height] of [
   [1280, 800],
 ]) {
   await page.setViewportSize({ width, height })
-  await page.locator('.continue-card strong').nth(2).evaluate(el => { el.textContent = 'A long title spanning at least two lines on phones' })
-  const barTops = await page.locator('.continue-card progress').evaluateAll(nodes => nodes.map(el => el.getBoundingClientRect().top))
+  await page
+    .locator('.continue-card strong')
+    .nth(2)
+    .evaluate((el) => {
+      el.textContent = 'A long title spanning at least two lines on phones'
+    })
+  const barTops = await page
+    .locator('.continue-card progress')
+    .evaluateAll((nodes) => nodes.map((el) => el.getBoundingClientRect().top))
   expect(Math.max(...barTops) - Math.min(...barTops)).toBeLessThan(1)
   const head = await page.locator('.hero-head').boundingBox()
   const copy = await page.locator('.hero-copy').boundingBox()
@@ -333,6 +347,12 @@ await expect(page.locator('.description .synopsis')).toHaveText(
   'Repeated provider synopsis with a sufficiently long unique paragraph.',
 )
 await expect(page.getByRole('button', { name: 'Trailer', exact: true })).toBeVisible()
+await page.route('https://www.youtube-nocookie.com/embed/**', route => route.fulfill({contentType:'text/html', body:'<body style="background:#111;color:white">Trailer provider fixture</body>'}))
+await page.getByRole('button', { name: 'Trailer', exact: true }).click()
+await expect(page.locator('.trailer-dialog iframe')).toHaveAttribute('src', /youtube-nocookie.com\/embed\/abcdefghijk/)
+await page.screenshot({ path: output + '/trailer-dialog-phone.png' })
+await page.locator('.trailer-dialog').getByRole('button', { name: 'Back', exact:true }).click()
+await expect(page.locator('.trailer-dialog iframe')).toHaveCount(0)
 await expect(page.locator('.episode-card').nth(1)).toBeEnabled()
 await expect(page.locator('.episode-synopsis')).toBeHidden()
 await page.getByRole('button', { name: 'Synopsis · Next episode', exact: true }).click()

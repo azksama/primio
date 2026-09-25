@@ -533,5 +533,17 @@
   "Nom": "Nombre",
   "Réinitialiser les filtres": "Restablecer filtros",
   "Croissant": "Ascendente",
-  "Décroissant": "Descendente"
+  "Décroissant": "Descendente",
+  "Vérifier votre adresse e-mail": "Verificar tu correo electrónico",
+  "Vérifiez votre boîte mail": "Revisa tu bandeja de entrada",
+  "Saisissez le code à 6 chiffres envoyé à": "Introduce el código de 6 dígitos enviado a",
+  "Code de vérification": "Código de verificación",
+  "Le code expire dans 10 minutes. Pensez à vérifier vos courriers indésirables.": "El código caduca en 10 minutos. Revisa también la carpeta de spam.",
+  "Confirmer mon adresse": "Confirmar mi correo",
+  "Renvoyer le code": "Reenviar código",
+  "Agrandir": "Ampliar",
+  "Code incorrect ou expiré. Demandez un nouveau code.": "Código incorrecto o caducado. Solicita uno nuevo.",
+  "Reconnectez-vous pour recevoir un code.": "Inicia sesión de nuevo para recibir un código.",
+  "L’envoi du code est indisponible. Réessayez dans un instant.": "No se pudo enviar el código. Inténtalo de nuevo en unos instantes.",
+  "Impossible de lire cette bande-annonce.": "No se puede reproducir este tráiler."
 }

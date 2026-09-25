@@ -2625,6 +2625,11 @@ main {
     width: 56px;
     min-width: 0;
     padding: 10px 0;
+    border-radius: 14px;
+  }
+  html:not(.desktop) .bottom-nav button:hover,
+  html:not(.desktop) .bottom-nav button:focus-visible {
+    background: #ffffff12;
   }
   html:not(.desktop) .bottom-nav span {
     font-size: 9px;
@@ -2750,4 +2755,83 @@ main {
 .sort-direction svg {
   width: 16px;
   height: 16px;
+}
+
+.import-addon {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  overflow-wrap: anywhere;
+}
+.import-addon input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+.verification-intro {
+  text-align: center;
+  padding: 12px 0;
+}
+.verification-intro > svg {
+  width: 40px;
+  height: 40px;
+  color: var(--accent);
+}
+.verification-code {
+  text-align: center;
+  font-size: 28px;
+  letter-spacing: 0.3em;
+  font-variant-numeric: tabular-nums;
+}
+
+dialog.trailer-dialog {
+  width: min(1000px, calc(100vw - 32px));
+  max-width: none;
+  padding: 20px;
+  overflow: auto;
+}
+.trailer-heading {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.trailer-heading > div {
+  min-width: 0;
+}
+.trailer-heading h2 {
+  margin: 4px 0 0;
+  font-size: 22px;
+  overflow-wrap: anywhere;
+}
+.trailer-heading small {
+  color: var(--muted);
+}
+.trailer-dialog iframe,
+.trailer-dialog video {
+  display: block;
+  width: 100%;
+  min-height: 200px;
+  max-height: calc(100dvh - 150px);
+  aspect-ratio: 16 / 9;
+  border: 0;
+  background: #000;
+}
+@media (orientation: landscape) and (max-height: 550px) {
+  dialog.trailer-dialog {
+    padding: 12px;
+  }
+  .trailer-heading {
+    margin-bottom: 8px;
+  }
+  .trailer-heading h2 {
+    font-size: 16px;
+  }
+  .trailer-dialog iframe,
+  .trailer-dialog video {
+    max-height: calc(100dvh - 110px);
+  }
 }

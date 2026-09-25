@@ -37,7 +37,7 @@ try {
  $result=& $adb -s $DeviceSerial shell am instrument -w -r -e class fr.azks.primio.PlayerFlowTest fr.azks.primio.test/androidx.test.runner.AndroidJUnitRunner
  $result | Set-Content (Join-Path $output 'instrumentation.txt') -Encoding utf8
  $result
- if(($result -join "`n") -notmatch 'OK \(9 tests\)'){throw 'Player instrumentation tests failed'}
+ if(($result -join "`n") -notmatch 'OK \(13 tests\)'){throw 'Player instrumentation tests failed'}
 } finally {
  & $adb -s $DeviceSerial shell rm -f /sdcard/Android/data/fr.azks.primio/files/validation.mp4 /sdcard/Android/data/fr.azks.primio/files/validation.mkv
 }

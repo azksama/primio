@@ -109,9 +109,12 @@ pub async fn fetch_json(raw: &str) -> Result<Value, String> {
 pub async fn api_request(
     path: &str,
     method: &str,
-    body: Value,
+    mut body: Value,
     token: Option<String>,
 ) -> Result<Value, ApiError> {
+    if path == "/auth/signup" || path == "/auth/login" {
+        body["emailVerification"] = Value::Bool(true);
+    }
     let err = |message: &str, status| ApiError {
         message: message.into(),
         status,
@@ -123,6 +126,9 @@ pub async fn api_request(
         "/account/profile",
         "/account/logout",
         "/account/sync",
+        "/account/progress",
+        "/auth/verify-email",
+        "/auth/resend-code",
         "/account",
         "/app-release",
     ]

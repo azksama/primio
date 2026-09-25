@@ -28,3 +28,33 @@ export function trailerUrl(meta: Meta) {
   }
   return ''
 }
+
+export function trailerEmbedUrl(raw: string, origin: string) {
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== 'https:') return ''
+    const host = url.hostname.replace(/^www\./, '')
+    const id =
+      host === 'youtu.be'
+        ? url.pathname.slice(1)
+        : ['youtube.com', 'm.youtube.com', 'youtube-nocookie.com'].includes(host)
+          ? (url.searchParams.get('v') ??
+            url.pathname.match(/^\/(?:embed|shorts)\/([\w-]{11})/)?.[1])
+          : null
+    if (id && /^[\w-]{11}$/.test(id)) {
+      const params = new URLSearchParams({
+        autoplay: '1',
+        playsinline: '1',
+        rel: '0',
+        origin,
+        widget_referrer: 'https://fr.azks.primio',
+      })
+      return `https://www.youtube-nocookie.com/embed/${id}?${params}`
+    }
+    if (host === 'vimeo.com' && /^\/\d+$/.test(url.pathname))
+      return `https://player.vimeo.com/video${url.pathname}?autoplay=1`
+  } catch {
+    /* Invalid provider metadata. */
+  }
+  return ''
+}

@@ -133,19 +133,50 @@ local function render_panel(a)
         end end
     end
 end
+local pip=false
+local function unfinished()
+    local pos,duration=mp.get_property_number('time-pos',0),mp.get_property_number('duration',0)
+    if not loaded or duration<=0 or pos/duration>=0.99 or mp.get_property_native('eof-reached') then return false end
+    for _,s in ipairs(config.skipSegments or {}) do
+        if s.kind=='outro' and s.start>=0 and s['end']>s.start and s['end']<=duration and pos>=s.start and
+            (not s.episodeLength or s.episodeLength==0 or math.abs(duration-s.episodeLength)<math.max(10,duration*.03)) then return false end
+    end
+    return true
+end
+local function restore_player()
+    pip=false;mp.set_property_native('ontop',false);mp.set_property_native('fullscreen',true);last_move=mp.get_time()
+end
+local function enter_pip()
+    if pip or not unfinished() then return false end
+    pip=true;panel=nil;hide_logo();mp.set_property_native('fullscreen',false)
+    mp.set_property_native('window-minimized',false);mp.set_property_native('ontop',true)
+    mp.set_property('geometry','480x270-24-24');last_move=mp.get_time();return true
+end
+local function leave_player() if pip or not enter_pip() then mp.commandv('quit') end end
+mp.observe_property('focused','bool',function(_,focused)if focused==false then enter_pip()end end)
+mp.observe_property('window-minimized','bool',function(_,minimized)if minimized then enter_pip()end end)
+mp.add_forced_key_binding('MBTN_LEFT_DBL','primio-restore',restore_player)
 local function render()
     local rw,rh=mp.get_osd_size();if rw<=0 or rh<=0 then return end
-    scale=rh/720;width=rw/scale;height=720;hits={}
+    scale=pip and 1 or rh/720;width=rw/scale;height=pip and rh or 720;hits={}
     local a=assdraw.ass_new()
     local buffering=not loaded or mp.get_property_native('paused-for-cache',false)
-    mp.set_property_native('user-data/primio/ui',{loading=buffering,panel=panel or '',nextOffered=next_offer,fullscreen=mp.get_property_native('fullscreen')})
-    if buffering then loading(a)
+    mp.set_property_native('user-data/primio/ui',{loading=buffering,panel=panel or '',nextOffered=next_offer,fullscreen=mp.get_property_native('fullscreen'),pip=pip})
+    if pip then
+        hide_logo()
+        if mp.get_time()-last_move<3 then
+            button(a,24,24,90,52,'×',function()mp.commandv('quit')end)
+            button(a,width-210,24,186,52,tr('Expand','Agrandir'),restore_player)
+            button(a,width/2-36,height/2-36,72,72,'',function()mp.commandv('cycle','pause')end)
+            icon(a,width/2,height/2,mp.get_property_native('pause') and 'play' or 'pause')
+        end
+    elseif buffering then loading(a)
     else
         hide_logo()
         if panel then render_panel(a)
         elseif mp.get_time()-last_move<3 or mp.get_property_native('pause') then
             rect(a,0,0,width,110,0,'000000','95');rect(a,0,height-145,width,145,0,'000000','90')
-            button(a,24,24,48,48,'',function()mp.commandv('quit')end);icon(a,48,48,'back')
+            button(a,24,24,48,48,'',leave_player);icon(a,48,48,'back')
             label(a,92,48,shorten(config.title or mp.get_property('media-title','Primio'),math.floor((width-285)/17)),30,4,nil,'Cormorant Garamond Light')
             if #(config.episodes or {})>0 then button(a,width-168,24,144,48,tr('Episodes','Épisodes'),function()open('episodes')end)end
             button(a,width/2-160,height/2-30,90,60,'− '..(config.seekBackward or 15),function()mp.commandv('seek',-(config.seekBackward or 15),'relative')end)
@@ -161,7 +192,7 @@ local function render()
             button(a,width-200,height-54,172,40,tr('Audio · Subtitles','Audio · Sous-titres'),function()open('tracks')end)
         end
     end
-    if next_offer and not buffering and not panel then button(a,width-248,height-180,220,48,tr('Next episode','Épisode suivant'),function()next_offer=false;mp.commandv('script-message-to','primio','next')end) end
+    if next_offer and not buffering and not panel and not pip then button(a,width-248,height-180,220,48,tr('Next episode','Épisode suivant'),function()next_offer=false;mp.commandv('script-message-to','primio','next')end) end
     overlay.res_x=width;overlay.res_y=height;overlay.data=a.text;overlay:update()
 end
 mp.add_forced_key_binding('mouse_move','primio-move',function()last_move=mp.get_time()end)
@@ -170,7 +201,7 @@ mp.add_forced_key_binding('MBTN_LEFT','primio-click',function()
     for _,hit in ipairs(hits)do if mx>=hit.x and mx<=hit.x+hit.w and my>=hit.y and my<=hit.y+hit.h then hit.action(mx,my);last_move=mp.get_time();render();return end end
     if not panel then last_move=mp.get_time()end
 end)
-mp.add_forced_key_binding('ESC','primio-close',function()if panel then panel=nil else mp.commandv('quit')end end)
+mp.add_forced_key_binding('ESC','primio-close',function()if panel then panel=nil else leave_player()end end)
 mp.add_forced_key_binding('WHEEL_UP','primio-wheel-up',function()if panel then scroll=math.max(0,scroll-1)else mp.commandv('add','volume',5)end end)
 mp.add_forced_key_binding('WHEEL_DOWN','primio-wheel-down',function()if panel then scroll=scroll+1 else mp.commandv('add','volume',-5)end end)
 mp.add_key_binding('a','primio-tracks',function()open('tracks')end)

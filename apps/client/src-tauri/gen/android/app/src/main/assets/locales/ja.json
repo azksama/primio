@@ -533,5 +533,17 @@
   "Nom": "名前",
   "Réinitialiser les filtres": "フィルターをリセット",
   "Croissant": "昇順",
-  "Décroissant": "降順"
+  "Décroissant": "降順",
+  "Vérifier votre adresse e-mail": "メールアドレスを確認",
+  "Vérifiez votre boîte mail": "受信トレイを確認してください",
+  "Saisissez le code à 6 chiffres envoyé à": "6桁のコードを入力してください。送信先：",
+  "Code de vérification": "確認コード",
+  "Le code expire dans 10 minutes. Pensez à vérifier vos courriers indésirables.": "コードは10分で有効期限が切れます。迷惑メールフォルダもご確認ください。",
+  "Confirmer mon adresse": "メールアドレスを確認",
+  "Renvoyer le code": "コードを再送信",
+  "Agrandir": "拡大",
+  "Code incorrect ou expiré. Demandez un nouveau code.": "コードが正しくないか、有効期限が切れています。新しいコードを取得してください。",
+  "Reconnectez-vous pour recevoir un code.": "コードを受け取るには再度ログインしてください。",
+  "L’envoi du code est indisponible. Réessayez dans un instant.": "コードを送信できませんでした。しばらくしてからもう一度お試しください。",
+  "Impossible de lire cette bande-annonce.": "この予告編は再生できません。"
 }

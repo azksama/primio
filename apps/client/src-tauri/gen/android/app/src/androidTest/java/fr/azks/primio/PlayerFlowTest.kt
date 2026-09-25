@@ -55,7 +55,7 @@ class PlayerFlowTest {
         if(externalUrl.isNotBlank()) options.put("subtitles",JSONArray().put(JSONObject().put("url",externalUrl).put("lang","jpn")))
         if (outro) options.put("skipSegments", JSONArray().put(JSONObject().put("start", 10).put("end", 20).put("kind", "outro")))
         activity = instrumentation.startActivitySync(Intent(context, PlayerActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("options", options.toString()))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK).putExtra("options", options.toString()))
     }
 
     private fun views(): List<View> {
@@ -288,6 +288,45 @@ class PlayerFlowTest {
             val id=java.security.MessageDigest.getInstance("SHA-256").digest("$scope:released".toByteArray()).joinToString(""){"%02x".format(it)}
             seen.edit().remove(id).commit()
         }
+    }
+
+    @Test fun backKeepsUnfinishedVideoPlayingInPip() {
+        start(next=false)
+        waitUntil("Player did not load") { find("Audio et sous-titres") != null }
+        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        waitUntil("Back did not enter PiP") { activity!!.isInPictureInPictureMode }
+        val before=journal().optDouble("position",0.0)
+        waitUntil("Playback stopped in PiP") { journal().optDouble("position",0.0)>before+1 }
+        assertFalse(activity!!.isFinishing)
+        assertNull(find("Audio et sous-titres"))
+        capture("native-pip-back")
+    }
+    @Test fun homeKeepsUnfinishedVideoPlayingInPip() {
+        start(next=false)
+        waitUntil("Player did not load") { find("Audio et sous-titres") != null }
+        instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_HOME").close()
+        waitUntil("Home did not enter PiP") { activity!!.isInPictureInPictureMode }
+        val before=journal().optDouble("position",0.0)
+        waitUntil("Playback stopped in PiP") { journal().optDouble("position",0.0)>before+1 }
+        capture("native-pip-home")
+    }
+    @Test fun backClosesVideoAfterOutroWithoutPip() {
+        start(position=11.0,outro=true,next=false)
+        waitUntil("Player did not load") { find("Audio et sous-titres") != null }
+        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        waitUntil("Outro should close on back") { activity!!.isFinishing }
+        assertFalse(activity!!.isInPictureInPictureMode)
+    }
+    @Test fun openingAnotherVideoClosesThePreviousPipPlayer() {
+        start(next=false)
+        waitUntil("Player did not load") { find("Audio et sous-titres") != null }
+        val previous=activity!!
+        instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        waitUntil("Back did not enter PiP") { previous.isInPictureInPictureMode }
+        start(next=false)
+        waitUntil("Second player did not load") { find("Audio et sous-titres") != null }
+        assertTrue("Previous PiP must close",previous.isFinishing)
+        assertFalse(activity!!.isInPictureInPictureMode)
     }
 
 }

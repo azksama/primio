@@ -22,9 +22,9 @@ export function Onboarding({
   onFinish: () => Promise<void>
 }) {
   const steps = [
+    t('Compte'),
     t('Bienvenue'),
     t('Profil'),
-    t('Compte'),
     t('Lecture'),
     t('Importer'),
     t('Addons'),
@@ -62,7 +62,7 @@ export function Onboarding({
         </span>
       </header>
       <div className="onboarding-body" key={step}>
-        {step === 0 && (
+        {step === 1 && (
           <>
             <img className="welcome-logo" src="/brand/primio.png" alt="Primio" />
             <Choice
@@ -91,7 +91,7 @@ export function Onboarding({
             </div>
           </>
         )}
-        {step === 1 && (
+        {step === 2 && (
           <>
             <span className="onboarding-symbol avatar" style={{ background: profile.color }}>
               <img src={avatarUrl(profile.avatar)} alt="" />
@@ -116,8 +116,15 @@ export function Onboarding({
             />
           </>
         )}
-        {step === 2 && (
+        {step === 0 && (
           <>
+            <Choice
+              label={t('Langue de l’application')}
+              value={state.settings.uiLanguage}
+              options={appLanguages}
+              flags
+              onChange={(v) => updateSettings({ uiLanguage: v })}
+            />
             <span className="onboarding-symbol">
               <UserRound />
             </span>
@@ -267,7 +274,7 @@ export function Onboarding({
         </div>
         <button
           className="primary"
-          disabled={saving || importBusy || (step === 1 && !profile.name.trim())}
+          disabled={saving || importBusy || (step === 2 && !profile.name.trim())}
           onClick={async () => {
             if (step === steps.length - 1) {
               setSaving(true)
@@ -277,16 +284,16 @@ export function Onboarding({
                 setSaving(false)
               }
             } else {
-              if (step === 1) updateProfile({ name: profile.name.trim() })
+              if (step === 2) updateProfile({ name: profile.name.trim() })
               setStep(step + 1)
             }
           }}
         >
-          {step === 0
+          {step === 1
             ? t('Commencer')
             : step === steps.length - 1
               ? t('Explorer Primio')
-              : step === 2 && !connected
+              : step === 0 && !connected
                 ? t('Continuer sans compte')
                 : step === 4 && !imported
                   ? t('Passer cette étape')

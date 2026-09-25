@@ -3,16 +3,24 @@ import { ImageOff } from 'lucide-react'
 
 export function MediaImage({
   src,
+  fallback,
   className = '',
   eager = false,
 }: {
   src?: string
+  fallback?: string
   className?: string
   eager?: boolean
 }) {
   const [ready, setReady] = useState('')
-  const [failed, setFailed] = useState('')
-  const unavailable = !src || failed === src
+  const [failed, setFailed] = useState<string[]>([])
+  src =
+    src && !failed.includes(src)
+      ? src
+      : fallback && !failed.includes(fallback)
+        ? fallback
+        : undefined
+  const unavailable = !src
   const loading = !unavailable && ready !== src
   return (
     <span className={`media-image ${className} ${loading ? 'skeleton' : ''}`} aria-hidden="true">
@@ -27,8 +35,8 @@ export function MediaImage({
           decoding="async"
           referrerPolicy="no-referrer"
           className={loading ? 'image-pending' : 'image-ready'}
-          onLoad={() => setReady(src)}
-          onError={() => setFailed(src)}
+          onLoad={() => setReady(src!)}
+          onError={() => setFailed((values) => [...values, src!])}
         />
       )}
     </span>

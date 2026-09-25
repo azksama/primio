@@ -3,7 +3,7 @@ import { manifestUrl } from './addons'
 import type { UserState } from './types'
 export interface ImportPreview {
   library: UserState['library']
-  addons: UserState['addons']
+  addons: (UserState['addons'][number] & { name?: string })[]
   skipped: number
 }
 export async function providerRequest(operation: string, body: unknown): Promise<any> {
@@ -74,6 +74,8 @@ export function parseImportJson(raw: any): ImportPreview {
       result.addons.push({
         url: manifestUrl(addon.transportUrl ?? addon.url ?? addon),
         enabled: true,
+        name:
+          typeof addon.manifest?.name === 'string' ? addon.manifest.name.slice(0, 200) : undefined,
       })
     } catch {
       result.skipped++

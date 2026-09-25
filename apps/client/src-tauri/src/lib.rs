@@ -6,6 +6,7 @@ mod desktop_downloads;
 mod desktop_player;
 mod extensions;
 mod network;
+mod playback_sync;
 #[cfg(target_os = "android")]
 mod player;
 mod updates;

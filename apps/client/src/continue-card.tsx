@@ -44,7 +44,7 @@ export function ContinueCard({
   }, [item.id, item.videoId, item.episodeThumbnail, item.seasonCount, addons])
   return (
     <button className="continue-card" onClick={onPlay}>
-      <MediaImage src={episode.episodeThumbnail || item.poster} />
+      <MediaImage src={episode.episodeThumbnail} fallback={item.poster} />
       <strong>{item.name}</strong>
       {episode.episode != null && (
         <small className="continue-episode">

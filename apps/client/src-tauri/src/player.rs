@@ -299,6 +299,7 @@ pub extern "system" fn Java_fr_azks_primio_PlayerActivity_nativeProgress(
         let raw: String = raw.into();
         if let Ok(value) = serde_json::from_str::<Value>(&raw) {
             if let Some(app) = APP.get() {
+                crate::playback_sync::publish(app, &value);
                 let _ = app.emit("player-progress", value);
             }
         }

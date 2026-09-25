@@ -533,5 +533,17 @@
   "Nom": "名称",
   "Réinitialiser les filtres": "重置筛选",
   "Croissant": "升序",
-  "Décroissant": "降序"
+  "Décroissant": "降序",
+  "Vérifier votre adresse e-mail": "验证邮箱地址",
+  "Vérifiez votre boîte mail": "请检查收件箱",
+  "Saisissez le code à 6 chiffres envoyé à": "输入发送至以下地址的6位验证码：",
+  "Code de vérification": "验证码",
+  "Le code expire dans 10 minutes. Pensez à vérifier vos courriers indésirables.": "验证码将在10分钟后过期。请同时检查垃圾邮件文件夹。",
+  "Confirmer mon adresse": "确认邮箱",
+  "Renvoyer le code": "重新发送验证码",
+  "Agrandir": "放大",
+  "Code incorrect ou expiré. Demandez un nouveau code.": "验证码错误或已过期。请获取新验证码。",
+  "Reconnectez-vous pour recevoir un code.": "请重新登录以接收验证码。",
+  "L’envoi du code est indisponible. Réessayez dans un instant.": "无法发送验证码，请稍后重试。",
+  "Impossible de lire cette bande-annonce.": "无法播放此预告片。"
 }

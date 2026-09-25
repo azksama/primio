@@ -1,7 +1,7 @@
 import { chromium, expect } from '../apps/client/node_modules/@playwright/test/index.mjs'
 import { mkdir, writeFile } from 'node:fs/promises'
 const browser = await chromium.launch({ headless: true })
-const output = 'tmp/validation-v027'
+const output = 'tmp/validation-v029'
 await mkdir(output, { recursive: true })
 const findings = []
 for (const [name, width, height, touch] of [
@@ -21,6 +21,7 @@ for (const [name, width, height, touch] of [
   page.on('pageerror', (e) => errors.push(e.message))
   await page.addInitScript(() => {
     const store = {}
+    window.__qaStore = store
     window.isTauri = true
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} }
     window.__TAURI_INTERNALS__ = {
@@ -47,8 +48,25 @@ for (const [name, width, height, touch] of [
         if (command === 'download_list') return { items: [] }
         if (command === 'provider_request') {
           if (args.operation === 'stremioLogin') return { result: { authKey: 'test-only' } }
-          if (args.operation === 'stremioAddons') return { result: { addons: [{ transportUrl: 'https://example.org/manifest.json' }, { transportUrl: 'https://example.org/manifest.json' }] } }
-          if (args.operation === 'stremioLibrary') return { result: { items: [{ _id: 'tt1234567', type: 'movie', name: 'Imported film' }] } }
+          if (args.operation === 'stremioAddons')
+            return {
+              result: {
+                addons: [
+                  {
+                    transportUrl: 'https://example.org/manifest.json',
+                    manifest: { name: 'Keep addon' },
+                  },
+                  {
+                    transportUrl: 'https://second.example.org/manifest.json',
+                    manifest: { name: 'Skip addon' },
+                  },
+                ],
+              },
+            }
+          if (args.operation === 'stremioLibrary')
+            return {
+              result: { items: [{ _id: 'tt1234567', type: 'movie', name: 'Imported film' }] },
+            }
         }
         return null
       },
@@ -57,14 +75,12 @@ for (const [name, width, height, touch] of [
   await page.goto(process.argv[2] ?? 'http://127.0.0.1:1420')
   await expect(page.locator('.onboarding')).toBeVisible()
   for (let step = 1; step <= 7; step++) {
-    const dimensions = await page
-      .locator('.onboarding-body')
-      .evaluate((e) => ({
-        scroll: e.scrollHeight,
-        client: e.clientHeight,
-        width: e.scrollWidth,
-        clientWidth: e.clientWidth,
-      }))
+    const dimensions = await page.locator('.onboarding-body').evaluate((e) => ({
+      scroll: e.scrollHeight,
+      client: e.clientHeight,
+      width: e.scrollWidth,
+      clientWidth: e.clientWidth,
+    }))
     findings.push({ name, step, ...dimensions })
     expect(dimensions.width).toBeLessThanOrEqual(dimensions.clientWidth + 1)
     const footer = await page.locator('.onboarding-footer').boundingBox()
@@ -75,10 +91,22 @@ for (const [name, width, height, touch] of [
       await page.locator('.import-panel input[name=password]').fill('Fixture-password')
       await page.getByRole('button', { name: 'Preview import', exact: true }).click()
       await expect(page.locator('.import-preview')).toContainText('Imported film')
-      await expect(page.locator('.import-preview').getByRole('switch', { name: '1 addons installed' })).toBeVisible()
+      await expect(
+        page.locator('.import-preview').getByRole('switch', { name: '2 addons installed' }),
+      ).toBeVisible()
+      await expect(page.locator('.import-addon input')).toHaveCount(2)
+      await page.locator('.import-addon input').nth(1).uncheck()
       await page.locator('.import-preview .primary').click()
-      await expect(page.locator('.onboarding-import [role=status]')).toContainText('Import complete')
+      await expect(page.locator('.onboarding-import [role=status]')).toContainText(
+        'Import complete',
+      )
       await expect(page.locator('.onboarding-footer .primary')).toContainText('Continue')
+      await expect
+        .poll(() => page.evaluate(() => JSON.stringify(window.__qaStore)))
+        .toContain('https://example.org/manifest.json')
+      expect(await page.evaluate(() => JSON.stringify(window.__qaStore))).not.toContain(
+        'https://second.example.org/manifest.json',
+      )
       await page.screenshot({ path: `${output}/phone-onboarding-import-complete.png` })
     }
     if (step < 7) await page.locator('.onboarding-footer .primary').click()

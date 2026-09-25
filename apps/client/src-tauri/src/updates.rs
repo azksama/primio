@@ -92,7 +92,8 @@ async fn verify(path: &std::path::Path, update: &Update) -> Result<(), String> {
         return Err("Invalid update size".into());
     }
     let mut hash = Sha256::new();
-    let mut buffer = [0u8; 65536];
+    // This buffer lives across await points. Keep it off the IPC thread's stack.
+    let mut buffer = vec![0u8; 65536];
     loop {
         let n = file
             .read(&mut buffer)
@@ -261,6 +262,21 @@ pub fn cleanup(app: &tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn checksum_task_stays_small_on_the_webview_thread() {
+        let update = Update {
+            version: "0.2.10".into(),
+            url: String::new(),
+            sha256: String::new(),
+            size: 0,
+        };
+        let task = verify(std::path::Path::new("unused.apk"), &update);
+        let size = std::mem::size_of_val(&task);
+        assert!(
+            size < 4096,
+            "Checksum task occupies {size} bytes on the IPC stack"
+        );
+    }
     #[test]
     fn rejects_downgrades_untrusted_hosts_and_bad_checksums() {
         let mut u = Update {

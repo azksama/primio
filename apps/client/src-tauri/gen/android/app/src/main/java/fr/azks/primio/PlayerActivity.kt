@@ -34,6 +34,10 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
  private lateinit var root:FrameLayout
  private lateinit var overlay:FrameLayout
  private lateinit var seek:PrimioTimeline
+ private lateinit var preview:PrimioPreview
+ private lateinit var previewPanel:LinearLayout
+ private lateinit var previewTime:TextView
+ private var fillScreen=false
  private lateinit var time:TextView
  private lateinit var remaining:TextView
  private lateinit var skipButton:TextView
@@ -108,7 +112,11 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   val labels=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL}
   time=text("00:00",13f);remaining=text("",12f)
   labels.addView(time,LinearLayout.LayoutParams(0,-2,1f));labels.addView(remaining,LinearLayout.LayoutParams(-2,-2).apply{rightMargin=dp(18)});labels.addView(button("Audio · ST",tr("Audio et sous-titres")){tracks()});bottom.addView(labels)
-  seek=PrimioTimeline(this).apply{onSeek={fraction,done->dragging=!done;handler.removeCallbacks(hide);time.text=format(duration*fraction)+" / "+format(duration);if(done){command("seek",(duration*fraction).toString(),"absolute");showControls()}}}
+  previewPanel=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;background=PrimioStyle.glass(this@PlayerActivity,12);visibility=View.GONE;setPadding(dp(6),dp(6),dp(6),dp(6))}
+  val previewImage=ImageView(this).apply{scaleType=ImageView.ScaleType.FIT_CENTER};previewPanel.addView(previewImage,LinearLayout.LayoutParams(dp(192),dp(108)))
+  previewTime=text("",13f);previewPanel.addView(previewTime);preview=PrimioPreview(options,previewImage)
+  overlay.addView(previewPanel,FrameLayout.LayoutParams(dp(204),dp(144),Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply{bottomMargin=dp(138)})
+  seek=PrimioTimeline(this).apply{onSeek={fraction,done->dragging=!done;handler.removeCallbacks(hide);time.text=format(duration*fraction)+" / "+format(duration);if(done){preview.hide();previewPanel.visibility=View.GONE;command("seek",(duration*fraction).toString(),"absolute");showControls()}else if(duration>0){previewTime.text=format(duration*fraction);previewPanel.visibility=View.VISIBLE;preview.show(duration*fraction)}}}
   bottom.addView(seek,LinearLayout.LayoutParams(-1,dp(44)));overlay.addView(bottom,FrameLayout.LayoutParams(-1,dp(132),Gravity.BOTTOM))
   loading=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;contentDescription=tr("Chargement de la vidéo")}
   val artwork=ImageView(this).apply{setImageResource(R.drawable.primio_brand);scaleType=ImageView.ScaleType.FIT_CENTER}
@@ -132,6 +140,12 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   audio.requestAudioFocus(focus)
  }
  private fun installGestures(layer:View) {
+  var pinching=false
+  var scale=1f
+  val pinch=ScaleGestureDetector(this,object:ScaleGestureDetector.SimpleOnScaleGestureListener(){
+   override fun onScaleBegin(d:ScaleGestureDetector):Boolean{pinching=true;scale=1f;return true}
+   override fun onScale(d:ScaleGestureDetector):Boolean{scale*=d.scaleFactor;if(scale>1.12f&&!fillScreen){fillScreen=true;command("set","panscan","1");feedback(tr("Remplir l’écran"))}else if(scale<.88f&&fillScreen){fillScreen=false;command("set","panscan","0");feedback(tr("Ajuster à l’écran"))};return true}
+  })
   var startVolume=0;var startBrightness=0.5f;var vertical=false
   val detector=GestureDetector(this,object:GestureDetector.SimpleOnGestureListener(){
    override fun onDown(e:MotionEvent):Boolean {startVolume=audio.getStreamVolume(AudioManager.STREAM_MUSIC);startBrightness=window.attributes.screenBrightness.takeIf{it>=0}?:0.5f;vertical=false;return true}
@@ -146,9 +160,19 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
     else{val max=audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);val volume=(startVolume+change*max).roundToInt().coerceIn(0,max);audio.setStreamVolume(AudioManager.STREAM_MUSIC,volume,0);feedback("♫  Volume ${(volume*100f/max.coerceAtLeast(1)).roundToInt()} %")};return true
    }
   })
-  layer.setOnTouchListener{_,event->val handled=detector.onTouchEvent(event);if(vertical&&(event.actionMasked==MotionEvent.ACTION_UP||event.actionMasked==MotionEvent.ACTION_CANCEL))showControls();handled}
+  layer.setOnTouchListener{_,event->pinch.onTouchEvent(event);if(event.pointerCount>1||pinching){if(event.actionMasked==MotionEvent.ACTION_UP||event.actionMasked==MotionEvent.ACTION_CANCEL)pinching=false;true}else{val handled=detector.onTouchEvent(event);if(vertical&&(event.actionMasked==MotionEvent.ACTION_UP||event.actionMasked==MotionEvent.ACTION_CANCEL))showControls();handled}}
  }
  private fun jump(ahead:Boolean){val amount=if(ahead)forward else -rewind;command("seek",amount.toString(),"relative");feedback((if(ahead)"+" else "−")+PrimioI18n.text(this,"{n} secondes",mapOf("n" to abs(amount))));showControls()}
+ override fun onKeyDown(keyCode:Int,event:KeyEvent):Boolean {
+  if(sheet==null){when(keyCode){
+   KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,KeyEvent.KEYCODE_SPACE->{command("cycle","pause");showControls();return true}
+   KeyEvent.KEYCODE_MEDIA_REWIND->{jump(false);return true}
+   KeyEvent.KEYCODE_MEDIA_FAST_FORWARD->{jump(true);return true}
+   KeyEvent.KEYCODE_DPAD_CENTER,KeyEvent.KEYCODE_ENTER->{if(overlay.visibility!=View.VISIBLE){command("cycle","pause");showControls();pause.requestFocus();return true}}
+   KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_DOWN,KeyEvent.KEYCODE_DPAD_LEFT,KeyEvent.KEYCODE_DPAD_RIGHT->{if(overlay.visibility!=View.VISIBLE){showControls();pause.requestFocus();return true};handler.removeCallbacks(hide)}
+  }}
+  return super.onKeyDown(keyCode,event)
+ }
  private fun feedback(value:String){gestureLabel.text=value;gestureLabel.visibility=View.VISIBLE;handler.removeCallbacks(clearGesture);handler.postDelayed(clearGesture,1000)}
  private fun exportCertificates():String {
   val file=File(filesDir,"system-ca.pem");val store=KeyStore.getInstance("AndroidCAStore").apply{load(null)}
@@ -320,5 +344,5 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
  override fun onStop(){super.onStop();lifecycleStopped=true;if(isInPictureInPictureMode){command("set","pause","yes");emit(false)}}
  override fun onPause(){if(isInPictureInPictureMode){emit(false);super.onPause();return};resumeAfterPause=handle!=0L&&!last.optBoolean("paused");command("set","pause","yes");emit(false);super.onPause()}
  override fun onResume(){super.onResume();if(resumeAfterPause){command("set","pause","no");resumeAfterPause=false}}
- override fun onDestroy(){if(duration>0&&position/duration>=0.95)DownloadStore(this).markWatched(options.optString("downloadId"));if(active?.get()===this){active=null;DownloadStore.playingId=""};breathing?.cancel();handler.removeCallbacksAndMessages(null);sheet?.dismiss();emit(true);release();if(options.optBoolean("deleteWatched")&&options.optString("downloadId").isNotEmpty()&&duration>0&&position/duration>=0.95)DownloadStore(this).remove(options.getString("downloadId"));if(::focus.isInitialized)audio.abandonAudioFocusRequest(focus);super.onDestroy()}
+ override fun onDestroy(){if(::preview.isInitialized)preview.close();if(duration>0&&position/duration>=0.95)DownloadStore(this).markWatched(options.optString("downloadId"));if(active?.get()===this){active=null;DownloadStore.playingId=""};breathing?.cancel();handler.removeCallbacksAndMessages(null);sheet?.dismiss();emit(true);release();if(options.optBoolean("deleteWatched")&&options.optString("downloadId").isNotEmpty()&&duration>0&&position/duration>=0.95)DownloadStore(this).remove(options.getString("downloadId"));if(::focus.isInitialized)audio.abandonAudioFocusRequest(focus);super.onDestroy()}
 }

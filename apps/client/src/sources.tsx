@@ -1,7 +1,7 @@
 import { LanguageFlag } from './language-flag'
 import { languageName } from './i18n'
 import { useState } from 'react'
-import { Download, Play } from 'lucide-react'
+import { Cast, Download, Play } from 'lucide-react'
 import { Choice } from './components'
 import { t } from './i18n'
 import type { Stream, Settings } from './types'
@@ -128,6 +128,7 @@ export function Sources({
   onFiltersChange,
   onPlay,
   onDownload,
+  onCast,
 }: {
   items: Stream[]
   busy: boolean
@@ -135,6 +136,7 @@ export function Sources({
   onFiltersChange?: (filters: NonNullable<Settings['sourceFilters']>) => void
   onPlay: (s: Stream) => void
   onDownload: (s: Stream) => void
+  onCast?: (s: Stream) => void
 }) {
   const providers = [
     ...new Map(
@@ -269,6 +271,7 @@ export function Sources({
               </span>
               <Play aria-hidden="true" />
             </button>
+            {s.url && onCast && <button disabled={busy} className="icon source-cast" aria-label={t('Diffuser sur un téléviseur')} onClick={() => onCast(s)}><Cast /></button>}
             {s.url && (
               <button
                 disabled={busy}

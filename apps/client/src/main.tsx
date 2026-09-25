@@ -1,4 +1,6 @@
 import React from 'react'
+import { installDiagnostics } from './diagnostics'
+installDiagnostics()
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import { DesktopShell } from './desktop'

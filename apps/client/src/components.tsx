@@ -419,6 +419,9 @@ export function Preferences({
       {section === 'options' && (
         <>
           <h2>{t('Apparence et navigation')}</h2>
+          <Choice label={t('Mode TV')} value={settings.tvMode ?? 'auto'} options={[
+            ['auto', t('Automatique')], ['on', t('Activé')], ['off', t('Désactivé')],
+          ]} onChange={v => update('tvMode', v as Settings['tvMode'])}/>
           <Choice
             label={t('Langue de l’application')}
             value={settings.uiLanguage}

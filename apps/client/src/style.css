@@ -2835,3 +2835,21 @@ dialog.trailer-dialog {
     max-height: calc(100dvh - 110px);
   }
 }
+.collections {margin: 12px 0 20px; min-width:0}
+.collections .chips {flex-wrap:wrap;gap:10px}
+.collections button[aria-pressed=true] {background:var(--glass-active, #3c4037);border-color:#bbb6a2}
+.collection-items {max-height:48dvh;overflow:auto;margin:18px 0}
+.collection-actions {display:flex;flex-wrap:wrap;gap:14px;margin-top:20px}
+.collection-actions button {flex:1}
+.tv-mode {font-size:20px}
+.tv-mode .page-content {max-width:none;padding:24px 5vw 120px}
+.tv-mode .page-head {padding-inline:5vw}
+.tv-mode .poster-grid {grid-template-columns:repeat(6,minmax(0,1fr))}
+.tv-mode :is(button,a,input,select,textarea):focus {outline:3px solid #eee4c9;outline-offset:5px;box-shadow:0 0 28px #e9dcb938}
+.tv-mode button {min-height:48px}
+.tv-mode .bottom-nav {max-width:760px}
+.diagnostics-panel textarea {box-sizing:border-box;width:100%;min-height:220px;background:#181a17;color:#ddd;border:1px solid #555;border-radius:16px;padding:16px;font:13px/1.5 monospace;overflow-wrap:anywhere}
+@media (max-width:900px) {.tv-mode .poster-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.integration-card {padding:22px;margin-bottom:20px;border-radius:22px}
+
+.cast-devices{display:grid;gap:12px}.cast-devices>button{display:flex;align-items:center;gap:12px}.compact-source>.source-cast{flex-shrink:0}

@@ -37,6 +37,10 @@ export interface Meta {
   runtime?: string
   seasonCount?: number
   originalLanguage?: string
+  original_language?: string
+  country?: string | string[]
+  origin_country?: string[]
+  production_countries?: { iso_3166_1?: string; name?: string }[]
   category?: 'anime'
   trailers?: { source?: string; ytId?: string; url?: string; externalUrl?: string }[]
   trailerStreams?: { source?: string; ytId?: string; url?: string; externalUrl?: string }[]
@@ -88,6 +92,7 @@ export interface Progress extends Pick<Meta, 'id' | 'type' | 'name' | 'poster' |
   updatedAt: number
 }
 export interface Settings {
+  tvMode?: 'auto' | 'on' | 'off'
   uiLanguage: string
   contentColumns: 3 | 4 | 5
   showPosterLabels: boolean
@@ -129,6 +134,7 @@ export interface Settings {
   autoSkipIntro: boolean
 }
 export interface Profile {
+  collections?: Collection[]
   avatar?: string
   lastPlaybackAt?: number
   id: string
@@ -139,6 +145,7 @@ export interface Profile {
   settings: Settings
 }
 export interface UserState {
+  collections?: Collection[]
   library: Pick<Meta, 'id' | 'type' | 'name' | 'poster' | 'category'>[]
   progress: Progress[]
   addons: { url: string; enabled: boolean }[]
@@ -150,4 +157,9 @@ export interface Subtitle {
   id: string
   url: string
   lang: string
+}
+export interface Collection {
+  id: string
+  name: string
+  items: string[]
 }

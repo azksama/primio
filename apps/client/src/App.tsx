@@ -8,6 +8,13 @@ import { ContinueCard } from './continue-card'
 import { defaultSort } from './catalog-sort'
 import { UpdatePanel } from './update-panel'
 import { ImportPanel } from './import-panel'
+import { Collections, collectionKey } from './collections'
+import { DiagnosticsPanel } from './diagnostics-panel'
+import { recordDiagnostic } from './diagnostics'
+import { useTvMode } from './tv'
+import { IntegrationsPanel } from './integrations-panel'
+import { CastPanel, type CastTarget } from './cast-panel'
+import { useAnimeClassification } from './anime-classification'
 import { equivalentSources, rememberSource } from './source-preferences'
 import { PasswordField } from './password-field'
 import { CopyTitle } from './copy-title'
@@ -93,6 +100,8 @@ import type { Addon, Meta, Stream, UserState, Subtitle } from './types'
 
 const empty = createState()
 type Tab =
+  | 'diagnostics'
+  | 'integrations'
   | 'calendar'
   | 'notifications'
   | 'home'
@@ -180,10 +189,13 @@ export default function App() {
   const sort = state.settings.explorerSort ?? defaultSort
   const [pluginCatalogs, setPluginCatalogs] = useState<Addon[]>([])
   const catalogAddons = useMemo(() => [...addons, ...pluginCatalogs], [addons, pluginCatalogs])
+  useAnimeClassification(state, setState, catalogAddons, ready)
   const [catalogChoice, setCatalogChoice] = useState('all'),
     [manifestCopy, setManifestCopy] = useState('')
   const [libraryFilter, setLibraryFilter] = useState('all'),
     [termsOpen, setTermsOpen] = useState(false)
+  const [collectionId, setCollectionId] = useState('')
+  useTvMode(state.settings.tvMode)
   const [slideDirection, setSlideDirection] = useState('left')
   const touchStart = useRef<{ x: number; y: number } | null>(null)
   const [busy, setBusy] = useState(false),
@@ -381,6 +393,7 @@ export default function App() {
         setPlayback(null)
     })
     const unlistenError = listen<string>('player-error', (e) => {
+      recordDiagnostic('player', e.payload)
       setPlayback(null)
       fail(e.payload)
     })
@@ -451,6 +464,8 @@ export default function App() {
         setAddonInput(link.url)
         setCandidate(null)
         setAddOpen(true)
+      } else if (link.kind === 'integrations') {
+        setTab('integrations')
       } else {
         void details({ id: link.id, type: link.type, name: t('Chargement…') })
       }
@@ -459,6 +474,7 @@ export default function App() {
       fail(e)
     }
   }, [pendingLink, ready, addons, addonsLoading])
+  const [castTarget, setCastTarget] = useState<CastTarget | null>(null)
   function saveProgress(p: Playback, position: number, duration: number) {
     setState((s) => ({
       ...s,
@@ -1016,6 +1032,7 @@ export default function App() {
   )
   const visibleLibrary = state.library.filter(
     (m) =>
+      (!(state.collections ?? []).some(c => c.id === collectionId) || (state.collections ?? []).find(c => c.id === collectionId)!.items.includes(collectionKey(m))) &&
       matchesCategory(m, libraryFilter) &&
       (!state.settings.hideWatched || !titleWatched(m, state.progress, releases.metas)),
   )
@@ -1682,6 +1699,7 @@ export default function App() {
                   <RefreshCw size={16} /> {t('Synchroniser')}
                 </button>
               </div>
+              <Collections state={state} setState={setState} selected={collectionId} onSelect={setCollectionId}/>
               <div className="chips" role="group" aria-label={t('Filtrer ma liste')}>
                 {[
                   ['all', t('Tous')],
@@ -1709,7 +1727,7 @@ export default function App() {
               />
               {visibleLibrary.length ? (
                 <ProgressiveList
-                  key={state.activeProfileId + libraryFilter}
+                  key={state.activeProfileId + libraryFilter + collectionId}
                   items={visibleLibrary}
                   renderItem={poster}
                   className="poster-grid"
@@ -1955,6 +1973,8 @@ export default function App() {
               (
                 {
                   settings: t('Paramètres'),
+                  diagnostics: t('Diagnostic'),
+                  integrations: t('Services connectés'),
                   account: t('Compte et profils'),
                   player: t('Lecteur'),
                   options: t('Options'),
@@ -1988,6 +2008,8 @@ export default function App() {
                         t('Connexion, synchronisation et profils'),
                       ],
                       [Puzzle, 'addons', t('Addons'), t('Catalogues et sources')],
+                      [SlidersHorizontal, 'diagnostics', t('Diagnostic'), t('Rapports et assistance')],
+                      [RefreshCw, 'integrations', t('Services connectés'), 'Trakt · AniList · MyAnimeList'],
                       [Sparkles, 'plugins', t('Plugins'), t('Personnaliser Primio')],
                       [Play, 'player', t('Lecteur'), t('Lecture et sous-titres')],
                       [History, 'history', t('Historique'), t('Retrouver vos visionnages')],
@@ -2110,6 +2132,8 @@ export default function App() {
                   )}
                 </>
               )}
+              {tab === 'diagnostics' && <DiagnosticsPanel token={token}/>}
+              {tab === 'integrations' && <IntegrationsPanel token={token} profileId={state.activeProfileId}/>}
               {(tab === 'player' || tab === 'options') && (
                 <Preferences
                   section={tab}
@@ -2229,6 +2253,7 @@ export default function App() {
           }}
         />
       )}
+      {castTarget && <CastPanel target={castTarget} onClose={() => setCastTarget(null)} onProgress={(position, duration) => setState(s => s.activeProfileId === castTarget.profileId ? { ...s, progress: recordProgress(s.progress, castTarget.meta, castTarget.videoId, position, duration) } : { ...s, profiles: s.profiles.map(p => p.id === castTarget.profileId ? { ...p, progress: recordProgress(p.progress, castTarget.meta, castTarget.videoId, position, duration) } : p) })} />}
       {sourceTarget && (
         <Dialog
           title={t('Choisir une source')}
@@ -2266,6 +2291,7 @@ export default function App() {
                   busy={launching}
                   onPlay={play}
                   onDownload={downloadSource}
+                  onCast={isTauri() ? stream => { setCastTarget({ meta: sourceTarget.meta, videoId: sourceTarget.id, stream, position: findProgress(state.progress, sourceTarget.meta.type, sourceTarget.id)?.position ?? 0, profileId: state.activeProfileId }); setSourceTarget(null) } : undefined}
                 />
               ) : (
                 <Empty

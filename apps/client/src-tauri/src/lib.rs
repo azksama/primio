@@ -1,3 +1,4 @@
+mod casting;
 #[cfg(target_os = "windows")]
 mod desktop;
 #[cfg(target_os = "windows")]
@@ -12,7 +13,6 @@ mod player;
 mod updates;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-#[cfg(any(target_os = "android", target_os = "windows"))]
 use tauri::Manager;
 #[cfg(target_os = "android")]
 struct Mobile(tauri::plugin::PluginHandle<tauri::Wry>);
@@ -33,6 +33,47 @@ async fn fetch_json(url: String) -> Result<Value, String> {
 #[tauri::command]
 async fn provider_request(operation: String, body: Value) -> Result<Value, String> {
     network::provider_request(&operation, body).await
+}
+#[tauri::command]
+async fn crash_report(app: tauri::AppHandle) -> Result<String, String> {
+    #[cfg(target_os = "android")]
+    return Ok(mobile_call(&app, "crashReport", json!({}))?["report"]
+        .as_str()
+        .unwrap_or("")
+        .to_owned());
+    #[cfg(not(target_os = "android"))]
+    {
+        let path = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("native-crash.txt");
+        Ok(std::fs::read_to_string(path)
+            .unwrap_or_default()
+            .chars()
+            .take(32768)
+            .collect())
+    }
+}
+#[tauri::command]
+async fn tv_device(app: tauri::AppHandle) -> Result<bool, String> {
+    #[cfg(target_os = "android")]
+    return Ok(mobile_call(&app, "tvDevice", json!({}))?["tv"]
+        .as_bool()
+        .unwrap_or(false));
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        Ok(false)
+    }
+}
+#[tauri::command]
+async fn google_cast(app: tauri::AppHandle, action: String, data: Value) -> Result<Value, String> {
+    mobile_call(
+        &app,
+        "googleCast",
+        json!({"action":action,"data":data.to_string()}),
+    )
 }
 #[tauri::command]
 async fn api_request(
@@ -293,6 +334,25 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            if let Ok(directory) = app.path().app_data_dir() {
+                let _ = std::fs::create_dir_all(&directory);
+                let original = std::panic::take_hook();
+                std::panic::set_hook(Box::new(move |info| {
+                    let report = format!(
+                        "Primio {} · Rust panic\n{}\n{}",
+                        env!("CARGO_PKG_VERSION"),
+                        info.location()
+                            .map(|p| format!("{}:{}", p.file(), p.line()))
+                            .unwrap_or_default(),
+                        std::backtrace::Backtrace::force_capture()
+                    );
+                    let _ = std::fs::write(
+                        directory.join("native-crash.txt"),
+                        report.chars().take(32768).collect::<String>(),
+                    );
+                    original(info);
+                }));
+            }
             updates::cleanup(app.handle());
             desktop_downloads::recover(app.handle());
             let handle = app.handle().clone();
@@ -337,6 +397,11 @@ pub fn run() {
             native_auth,
             notification_config,
             notification_permission,
+            crash_report,
+            tv_device,
+            google_cast,
+            casting::cast_discover,
+            casting::cast_control,
             secure_read,
             secure_write,
             play_media,

@@ -30,3 +30,6 @@
 -keep class fr.azks.primio.AuthArgs { *; }
 
 -keep class fr.azks.primio.NotificationArgs { *; }
+
+-keep class fr.azks.primio.PrimioCastOptions { *; }
+-keep class fr.azks.primio.CastArgs { *; }

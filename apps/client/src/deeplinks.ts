@@ -2,11 +2,12 @@ import { t } from './i18n'
 import { manifestUrl } from './addons'
 export function parseDeepLink(
   input: string,
-): { kind: 'addon'; url: string } | { kind: 'meta'; type: string; id: string } {
+): { kind: 'addon'; url: string } | { kind: 'meta'; type: string; id: string } | { kind: 'integrations' } {
   if (input.length > 8192) throw Error(t('Lien trop long.'))
   const u = new URL(input)
   if (!['stremio:', 'primio:'].includes(u.protocol) || u.username || u.password)
     throw Error(t('Lien non pris en charge.'))
+  if (u.protocol === 'primio:' && u.hostname === 'integrations' && !u.search && !u.hash && ['', '/'].includes(u.pathname)) return { kind: 'integrations' }
   if (u.protocol === 'primio:' && u.hostname === 'detail') {
     const [type, id, ...rest] = u.pathname.slice(1).split('/').map(decodeURIComponent)
     if (rest.length || !['movie', 'series', 'anime'].includes(type) || !id || id.length > 256)

@@ -60,6 +60,16 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
     let config = desktop::data_dir(app)?.join(format!("player-{generation}.json"));
     let mut settings = extra.clone();
     settings["title"] = args["title"].clone();
+    settings["previewExecutable"] = json!(player_path(&executable));
+    settings["previewPath"] = json!(player_path(
+        &desktop::data_dir(app)?.join(format!("preview-{generation}.bgra"))
+    ));
+    settings["previewHeaders"] = json!(args["headers"]
+        .as_object()
+        .into_iter()
+        .flat_map(|m| m.iter())
+        .map(|(k, v)| format!("{k}: {}", v.as_str().unwrap_or("")))
+        .collect::<Vec<_>>());
     settings["audioLanguage"] = args["language"].clone();
     let logo_dir = desktop::data_dir(app)?.join(format!("logo-{generation}"));
     settings["logoPath"] = json!(player_path(&logo_dir));

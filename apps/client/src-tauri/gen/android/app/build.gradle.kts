@@ -59,6 +59,7 @@ rust {
 }
 
 dependencies {
+    implementation("com.google.android.gms:play-services-cast-framework:22.3.1")
     implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.appcompat:appcompat:1.7.1")

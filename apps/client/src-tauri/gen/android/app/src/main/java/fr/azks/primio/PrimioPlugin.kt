@@ -29,8 +29,12 @@ import app.tauri.plugin.Invoke
 @InvokeArg class IdArgs {var id:String="";var options:String="{}"}
 @InvokeArg class UpdateArgs {var path:String=""}
 @InvokeArg class TextArgs {var text:String=""}
+@InvokeArg class CastArgs {var action:String="";var data:String="{}"}
 @TauriPlugin
 class PrimioPlugin(private val activity:Activity):Plugin(activity) {
+ @Command fun googleCast(invoke:Invoke){val args=invoke.parseArgs(CastArgs::class.java);PrimioCast.execute(activity,args.action,org.json.JSONObject(args.data),invoke)}
+ @Command fun tvDevice(invoke:Invoke){val tv=(activity.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK)==android.content.res.Configuration.UI_MODE_TYPE_TELEVISION;invoke.resolve(JSObject().put("tv",tv) as JSObject)}
+ @Command fun crashReport(invoke:Invoke){try{invoke.resolve(JSObject().put("report",PrimioDiagnostics.report(activity)) as JSObject)}catch(_:Exception){invoke.reject("Diagnostic unavailable")}}
  private fun tr(s:String)=PrimioI18n.text(activity,s)
  private var auth:PrimioAuth?=null
  @Command fun installUpdate(invoke:Invoke){val args=invoke.parseArgs(UpdateArgs::class.java);activity.runOnUiThread{try{PrimioUpdate.install(activity,args.path);invoke.resolve()}catch(e:Exception){invoke.reject(e.message?:"Installation impossible")}}}

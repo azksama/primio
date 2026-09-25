@@ -127,6 +127,8 @@ pub async fn api_request(
         "/account/logout",
         "/account/sync",
         "/account/progress",
+        "/account/diagnostics",
+        "/account/integrations",
         "/auth/verify-email",
         "/auth/resend-code",
         "/account",

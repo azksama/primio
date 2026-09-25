@@ -124,7 +124,7 @@ export function snapshotState(state: UserState): UserState {
     ...state,
     profiles: state.profiles.map((p) =>
       p.id === state.activeProfileId
-        ? { ...p, library: state.library, progress: state.progress, settings: state.settings }
+        ? { ...p, collections: state.collections ?? [], library: state.library, progress: state.progress, settings: state.settings }
         : p,
     ),
   }
@@ -136,6 +136,7 @@ export function switchProfile(state: UserState, id: string): UserState {
     ? {
         ...saved,
         activeProfileId: id,
+        collections: profile.collections ?? [],
         library: profile.library,
         progress: profile.progress,
         settings: profile.settings,
@@ -149,11 +150,16 @@ export function durationLabel(seconds: number) {
   return hours ? `${hours}h${String(minutes).padStart(2, '0')}` : `${total} min`
 }
 export function isAnime(meta: Pick<Meta, 'id' | 'type' | 'category'> & Partial<Meta>) {
+  const origins = [meta.country].flat().concat(meta.origin_country ?? [], (meta.production_countries ?? []).flatMap(c => [c.iso_3166_1, c.name])).flatMap(c => typeof c === 'string' ? c.split(/[,;|]/) : [])
+  const eastAsian = origins.some(c => typeof c === 'string' && /^(JP|JPN|Japan|Japon|KR|KOR|KP|Korea|South Korea|North Korea|Republic of Korea|Corée du Sud|CN|CHN|China|Chine|中国|日本|한국)$/i.test(c.trim()))
+  const animation = meta.genres?.some(g => /^(animation|animated|动画|動畫|애니메이션)$/i.test(g))
+  const original = meta.originalLanguage ?? meta.original_language ?? ''
   return (
     meta.category === 'anime' ||
     meta.type === 'anime' ||
     /^(kitsu|anilist|mal):/.test(meta.id) ||
-    meta.genres?.some((g) => /^animes?$/i.test(g)) === true
+    meta.genres?.some((g) => /^(animes?|donghua|aeni)$/i.test(g)) === true ||
+    (meta.type === 'series' && animation === true && (eastAsian || (!origins.some(Boolean) && /^(ja|jpn|japanese|ko|kor|korean|zh|zho|chi|chinese|mandarin|cantonese)$/i.test(original))))
   )
 }
 export function matchesCategory(meta: Meta, category: string) {

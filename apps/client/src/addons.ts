@@ -1,4 +1,11 @@
 import { correctAnimeDates } from './anime-dates'
+import { isAnime } from './preferences'
+const animeIds = new Set<string>()
+const classify = (meta: Meta): Meta => {
+  const key = JSON.stringify([meta.type, meta.id])
+  if (isAnime(meta)) { if (animeIds.size >= 5000) animeIds.clear(); animeIds.add(key) }
+  return animeIds.has(key) ? { ...meta, category: 'anime' } : meta
+}
 import { t } from './i18n'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { Addon, Manifest, Meta, Resource, Stream, Subtitle } from './types'
@@ -81,9 +88,20 @@ export function resourceUrl(
     '.json'
   )
 }
-export const catalog = async (a: Addon, type: string, id: string, extra?: Record<string, string>) =>
-  (await json<{ metas: Meta[] }>(resourceUrl(a, 'catalog', type, id, extra))).metas ?? []
+export async function catalog(a: Addon, type: string, id: string, extra?: Record<string, string>) {
+  const metas = ((await json<{ metas: Meta[] }>(resourceUrl(a, 'catalog', type, id, extra))).metas ?? []).map(classify)
+  const candidates = metas.filter(m => m.type === 'series' && !isAnime(m) && m.genres?.some(g => /^animation$/i.test(g)) && !m.country && !m.origin_country?.length && supports(a, 'meta', m.type, m.id)).slice(0, 40)
+  let index = 0
+  await Promise.all(Array.from({ length: Math.min(4, candidates.length) }, async () => {
+    while (index < candidates.length) {
+      const meta = candidates[index++]
+      try { const result = await json<{ meta: Meta }>(resourceUrl(a, 'meta', meta.type, meta.id)); if (result.meta) classify({ ...meta, ...result.meta }) } catch { /* Keep the provider's category when origin is unavailable. */ }
+    }
+  }))
+  return metas.map(classify)
+}
 async function datedMetadata(meta: Meta): Promise<Meta> {
+  meta = classify(meta)
   if (!meta.videos?.length) return meta
   if (!/^kitsu:\d+$/.test(meta.id))
     return meta.category === 'anime' ? correctAnimeDates(meta, new Map()) : meta
@@ -134,7 +152,7 @@ export async function metadata(addons: Addon[], meta: Meta): Promise<Meta> {
       if (result.meta) return datedMetadata({ ...meta, ...result.meta, category: 'anime' })
     } catch {}
   }
-  return meta
+  return classify(meta)
 }
 export async function streams(addons: Addon[], type: string, id: string) {
   const eligible = addons.filter((x) => supports(x, 'stream', type, id))

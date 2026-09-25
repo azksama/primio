@@ -13,6 +13,7 @@ local overlay = mp.create_osd_overlay('ass-events')
 overlay.z = 1000
 local width, height, scale = 1280, 720, 1
 local hits, panel, scroll, last_move, loaded, logo_visible = {}, nil, 0, mp.get_time(), false, false
+local preview_visible=false
 local next_offer=false
 local season, forced = nil, config.forceSubtitleStyle == true
 local function escape(s) return tostring(s or ''):gsub('\\','\\e'):gsub('{','\\{'):gsub('}','\\}'):gsub('[\r\n]+',' ') end
@@ -161,6 +162,7 @@ local function render()
     scale=pip and 1 or rh/720;width=rw/scale;height=pip and rh or 720;hits={}
     local a=assdraw.ass_new()
     local buffering=not loaded or mp.get_property_native('paused-for-cache',false)
+    if preview_visible and (buffering or panel or pip or (mp.get_time()-last_move>=3 and not mp.get_property_native('pause'))) then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
     mp.set_property_native('user-data/primio/ui',{loading=buffering,panel=panel or '',nextOffered=next_offer,fullscreen=mp.get_property_native('fullscreen'),pip=pip})
     if pip then
         hide_logo()
@@ -195,7 +197,19 @@ local function render()
     if next_offer and not buffering and not panel and not pip then button(a,width-248,height-180,220,48,tr('Next episode','Épisode suivant'),function()next_offer=false;mp.commandv('script-message-to','primio','next')end) end
     overlay.res_x=width;overlay.res_y=height;overlay.data=a.text;overlay:update()
 end
-mp.add_forced_key_binding('mouse_move','primio-move',function()last_move=mp.get_time()end)
+mp.add_forced_key_binding('mouse_move','primio-move',function()
+ last_move=mp.get_time()
+ local mx,my=mp.get_mouse_pos();local vx,vy=mx/scale,my/scale
+ if not panel and loaded and vy>=height-96 and vy<=height-52 and vx>=28 and vx<=width-28 then
+  local duration=mp.get_property_number('duration',0)
+  if duration>0 then
+   local target=math.max(0,math.min(1,(vx-28)/(width-56)))*duration
+   mp.commandv('script-message-to','primio_preview','preview',target,math.max(0,math.min(width*scale-240,mx-120)),math.max(0,(height-110)*scale-135))
+   mp.osd_message(time(target),1);preview_visible=true
+  end
+ elseif preview_visible then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
+end)
+mp.add_key_binding('z','primio-fit',function()local fill=mp.get_property_number('panscan',0)==0;mp.set_property_number('panscan',fill and 1 or 0);mp.osd_message(fill and tr('Fill screen','Remplir l’écran') or tr('Fit screen','Ajuster à l’écran'))end)
 mp.add_forced_key_binding('MBTN_LEFT','primio-click',function()
     local mx,my=mp.get_mouse_pos();mx=mx/scale;my=my/scale
     for _,hit in ipairs(hits)do if mx>=hit.x and mx<=hit.x+hit.w and my>=hit.y and my<=hit.y+hit.h then hit.action(mx,my);last_move=mp.get_time();render();return end end

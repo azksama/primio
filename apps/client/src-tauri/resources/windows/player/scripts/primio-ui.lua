@@ -14,6 +14,7 @@ overlay.z = 1000
 local width, height, scale = 1280, 720, 1
 local hits, panel, scroll, last_move, loaded, logo_visible = {}, nil, 0, mp.get_time(), false, false
 local preview_visible=false
+local preview_target,preview_x=0,0
 local next_offer=false
 local season, forced = nil, config.forceSubtitleStyle == true
 local function escape(s) return tostring(s or ''):gsub('\\','\\e'):gsub('{','\\{'):gsub('}','\\}'):gsub('[\r\n]+',' ') end
@@ -191,6 +192,11 @@ local function render()
             rect(a,28,y,w,7,3,'9EA18F','A0');if fill>1 then rect(a,28,y-2,fill,11,5,'D4DDC2','C0',2);rect(a,28,y,fill,7,3,'DBDFC7','15')end
             rect(a,22+fill,y-3,13,13,6,'FFFFFF','00')
             hits[#hits+1]={x=22,y=y-12,w=w+12,h=30,action=function(mx)if duration>0 then mp.commandv('seek',math.max(0,math.min(1,(mx-28)/w))*duration,'absolute+exact')end end}
+            if preview_visible then
+                rect(a,preview_x-4,y-2,8,11,4,'FFFFFF','50')
+                local px=math.max(60,math.min(width-60,preview_x))
+                glass(a,px-44,y-45,88,30,false);label(a,px,y-30,time(preview_target),17,5)
+            end
             button(a,width-200,height-54,172,40,tr('Audio · Subtitles','Audio · Sous-titres'),function()open('tracks')end)
         end
     end
@@ -204,8 +210,8 @@ mp.add_forced_key_binding('mouse_move','primio-move',function()
   local duration=mp.get_property_number('duration',0)
   if duration>0 then
    local target=math.max(0,math.min(1,(vx-28)/(width-56)))*duration
-   mp.commandv('script-message-to','primio_preview','preview',target,math.max(0,math.min(width*scale-240,mx-120)),math.max(0,(height-110)*scale-135))
-   mp.osd_message(time(target),1);preview_visible=true
+   mp.commandv('script-message-to','primio_preview','preview',target,math.max(0,math.min(width*scale-240,mx-120)),math.max(0,(height-136)*scale-135))
+   preview_target=target;preview_x=vx;preview_visible=true
   end
  elseif preview_visible then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
 end)

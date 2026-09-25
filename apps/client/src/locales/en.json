@@ -589,5 +589,12 @@
   "Aucun téléviseur DLNA détecté.": "No DLNA TV found.",
   "Arrêter": "Stop",
   "Remplir l’écran": "Fill screen",
-  "Ajuster à l’écran": "Fit screen"
+  "Ajuster à l’écran": "Fit screen",
+  "Ajouter à une collection": "Add to collection",
+  "Nouvelle collection": "New collection",
+  "Créer et ajouter": "Create and add",
+  "sélectionnés": "selected",
+  "Sélectionner": "Select",
+  "Synchronisez votre profil avant de connecter un service.": "Sync your profile before connecting a service.",
+  "Retirer de la collection": "Remove from collection"
 }

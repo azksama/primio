@@ -1,7 +1,7 @@
 {
   "name": "primio",
   "private": true,
-  "version": "0.2.11",
+  "version": "0.2.12",
   "scripts": {
     "dev": "npm --prefix apps/client run dev",
     "build": "npm --prefix packages/sdk run build && npm --prefix packages/intro-skipper run build && npm --prefix apps/client run build",

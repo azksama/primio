@@ -8,14 +8,15 @@ import { ContinueCard } from './continue-card'
 import { defaultSort } from './catalog-sort'
 import { UpdatePanel } from './update-panel'
 import { ImportPanel } from './import-panel'
-import { Collections, collectionKey } from './collections'
+import { removeProgress } from './progress-deletions'
+import { Collections, collectionKey, SelectablePoster, AddToCollection } from './collections'
 import { DiagnosticsPanel } from './diagnostics-panel'
 import { recordDiagnostic } from './diagnostics'
 import { useTvMode } from './tv'
 import { IntegrationsPanel } from './integrations-panel'
 import { CastPanel, type CastTarget } from './cast-panel'
 import { useAnimeClassification } from './anime-classification'
-import { equivalentSources, rememberSource } from './source-preferences'
+import { equivalentSources, rememberSource, previouslyUsedSource } from './source-preferences'
 import { PasswordField } from './password-field'
 import { CopyTitle } from './copy-title'
 import { DialogShell } from './dialog-shell'
@@ -195,6 +196,15 @@ export default function App() {
   const [libraryFilter, setLibraryFilter] = useState('all'),
     [termsOpen, setTermsOpen] = useState(false)
   const [collectionId, setCollectionId] = useState('')
+  const [selectedLibrary, setSelectedLibrary] = useState<string[]>([])
+  const [selectingLibrary, setSelectingLibrary] = useState(false)
+  const [collectionPicker, setCollectionPicker] = useState(false)
+  useEffect(() => { setSelectedLibrary([]); setSelectingLibrary(false); setCollectionPicker(false) }, [tab, state.activeProfileId])
+  const selectLibraryItem = (m: Meta) => {
+    setSelectingLibrary(true)
+    const key = collectionKey(m)
+    setSelectedLibrary(items => items.includes(key) ? items.filter(k => k !== key) : [...items, key])
+  }
   useTvMode(state.settings.tvMode)
   const [slideDirection, setSlideDirection] = useState('left')
   const touchStart = useRef<{ x: number; y: number } | null>(null)
@@ -626,7 +636,8 @@ export default function App() {
       const matching = equivalentSources(rankSources(r.items, plugins), state.settings, meta)
       const ranked = matching.items
       setSourceList(ranked)
-      const nextStream = preferredAddon ? matching.equivalent : undefined
+      const nextStream = (await previouslyUsedSource(ranked, state.settings, meta, id)) ?? (preferredAddon ? matching.equivalent : undefined)
+      if (seq !== sourceSequence.current) return
       if (nextStream) {
         await play(nextStream, { meta, id })
         return
@@ -684,6 +695,8 @@ export default function App() {
         new Promise<never[]>((resolve) => setTimeout(() => resolve([]), 4000)),
       ])
       if (sequence !== sourceSequence.current) return
+      const remembered = await rememberSource(state.settings, target.meta, target.id, stream)
+      if (sequence !== sourceSequence.current) return
       const p = { meta: target.meta, videoId: target.id, stream, url, subs }
       setPlayback(p)
       const position = state.settings.rememberPosition
@@ -740,10 +753,7 @@ export default function App() {
         setPlayback(null)
         throw Error(t('Le choix des lecteurs externes est disponible dans l’application Android.'))
       }
-      setState((s) => ({
-        ...s,
-        settings: rememberSource(s.settings, target.meta, target.id, stream),
-      }))
+      setState((s) => ({ ...s, settings: { ...s.settings, sourcePreferences: remembered.sourcePreferences } }))
       setSourceTarget(null)
     } catch (e) {
       setPlayback(null)
@@ -998,6 +1008,13 @@ export default function App() {
     } finally {
       setSyncing(false)
     }
+  }
+  async function prepareIntegrationProfile() {
+    const remote = await api<{ version: number; state: UserState | null }>('/account/sync', 'GET', undefined, token)
+    if (remote.state?.profiles?.some(p => p.id === state.activeProfileId)) return
+    if (remote.version !== syncVersion) throw Error(t('Synchronisez votre profil avant de connecter un service.'))
+    const result = await api<{ version: number }>('/account/sync', 'PUT', { version: remote.version, state: snapshotState(state) }, token)
+    setSyncVersion(result.version)
   }
   async function logout() {
     try {
@@ -1699,6 +1716,10 @@ export default function App() {
                   <RefreshCw size={16} /> {t('Synchroniser')}
                 </button>
               </div>
+              <div className="library-selection-actions">
+                {selectingLibrary ? <><span>{selectedLibrary.length} {t('sélectionnés')}</span><button onClick={() => { setSelectingLibrary(false); setSelectedLibrary([]) }}>{t('Annuler')}</button>{collectionId && <button disabled={!selectedLibrary.length} onClick={() => { setState(s => ({...s, collections:(s.collections ?? []).map(c => c.id === collectionId ? {...c, items:c.items.filter(key => !selectedLibrary.includes(key))} : c)})); setSelectedLibrary([]); setSelectingLibrary(false) }}>{t('Retirer de la collection')}</button>}<button className="primary" disabled={!selectedLibrary.length} onClick={() => setCollectionPicker(true)}>{t('Ajouter à une collection')}</button></> : <button onClick={() => setSelectingLibrary(true)}>{t('Sélectionner')}</button>}
+              </div>
+              {collectionPicker && <AddToCollection state={state} setState={setState} items={selectedLibrary.filter(key => state.library.some(m => collectionKey(m) === key))} onClose={() => { setCollectionPicker(false); setSelectingLibrary(false); setSelectedLibrary([]) }}/>}
               <Collections state={state} setState={setState} selected={collectionId} onSelect={setCollectionId}/>
               <div className="chips" role="group" aria-label={t('Filtrer ma liste')}>
                 {[
@@ -1729,7 +1750,11 @@ export default function App() {
                 <ProgressiveList
                   key={state.activeProfileId + libraryFilter + collectionId}
                   items={visibleLibrary}
-                  renderItem={poster}
+                  renderItem={m => <SelectablePoster key={collectionKey(m)} label={m.name} selected={selectedLibrary.includes(collectionKey(m))} selecting={selectingLibrary} onSelect={() => selectLibraryItem(m)} onOpen={() => details(m)}>
+                    <MediaImage src={m.poster}/>
+                    {isWatched(findProgress(state.progress, m.type, m.id)) && <span className="watched-badge"><Check size={14}/> {t('Vu')}</span>}
+                    <strong>{m.name}</strong><small>{isAnime(m) ? t('Animes') : m.type === 'series' ? t('Série') : t('Film')}</small>
+                  </SelectablePoster>}
                   className="poster-grid"
                 />
               ) : (
@@ -2133,7 +2158,7 @@ export default function App() {
                 </>
               )}
               {tab === 'diagnostics' && <DiagnosticsPanel token={token}/>}
-              {tab === 'integrations' && <IntegrationsPanel token={token} profileId={state.activeProfileId}/>}
+              {tab === 'integrations' && <IntegrationsPanel token={token} profileId={state.activeProfileId} prepareProfile={prepareIntegrationProfile}/>}
               {(tab === 'player' || tab === 'options') && (
                 <Preferences
                   section={tab}
@@ -2146,12 +2171,7 @@ export default function App() {
                   items={state.progress}
                   onPlay={(p) => chooseSources(p, p.videoId)}
                   onRemove={(p) =>
-                    setState((s) => ({
-                      ...s,
-                      progress: s.progress.filter(
-                        (x) => x.videoId !== p.videoId || x.type !== p.type,
-                      ),
-                    }))
+                    setState(s => removeProgress(s, p))
                   }
                 />
               )}

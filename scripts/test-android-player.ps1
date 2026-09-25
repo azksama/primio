@@ -24,6 +24,12 @@ if($LASTEXITCODE -ne 0){throw 'Test installation failed'}
 & $adb -s $DeviceSerial shell mkdir -p /sdcard/Android/data/fr.azks.primio/files
 & $adb -s $DeviceSerial push $fixture /sdcard/Android/data/fr.azks.primio/files/validation.mp4
 if($LASTEXITCODE -ne 0){throw 'Fixture transfer failed'}
+# Baseline H.264 with even dimensions is supported by the emulator's platform thumbnail decoder.
+$previewFixture=Join-Path $output 'preview.mp4'
+& ffmpeg -hide_banner -loglevel error -y -i $fixture -vf scale=640:360 -c:v libx264 -profile:v baseline -pix_fmt yuv420p -g 24 -c:a copy $previewFixture
+if($LASTEXITCODE -ne 0){throw 'Preview fixture creation failed'}
+& $adb -s $DeviceSerial push $previewFixture /sdcard/Android/data/fr.azks.primio/files/validation-preview.mp4
+if($LASTEXITCODE -ne 0){throw 'Preview fixture transfer failed'}
 $subtitle=Join-Path $output 'subtitle.srt'
 @("1","00:00:00,000 --> 00:00:32,000","Primio subtitle fixture","") | Set-Content -LiteralPath $subtitle -Encoding utf8
 $multi=Join-Path $output 'tracks.mkv'
@@ -37,7 +43,7 @@ try {
  $result=& $adb -s $DeviceSerial shell am instrument -w -r -e class fr.azks.primio.PlayerFlowTest fr.azks.primio.test/androidx.test.runner.AndroidJUnitRunner
  $result | Set-Content (Join-Path $output 'instrumentation.txt') -Encoding utf8
  $result
- if(($result -join "`n") -notmatch 'OK \(13 tests\)'){throw 'Player instrumentation tests failed'}
+ if(($result -join "`n") -notmatch 'OK \(14 tests\)'){throw 'Player instrumentation tests failed'}
 } finally {
- & $adb -s $DeviceSerial shell rm -f /sdcard/Android/data/fr.azks.primio/files/validation.mp4 /sdcard/Android/data/fr.azks.primio/files/validation.mkv
+ & $adb -s $DeviceSerial shell rm -f /sdcard/Android/data/fr.azks.primio/files/validation.mp4 /sdcard/Android/data/fr.azks.primio/files/validation.mkv /sdcard/Android/data/fr.azks.primio/files/validation-preview.mp4
 }

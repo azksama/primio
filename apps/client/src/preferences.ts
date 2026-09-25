@@ -124,7 +124,7 @@ export function snapshotState(state: UserState): UserState {
     ...state,
     profiles: state.profiles.map((p) =>
       p.id === state.activeProfileId
-        ? { ...p, collections: state.collections ?? [], library: state.library, progress: state.progress, settings: state.settings }
+        ? { ...p, deletedProgress: state.deletedProgress ?? [], collections: state.collections ?? [], library: state.library, progress: state.progress, settings: state.settings }
         : p,
     ),
   }
@@ -137,6 +137,7 @@ export function switchProfile(state: UserState, id: string): UserState {
         ...saved,
         activeProfileId: id,
         collections: profile.collections ?? [],
+        deletedProgress: profile.deletedProgress ?? [],
         library: profile.library,
         progress: profile.progress,
         settings: profile.settings,

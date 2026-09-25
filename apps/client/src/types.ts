@@ -134,6 +134,7 @@ export interface Settings {
   autoSkipIntro: boolean
 }
 export interface Profile {
+  deletedProgress?: import('./progress-deletions').ProgressDeletion[]
   collections?: Collection[]
   avatar?: string
   lastPlaybackAt?: number
@@ -145,6 +146,7 @@ export interface Profile {
   settings: Settings
 }
 export interface UserState {
+  deletedProgress?: import('./progress-deletions').ProgressDeletion[]
   collections?: Collection[]
   library: Pick<Meta, 'id' | 'type' | 'name' | 'poster' | 'category'>[]
   progress: Progress[]

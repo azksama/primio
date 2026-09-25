@@ -1,3 +1,4 @@
+import { withoutDeleted } from './progress-deletions'
 import type { Meta, Progress, UserState } from './types'
 
 export function episodeProgress(meta: Meta, videoId: string) {
@@ -111,7 +112,7 @@ export function mergeNativeProgress(state: UserState, event: NativeProgress): Us
       event.duration,
       event.updatedAt,
     )
-    return { ...state, profiles, progress }
+    return { ...state, profiles, progress: withoutDeleted(progress, state.deletedProgress) }
   }
   return {
     ...state,
@@ -119,13 +120,16 @@ export function mergeNativeProgress(state: UserState, event: NativeProgress): Us
       p.id === c.profileId
         ? {
             ...p,
-            progress: recordProgress(
-              p.progress,
-              c.meta,
-              c.videoId,
-              event.position,
-              event.duration,
-              event.updatedAt,
+            progress: withoutDeleted(
+              recordProgress(
+                p.progress,
+                c.meta,
+                c.videoId,
+                event.position,
+                event.duration,
+                event.updatedAt,
+              ),
+              p.deletedProgress,
             ),
           }
         : p,

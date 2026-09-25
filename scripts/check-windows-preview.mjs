@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
 
-const output = path.resolve('tmp/validation-v0211')
+const output = path.resolve('tmp/validation-v0212')
 await fs.mkdir(output, { recursive: true })
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 async function until(read, test, timeout = 15000) {
@@ -94,9 +94,18 @@ async function run(outro) {
 
     await command('set_property','pause',true)
     const before=await get('time-pos')
-    await command('script-message-to','primio_preview','preview','5','20','20')
+    const size=await get('osd-dimensions')
+    const scale=size.h/720
+    const mx=Math.round(size.w*.6), my=Math.round((720-80)*scale)
+    await command('mouse',mx,my)
+    await command('keypress','mouse_move')
+    const target=(mx/scale-28)/(size.w/scale-56)*(await get('duration'))
+    const seconds=Math.floor(target/5)*5
     await until(()=>fs.stat(path.join(output,'preview.bgra')),info=>info.size===129600,20000)
-    await until(()=>get('user-data/primio/preview'),preview=>preview?.visible&&preview.seconds===5,20000)
+    await until(()=>get('user-data/primio/preview'),preview=>preview?.visible&&preview.seconds===seconds,20000)
+    const preview=await get('user-data/primio/preview')
+    assert.ok(Math.abs(preview.x-(mx-120))<2,'Thumbnail follows the seek cursor horizontally')
+    assert.ok(preview.y+135<(720-110)*scale,'Thumbnail sits above the timestamp and cursor')
     assert.ok(Math.abs((await get('time-pos'))-before)<0.1,'Preview must not seek the playing media')
     await command('screenshot-to-file',path.join(output,'windows-preview.png'),'window')
     await command('script-message-to','primio_preview','hide')

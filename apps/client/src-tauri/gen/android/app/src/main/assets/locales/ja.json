@@ -545,5 +545,12 @@
   "Code incorrect ou expiré. Demandez un nouveau code.": "コードが正しくないか、有効期限が切れています。新しいコードを取得してください。",
   "Reconnectez-vous pour recevoir un code.": "コードを受け取るには再度ログインしてください。",
   "L’envoi du code est indisponible. Réessayez dans un instant.": "コードを送信できませんでした。しばらくしてからもう一度お試しください。",
-  "Impossible de lire cette bande-annonce.": "この予告編は再生できません。"
+  "Impossible de lire cette bande-annonce.": "この予告編は再生できません。",
+  "Ajouter à une collection": "コレクションに追加",
+  "Nouvelle collection": "新しいコレクション",
+  "Créer et ajouter": "作成して追加",
+  "sélectionnés": "件選択中",
+  "Sélectionner": "選択",
+  "Synchronisez votre profil avant de connecter un service.": "サービスに接続する前にプロフィールを同期してください。",
+  "Retirer de la collection": "コレクションから削除"
 }

@@ -8,13 +8,14 @@ local current,job,requested=nil,nil,nil
 local x,y=0,0
 local timeout
 local function hide() mp.commandv('overlay-remove',43);requested=nil;mp.set_property_native('user-data/primio/preview',{visible=false}) end
-local function show(key) mp.commandv('overlay-add',43,x,y,output,0,'bgra',240,135,960);mp.set_property_native('user-data/primio/preview',{visible=true,seconds=key}) end
+local function show(key) mp.commandv('overlay-add',43,x,y,output,0,'bgra',240,135,960);mp.set_property_native('user-data/primio/preview',{visible=true,seconds=key,x=x,y=y}) end
 local function request(seconds,px,py)
  if output=='' or not config.previewExecutable then return end
  x=tonumber(px) or 0;y=tonumber(py) or 0
  local key=math.floor((tonumber(seconds) or 0)/5)*5
  requested=key
  if current==key then show(key);return end
+ mp.commandv('overlay-remove',43)
  if job then return end
  local path=mp.get_property('path')
  if not path then return end
@@ -26,6 +27,7 @@ local function request(seconds,px,py)
   if success and result.status==0 then
    local info=utils.file_info(output)
    if info and info.size==240*135*4 then current=key;if requested==key then show(key)end end
+   if requested and requested~=key then request(requested,x,y) end
   end
  end)
  timeout=mp.add_timeout(10,function()if job then mp.abort_async_command(job);job=nil end end)

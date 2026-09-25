@@ -113,10 +113,10 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   time=text("00:00",13f);remaining=text("",12f)
   labels.addView(time,LinearLayout.LayoutParams(0,-2,1f));labels.addView(remaining,LinearLayout.LayoutParams(-2,-2).apply{rightMargin=dp(18)});labels.addView(button("Audio · ST",tr("Audio et sous-titres")){tracks()});bottom.addView(labels)
   previewPanel=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;background=PrimioStyle.glass(this@PlayerActivity,12);visibility=View.GONE;setPadding(dp(6),dp(6),dp(6),dp(6))}
-  val previewImage=ImageView(this).apply{scaleType=ImageView.ScaleType.FIT_CENTER};previewPanel.addView(previewImage,LinearLayout.LayoutParams(dp(192),dp(108)))
-  previewTime=text("",13f);previewPanel.addView(previewTime);preview=PrimioPreview(options,previewImage)
-  overlay.addView(previewPanel,FrameLayout.LayoutParams(dp(204),dp(144),Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply{bottomMargin=dp(138)})
-  seek=PrimioTimeline(this).apply{onSeek={fraction,done->dragging=!done;handler.removeCallbacks(hide);time.text=format(duration*fraction)+" / "+format(duration);if(done){preview.hide();previewPanel.visibility=View.GONE;command("seek",(duration*fraction).toString(),"absolute");showControls()}else if(duration>0){previewTime.text=format(duration*fraction);previewPanel.visibility=View.VISIBLE;preview.show(duration*fraction)}}}
+  val previewImage=ImageView(this).apply{scaleType=ImageView.ScaleType.FIT_CENTER};previewPanel.addView(previewImage,LinearLayout.LayoutParams(dp(160),dp(90)))
+  previewTime=text("",13f).apply{gravity=Gravity.CENTER};previewPanel.addView(previewTime);preview=PrimioPreview(options,previewImage)
+  overlay.addView(previewPanel,FrameLayout.LayoutParams(dp(172),dp(124),Gravity.TOP or Gravity.START))
+  seek=PrimioTimeline(this).apply{onSeek={fraction,done->dragging=!done;handler.removeCallbacks(hide);time.text=format(duration*fraction)+" / "+format(duration);if(done){preview.hide();previewPanel.visibility=View.GONE;command("seek",(duration*fraction).toString(),"absolute");showControls()}else if(duration>0){showSeekPreview(fraction)}}}
   bottom.addView(seek,LinearLayout.LayoutParams(-1,dp(44)));overlay.addView(bottom,FrameLayout.LayoutParams(-1,dp(132),Gravity.BOTTOM))
   loading=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;contentDescription=tr("Chargement de la vidéo")}
   val artwork=ImageView(this).apply{setImageResource(R.drawable.primio_brand);scaleType=ImageView.ScaleType.FIT_CENTER}
@@ -344,5 +344,18 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
  override fun onStop(){super.onStop();lifecycleStopped=true;if(isInPictureInPictureMode){command("set","pause","yes");emit(false)}}
  override fun onPause(){if(isInPictureInPictureMode){emit(false);super.onPause();return};resumeAfterPause=handle!=0L&&!last.optBoolean("paused");command("set","pause","yes");emit(false);super.onPause()}
  override fun onResume(){super.onResume();if(resumeAfterPause){command("set","pause","no");resumeAfterPause=false}}
+ private fun showSeekPreview(fraction:Float){
+  previewTime.text=format(duration*fraction)
+  val trackLocation=IntArray(2);val overlayLocation=IntArray(2)
+  seek.getLocationOnScreen(trackLocation);overlay.getLocationOnScreen(overlayLocation)
+  val cursorX=trackLocation[0]-overlayLocation[0]+dp(14)+(seek.width-dp(28))*fraction
+  val cursorY=trackLocation[1]-overlayLocation[1]+seek.height/2f
+  previewPanel.measure(View.MeasureSpec.makeMeasureSpec(dp(172),View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(dp(124),View.MeasureSpec.EXACTLY))
+  previewPanel.layoutParams=FrameLayout.LayoutParams(dp(172),dp(124),Gravity.TOP or Gravity.START).apply{
+   leftMargin=(cursorX-dp(86)).toInt().coerceIn(dp(8),(overlay.width-dp(180)).coerceAtLeast(dp(8)))
+   topMargin=(cursorY-dp(140)).toInt().coerceAtLeast(dp(8))
+  }
+  previewPanel.visibility=View.VISIBLE;previewPanel.bringToFront();preview.show(duration*fraction)
+ }
  override fun onDestroy(){if(::preview.isInitialized)preview.close();if(duration>0&&position/duration>=0.95)DownloadStore(this).markWatched(options.optString("downloadId"));if(active?.get()===this){active=null;DownloadStore.playingId=""};breathing?.cancel();handler.removeCallbacksAndMessages(null);sheet?.dismiss();emit(true);release();if(options.optBoolean("deleteWatched")&&options.optString("downloadId").isNotEmpty()&&duration>0&&position/duration>=0.95)DownloadStore(this).remove(options.getString("downloadId"));if(::focus.isInitialized)audio.abandonAudioFocusRequest(focus);super.onDestroy()}
 }

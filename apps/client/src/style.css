@@ -2853,3 +2853,16 @@ dialog.trailer-dialog {
 .integration-card {padding:22px;margin-bottom:20px;border-radius:22px}
 
 .cast-devices{display:grid;gap:12px}.cast-devices>button{display:flex;align-items:center;gap:12px}.compact-source>.source-cast{flex-shrink:0}
+
+.collections .chips button { display:inline-flex;align-items:center;justify-content:center;gap:10px; }
+.collections .chips button svg { flex-shrink:0; }
+.library-selection-actions { display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:16px; }
+.library-selection-actions button { min-height:40px;padding:10px 16px; }
+.library-selection-actions span { margin-right:auto; }
+.selectable-poster { position:relative;touch-action:pan-y;user-select:none;-webkit-touch-callout:none; }
+.selectable-poster img { pointer-events:none; }
+.selectable-poster.is-selected .media-image { outline:2px solid var(--text,#dad4c5);outline-offset:3px; }
+.poster-selection { position:absolute;top:8px;right:8px;width:28px;height:28px;display:grid;place-items:center;border:1px solid #dad4c5;border-radius:50%;background:#181a19e8;color:#dad4c5; }
+.is-selected .poster-selection { background:#dad4c5;color:#161816; }
+.collection-destinations { display:grid;gap:12px;margin-bottom:24px; }
+.collection-destinations button { display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:48px; }

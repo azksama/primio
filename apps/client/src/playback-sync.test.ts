@@ -30,3 +30,20 @@ describe('playback sync', () => {
     ).toEqual([])
   })
 })
+
+
+it('propagates history deletions and permits a later intentional replay', async () => {
+  const { removeProgress } = await import('./progress-deletions')
+  const { snapshotState, switchProfile } = await import('./preferences')
+  const state = createState()
+  const entry: Progress = { id: 'film', type: 'movie', videoId: 'film', name: 'Film', position: 20, duration: 90, updatedAt: 100 }
+  state.progress = [entry]
+  state.profiles.push({ ...state.profiles[0], id: 'other', progress: [entry] })
+  const deleted = removeProgress(state, entry, 200)
+  const merged = mergePlaybackState(deleted, [{ id: 'main', progress: [entry] }])
+  expect(merged.progress).toEqual([])
+  expect(switchProfile(snapshotState(merged), 'other').progress).toEqual([entry])
+  const secondDevice = mergePlaybackState(state, snapshotState(deleted).profiles)
+  expect(secondDevice.progress).toEqual([])
+  expect(mergePlaybackState(secondDevice, [{ id: 'main', progress: [{ ...entry, updatedAt: 300 }] }]).progress).toHaveLength(1)
+})

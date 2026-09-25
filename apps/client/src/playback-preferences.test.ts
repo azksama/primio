@@ -82,7 +82,7 @@ describe('Episode dates and playback preferences', () => {
     expect(audioPreference(settings, { ...anime, category: undefined, id: 'tt1' })).toBe('fra')
     expect(audioPreference(settings, { id: 'tt2', type: 'movie', name: 'Film' })).toBe('eng')
   })
-  it('remembers source characteristics without storing expiring media URLs', () => {
+  it('remembers source characteristics without storing expiring media URLs', async () => {
     const old: Stream = {
       url: 'https://example.org/old?token=secret',
       addonKey: 'https://addon.example/manifest.json',
@@ -90,7 +90,7 @@ describe('Episode dates and playback preferences', () => {
       audioLanguages: ['ja'],
       subtitleLanguages: ['fr'],
     }
-    const settings = rememberSource(createState().settings, anime, 'ep1', old)
+    const settings = await rememberSource(createState().settings, anime, 'ep1', old)
     expect(JSON.stringify(settings.sourcePreferences)).not.toContain('secret')
     const other = { ...old, url: 'https://example.org/new', addonKey: 'another' },
       low = { ...old, name: '720p WEBRip' },
@@ -103,4 +103,22 @@ describe('Episode dates and playback preferences', () => {
       sourceLanguages({ name: '1080p VOSTFR', title: 'Audio: 🇯🇵 Japanese\nSubtitles: 🇫🇷 French' }),
     ).toEqual({ audio: ['jpn'], subtitles: ['fra'] })
   })
+})
+
+
+it('restores the exact source per episode and avoids ambiguous automatic choices', async () => {
+  const { previouslyUsedSource } = await import('./source-preferences')
+  const meta = { id: 'show', type: 'series', name: 'Show' }
+  const first = { addonKey: 'a', url: 'https://media/1?secret=one', title: 'Episode 1 WEB-DL 1080p' }
+  const second = { addonKey: 'a', url: 'https://media/2', title: 'Episode 2 WEBRip 720p' }
+  let settings = await rememberSource(createState().settings, meta, 'ep1', first)
+  settings = await rememberSource(settings, meta, 'ep2', second)
+  const refreshed = { ...first, url: 'https://media/1?secret=renewed' }
+  expect(await previouslyUsedSource([second, refreshed], settings, meta, 'ep1')).toBe(refreshed)
+  expect(await previouslyUsedSource([second], settings, meta, 'ep1')).toBeUndefined()
+  expect(await previouslyUsedSource([refreshed, { ...refreshed }], settings, meta, 'ep1')).toBeUndefined()
+  const bare = { addonKey: 'a', url: 'https://media/private?token=secret' }
+  settings = await rememberSource(settings, meta, 'bare', bare)
+  expect(JSON.stringify(settings)).not.toContain('token=secret')
+  expect(await previouslyUsedSource([bare], settings, meta, 'bare')).toBe(bare)
 })

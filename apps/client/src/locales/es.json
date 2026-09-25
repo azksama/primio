@@ -545,5 +545,12 @@
   "Code incorrect ou expiré. Demandez un nouveau code.": "Código incorrecto o caducado. Solicita uno nuevo.",
   "Reconnectez-vous pour recevoir un code.": "Inicia sesión de nuevo para recibir un código.",
   "L’envoi du code est indisponible. Réessayez dans un instant.": "No se pudo enviar el código. Inténtalo de nuevo en unos instantes.",
-  "Impossible de lire cette bande-annonce.": "No se puede reproducir este tráiler."
+  "Impossible de lire cette bande-annonce.": "No se puede reproducir este tráiler.",
+  "Ajouter à une collection": "Añadir a colección",
+  "Nouvelle collection": "Nueva colección",
+  "Créer et ajouter": "Crear y añadir",
+  "sélectionnés": "seleccionados",
+  "Sélectionner": "Seleccionar",
+  "Synchronisez votre profil avant de connecter un service.": "Sincroniza tu perfil antes de conectar un servicio.",
+  "Retirer de la collection": "Quitar de la colección"
 }

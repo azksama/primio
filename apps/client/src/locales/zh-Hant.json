@@ -545,5 +545,12 @@
   "Code incorrect ou expiré. Demandez un nouveau code.": "驗證碼錯誤或已過期。請取得新驗證碼。",
   "Reconnectez-vous pour recevoir un code.": "請重新登入以接收驗證碼。",
   "L’envoi du code est indisponible. Réessayez dans un instant.": "無法傳送驗證碼，請稍後重試。",
-  "Impossible de lire cette bande-annonce.": "無法播放此預告片。"
+  "Impossible de lire cette bande-annonce.": "無法播放此預告片。",
+  "Ajouter à une collection": "加入收藏集",
+  "Nouvelle collection": "新增收藏集",
+  "Créer et ajouter": "建立並加入",
+  "sélectionnés": "項已選取",
+  "Sélectionner": "選取",
+  "Synchronisez votre profil avant de connecter un service.": "連接服務前請同步個人資料。",
+  "Retirer de la collection": "從收藏集中移除"
 }

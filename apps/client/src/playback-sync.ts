@@ -1,4 +1,5 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
+import { mergeDeletions, withoutDeleted, type ProgressDeletion } from './progress-deletions'
 import { api } from './platform'
 import { snapshotState } from './preferences'
 import { progressKey } from './progress'
@@ -16,16 +17,24 @@ export function mergePlayback(local: Progress[], remote: Progress[]) {
 
 export function mergePlaybackState(
   state: UserState,
-  remote: { id: string; progress: Progress[] }[],
+  remote: { id: string; progress: Progress[]; deletedProgress?: ProgressDeletion[] }[],
 ) {
   const snapshot = snapshotState(state)
-  const profiles = snapshot.profiles.map((p) => ({
-    ...p,
-    progress: mergePlayback(p.progress, remote.find((r) => r.id === p.id)?.progress ?? []),
-  }))
+  const profiles = snapshot.profiles.map((p) => {
+    const other = remote.find((r) => r.id === p.id)
+    const deletedProgress = mergeDeletions(p.deletedProgress, other?.deletedProgress)
+    return {
+      ...p,
+      deletedProgress,
+      progress: withoutDeleted(mergePlayback(p.progress, other?.progress ?? []), deletedProgress),
+    }
+  })
   return {
     ...state,
     profiles,
+    deletedProgress:
+      profiles.find((p) => p.id === state.activeProfileId)?.deletedProgress ??
+      state.deletedProgress,
     progress: profiles.find((p) => p.id === state.activeProfileId)?.progress ?? state.progress,
   }
 }
@@ -47,10 +56,18 @@ export function usePlaybackSync(
       busy = true
       try {
         const local = snapshotState(current.current)
-        const result = await api<{ profiles: { id: string; progress: Progress[] }[] }>(
+        const result = await api<{
+          profiles: { id: string; progress: Progress[]; deletedProgress?: ProgressDeletion[] }[]
+        }>(
           '/account/progress',
           'POST',
-          { profiles: local.profiles.map((p) => ({ id: p.id, progress: p.progress })) },
+          {
+            profiles: local.profiles.map((p) => ({
+              id: p.id,
+              progress: p.progress,
+              deletedProgress: p.deletedProgress,
+            })),
+          },
           token,
         )
         if (!active) return

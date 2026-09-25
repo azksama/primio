@@ -1,6 +1,6 @@
 [package]
 name = "primio"
-version = "0.2.11"
+version = "0.2.12"
 description = "Primio streaming client"
 edition = "2021"
 license = "MIT"

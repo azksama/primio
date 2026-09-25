@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Intent
 import android.os.SystemClock
 import android.view.View
+import android.view.MotionEvent
+import android.widget.ImageView
 import android.view.ViewGroup
 import android.view.inspector.WindowInspector
 import android.widget.TextView
@@ -41,8 +43,8 @@ class PlayerFlowTest {
         context.getSharedPreferences("primio-settings",0).edit().putString("language",previousLanguage).commit()
     }
 
-    private fun start(position: Double = 0.0, automatic: Boolean = false, outro: Boolean = false, next: Boolean = true, multiTrack: Boolean = false, externalUrl: String = "", forceStyle: Boolean = false) {
-        val file = File(context.getExternalFilesDir(null), if(multiTrack) "validation.mkv" else "validation.mp4")
+    private fun start(position: Double = 0.0, automatic: Boolean = false, outro: Boolean = false, next: Boolean = true, multiTrack: Boolean = false, externalUrl: String = "", forceStyle: Boolean = false, previewFrame: Boolean = false) {
+        val file = File(context.getExternalFilesDir(null), if(previewFrame) "validation-preview.mp4" else if(multiTrack) "validation.mkv" else "validation.mp4")
         assertTrue("Run scripts/test-android-player.ps1 to install the video fixture", file.isFile)
         val episodes = JSONArray().put(JSONObject().put("id", "qa:1").put("title", "Premier épisode").put("season", 1).put("episode", 1))
             .put(JSONObject().put("id", "qa:2").put("title", "Deuxième épisode").put("season", 1).put("episode", 2))
@@ -90,6 +92,40 @@ class PlayerFlowTest {
     }
     private fun journal() = JSONObject(PrimioStore.read(context, "playerProgress") ?: "{}")
     private fun waitForNext() = waitUntil("No next episode request") { journal().optString("requestedVideoId") == "qa:2" }
+
+    @Test fun seekPreviewFollowsCursorWithoutSeekingUntilRelease() {
+        start(previewFrame = true)
+        waitUntil("Player did not load") { find("Audio et sous-titres") != null }
+        click("Lecture ou pause")
+        val timeline = views().filterIsInstance<PrimioTimeline>().single()
+        val density = context.resources.displayMetrics.density
+        val down = SystemClock.uptimeMillis()
+        fun touch(action: Int, fraction: Float) {
+            instrumentation.runOnMainSync {
+                val x = 14 * density + (timeline.width - 28 * density) * fraction
+                val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, timeline.height / 2f, 0)
+                timeline.dispatchTouchEvent(event)
+                event.recycle()
+            }
+            instrumentation.waitForIdleSync()
+        }
+        touch(MotionEvent.ACTION_DOWN, .25f)
+        waitUntil("Preview frame did not load") { views().filterIsInstance<ImageView>().any { it.drawable != null } }
+        val preview = views().filterIsInstance<ImageView>().first { it.drawable != null }.parent as View
+        val first = IntArray(2)
+        instrumentation.runOnMainSync { preview.getLocationOnScreen(first) }
+        touch(MotionEvent.ACTION_MOVE, .7f)
+        val moved = IntArray(2); val track = IntArray(2)
+        instrumentation.runOnMainSync { preview.getLocationOnScreen(moved); timeline.getLocationOnScreen(track) }
+        assertTrue("Preview must move with the cursor", moved[0] > first[0])
+        assertTrue("Image and time must remain above the track", moved[1] + preview.height < track[1] + timeline.height / 2)
+        val cursorX = track[0] + 14 * density + (timeline.width - 28 * density) * .7f
+        assertTrue("Preview must be centered on the cursor", kotlin.math.abs(moved[0] + preview.width / 2f - cursorX) < 2 * density)
+        waitUntil("Updated preview frame did not load") { views().filterIsInstance<ImageView>().any { it.drawable != null } }
+        capture("native-seek-preview")
+        touch(MotionEvent.ACTION_UP, .7f)
+        waitUntil("Preview must hide after seeking") { !preview.isShown }
+    }
 
     @Test fun episodeDrawerAndAudioPlacement() {
         start()

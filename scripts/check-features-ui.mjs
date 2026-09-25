@@ -3,7 +3,7 @@ import { mkdir } from 'node:fs/promises'
 const require = createRequire(new URL('../apps/client/package.json', import.meta.url))
 const { chromium, expect } = require('@playwright/test')
 const browser = await chromium.launch({ headless: true })
-const output = new URL('../tmp/validation-v0211/', import.meta.url).pathname.replace(
+const output = new URL('../tmp/validation-v0212/', import.meta.url).pathname.replace(
   /^\/([A-Z]:)/,
   '$1',
 )
@@ -189,12 +189,25 @@ const nav=page.getByRole('navigation')
 await nav.getByRole('button',{name:'My list',exact:true}).click()
 await page.getByRole('button',{name:'Create collection',exact:true}).click()
 await page.getByRole('dialog').getByRole('textbox').fill('Weekend')
-await page.getByRole('dialog').getByRole('checkbox').first().check()
+await expect(page.getByRole('dialog').getByRole('checkbox')).toHaveCount(0)
 await page.getByRole('dialog').getByRole('button',{name:'Save',exact:true}).click()
 await expect(page.getByRole('button',{name:/Weekend/})).toHaveAttribute('aria-pressed','true')
+await page.locator('.collections .chips button').first().click()
+const first = page.locator('.selectable-poster').first()
+const box = await first.boundingBox()
+await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+await page.mouse.down()
+await expect(first).toHaveAttribute('aria-pressed', 'true')
+await page.mouse.up()
+await page.locator('.selectable-poster').nth(1).click()
+await expect(page.locator('.is-selected')).toHaveCount(2)
+await page.getByRole('button', {name:'Add to collection',exact:true}).click()
+await page.getByRole('dialog').getByRole('button',{name:/Weekend/}).click()
+await page.getByRole('button',{name:/Weekend/}).click()
+await expect(page.locator('.selectable-poster')).toHaveCount(2)
 await page.screenshot({path:output+'/collection.png'})
 await page.getByRole('button',{name:'Edit collection',exact:true}).click()
-await expect(page.getByRole('dialog').getByRole('checkbox').first()).toBeChecked()
+await expect(page.getByRole('dialog').getByRole('checkbox')).toHaveCount(0)
 await page.getByRole('dialog').getByRole('button',{name:'Delete collection',exact:true}).click()
 await expect(page.getByRole('button',{name:/Weekend/})).toHaveCount(0)
 await nav.getByRole('button',{name:'Settings',exact:true}).click()
@@ -204,6 +217,38 @@ await nav.getByRole('button',{name:'Settings',exact:true}).click()
 await page.getByRole('button',{name:/Diagnostic/}).click()
 await expect(page.getByRole('button',{name:'Send report',exact:true})).toBeDisabled()
 await page.screenshot({path:output+'/diagnostics.png'})
+await page.addInitScript(() => {
+  const original=window.__TAURI_INTERNALS__.invoke
+  let serverState=null, version=0, failure=true
+  window.oauthCalls=[]
+  window.__TAURI_INTERNALS__.invoke=async(command,args={})=>{
+    if(command==='secure_read'&&args.key==='startupProfile')return JSON.stringify({account:'qa@example.org',profileId:'main'})
+    if(command==='secure_read'&&args.key==='session')return JSON.stringify({token:'qa-token',email:'qa@example.org',version:0})
+    if(command==='api_request'){
+      if(args.path==='/account/progress')return {profiles:serverState?.profiles??[]}
+      if(args.path==='/account/sync'){
+        if(args.method==='PUT'){serverState=args.body.state;version++;window.oauthCalls.push('sync');return {version}}
+        return {version,state:serverState}
+      }
+      if(args.path==='/account/integrations'){
+        if(args.method==='GET')return {connections:[],providers:['trakt','anilist','mal'].map(provider=>({provider,configured:true}))}
+        window.oauthCalls.push(args.body.provider)
+        if(failure){failure=false;throw {message:'Connection test error',status:503}}
+        return {url:'https://provider.example/authorize/'+args.body.provider}
+      }
+    }
+    if(command==='open_link'){window.oauthCalls.push(args.url);return}
+    return original(command,args)
+  }
+})
+await page.reload()
+await nav.getByRole('button',{name:'Settings',exact:true}).click()
+await page.getByRole('button',{name:/Connected services/}).click()
+await page.getByRole('button',{name:'Connect',exact:true}).first().click()
+await expect(page.getByRole('alert')).toContainText('Connection test error')
+await page.getByRole('button',{name:'Connect',exact:true}).first().click()
+await expect.poll(()=>page.evaluate(()=>window.oauthCalls.includes('https://provider.example/authorize/trakt'))).toBe(true)
+expect(await page.evaluate(()=>window.oauthCalls.slice(0,2))).toEqual(['sync','trakt'])
 expect(errors).toEqual([])
 console.log('Collections create/edit/delete, profile services, and voluntary diagnostic UI passed with mock bridge.')
 await browser.close()

@@ -10,7 +10,15 @@ type Status = {
   }[]
   providers: { provider: string; configured: boolean }[]
 }
-export function IntegrationsPanel({ token, profileId }: { token: string; profileId: string }) {
+export function IntegrationsPanel({
+  token,
+  profileId,
+  prepareProfile,
+}: {
+  token: string
+  profileId: string
+  prepareProfile: () => Promise<void>
+}) {
   const [status, setStatus] = useState<Status | null>(null),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false)
@@ -35,6 +43,7 @@ export function IntegrationsPanel({ token, profileId }: { token: string; profile
     setBusy(true)
     setError('')
     try {
+      if (action === 'connect') await prepareProfile()
       const result = await api<{ url?: string }>(
         '/account/integrations',
         'POST',
@@ -44,7 +53,15 @@ export function IntegrationsPanel({ token, profileId }: { token: string; profile
       if (result.url) await openLink(result.url)
       await refresh()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(
+        t(
+          e instanceof Error
+            ? e.message
+            : typeof e === 'object' && e && 'message' in e
+              ? String(e.message)
+              : String(e),
+        ),
+      )
     } finally {
       setBusy(false)
     }

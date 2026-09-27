@@ -1,3 +1,4 @@
+import { useProfilePin, PinSettings } from './profile-pin'
 import { useFeatured } from './featured'
 import {
   EmailVerification,
@@ -9,7 +10,10 @@ import { ContinueCard } from './continue-card'
 import { defaultSort } from './catalog-sort'
 import { UpdatePanel } from './update-panel'
 import { ImportPanel } from './import-panel'
-import { useImportSync } from './import-sync'
+import { useAccountSync } from './account-sync'
+import { PluginStore, installPlugin } from './plugin-store'
+import { viewingStatus, progressSignature, statusLabel, StatusChoice } from './library-status'
+import { WatchOrders, WatchOrderBuilder } from './watch-order'
 import { removeProgress } from './progress-deletions'
 import { Collections, collectionKey, SelectablePoster, AddToCollection } from './collections'
 import { DiagnosticsPanel } from './diagnostics-panel'
@@ -29,14 +33,29 @@ import { SeasonalAnime, seasonOptions, currentSeason } from './seasonal'
 import { Sources } from './sources'
 import { t } from './i18n'
 import { ReleaseCalendar, NotificationCenter, useReleases, titleWatched } from './releases'
-import { GroupedSearch } from './search'
+import {
+  DiscoveryControls,
+  RandomPick,
+  SearchSuggestions,
+  UniversalSearch,
+  VoiceSearch,
+} from './discovery-panel'
+import { matchesDiscovery, type DiscoveryFilters } from './discovery'
 import { setLocale } from './i18n'
 import { Recommendations } from './recommendations'
 import { Onboarding } from './onboarding'
 import { episodeQueue, playbackTitle } from './episodes'
 import { version } from '../package.json'
 import { MediaImage, CardSkeleton } from './media-image'
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import {
+  useLayoutEffect,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react'
 import {
   Home,
   Bell,
@@ -180,6 +199,7 @@ export default function App() {
   const [profileGate, setProfileGate] = useState(false)
   const [startupProfile, setStartupProfile] = useState('ask')
   const startupChecked = useRef('')
+  const sourceResume = useRef<{ videoId: string; position: number } | null>(null)
   const handledEpisode = useRef('')
   const episodeRequest = useRef<(event: NativeProgress) => void>(() => {})
   const [onboarding, setOnboarding] = useState(false)
@@ -198,15 +218,24 @@ export default function App() {
     [manifestCopy, setManifestCopy] = useState('')
   const [libraryFilter, setLibraryFilter] = useState('all'),
     [termsOpen, setTermsOpen] = useState(false)
+  const [libraryStatus, setLibraryStatus] = useState('all')
+  const [librarySort, setLibrarySort] = useState('manual')
+  const [libraryDescending, setLibraryDescending] = useState(false)
   const [collectionId, setCollectionId] = useState('')
   const [selectedLibrary, setSelectedLibrary] = useState<string[]>([])
   const [selectingLibrary, setSelectingLibrary] = useState(false)
   const [collectionPicker, setCollectionPicker] = useState(false)
-  useEffect(() => { setSelectedLibrary([]); setSelectingLibrary(false); setCollectionPicker(false) }, [tab, state.activeProfileId])
+  useEffect(() => {
+    setSelectedLibrary([])
+    setSelectingLibrary(false)
+    setCollectionPicker(false)
+  }, [tab, state.activeProfileId])
   const selectLibraryItem = (m: Meta) => {
     setSelectingLibrary(true)
     const key = collectionKey(m)
-    setSelectedLibrary(items => items.includes(key) ? items.filter(k => k !== key) : [...items, key])
+    setSelectedLibrary((items) =>
+      items.includes(key) ? items.filter((k) => k !== key) : [...items, key],
+    )
   }
   useTvMode(state.settings.tvMode)
   const [slideDirection, setSlideDirection] = useState('left')
@@ -237,15 +266,24 @@ export default function App() {
   const [syncVersion, setSyncVersion] = useState(0),
     [conflict, setConflict] = useState<{ version: number; state: UserState } | null>(null),
     [syncing, setSyncing] = useState(false)
-  const [plugins, setPlugins] = useState<PrimioPlugin[]>([]),
+  const [installedPlugins, setPlugins] = useState<PrimioPlugin[]>([]),
     [pluginCandidate, setPluginCandidate] = useState<PrimioPlugin | null>(null),
     [pluginPage, setPluginPage] = useState<{ plugin: PrimioPlugin; id: string } | null>(null)
+  const plugins = useMemo(
+    () => installedPlugins.filter((p) => p.enabled !== false),
+    [installedPlugins],
+  )
+  const hideSpoilers =
+    !state.settings.showSpoilers || plugins.some((p) => p.spoilers?.hideUnwatched)
+  const pluginLayout = Object.assign({}, ...plugins.map((p) => p.layout ?? {}))
+  const pluginAccessibility = Object.assign({}, ...plugins.map((p) => p.accessibility ?? {}))
   const [playback, setPlayback] = useState<Playback | null>(null),
     [deleteOpen, setDeleteOpen] = useState(false),
     [online, setOnline] = useState(navigator.onLine)
   const videoRef = useRef<HTMLVideoElement>(null),
     sourceSequence = useRef(0),
     detailSequence = useRef(0)
+  const [discoveryFilters, setDiscoveryFilters] = useState<DiscoveryFilters>({})
   const searchQuery = useDebounced(query)
   const [pendingLink, setPendingLink] = useState('')
   const [addonsLoading, setAddonsLoading] = useState(true)
@@ -256,9 +294,27 @@ export default function App() {
     ready && !addonsLoading,
     token ? email : 'local',
   )
+  const searchLibrary = useMemo(
+    () => [...state.library, ...releases.metas],
+    [state.library, releases.metas],
+  )
   const currentPlayback = useRef<Playback | null>(null)
   usePlaybackSync(state, setState, token, ready && !conflict && !playbackSyncPaused)
-  const importSync = useImportSync(state, setState, token, email, ready && !conflict && !playbackSyncPaused, setSyncVersion)
+  const profilePins = useProfilePin(token ? email.toLowerCase() : 'local')
+  const activeProfile = state.profiles.find((p) => p.id === state.activeProfileId)!
+  const profileLocked = !profilePins.isUnlocked(activeProfile)
+  useEffect(() => {
+    if (ready && !onboarding && profileLocked) setProfileGate(true)
+  }, [ready, onboarding, profileLocked])
+  const accountSync = useAccountSync(
+    state,
+    setState,
+    token,
+    email,
+    ready && !conflict && !playbackSyncPaused,
+    setSyncVersion,
+  )
+  const importSync = { syncing: accountSync.syncing, pending: !!state.pendingImports?.length }
   currentPlayback.current = playback
   const notify = (text: string) => {
     setToast(text)
@@ -288,11 +344,18 @@ export default function App() {
       }
     })()
   }, [])
+  const savedPinSignature = useRef('')
   useEffect(() => {
     if (!ready) return
-    const timer = setTimeout(() => {
-      writeSecure('state', JSON.stringify(snapshotState(state))).catch(fail)
-    }, 400)
+    const pinSignature = JSON.stringify(state.profiles.map((p) => [p.id, p.pin]))
+    const pinChanged = pinSignature !== savedPinSignature.current
+    savedPinSignature.current = pinSignature
+    const timer = setTimeout(
+      () => {
+        writeSecure('state', JSON.stringify(snapshotState(state))).catch(fail)
+      },
+      pinChanged ? 0 : 400,
+    )
     return () => clearTimeout(timer)
   }, [state, ready])
   useEffect(() => {
@@ -300,20 +363,38 @@ export default function App() {
       writeSecure('session', JSON.stringify({ token, email, version: syncVersion })).catch(fail)
   }, [token, email, syncVersion, ready])
   useEffect(() => {
-    if (ready) writeSecure('plugins', JSON.stringify(plugins)).catch(fail)
-    const t = plugins.filter((p) => p.permissions.includes('theme')).at(-1)?.theme
-    for (const [k, v] of Object.entries({
+    if (ready) writeSecure('plugins', JSON.stringify(installedPlugins)).catch(fail)
+    const theme = plugins.filter((p) => p.permissions.includes('theme')).at(-1)?.theme
+    const values = {
       background: '#101110',
       surface: '#1D1E1C',
       accent: '#DAD4C5',
       text: '#F3F1EB',
-      ...t,
-    }))
-      document.documentElement.style.setProperty('--' + k, v)
-  }, [plugins, ready])
+      muted: '#B7B8B1',
+      ...theme,
+    }
+    for (const k of ['background', 'surface', 'accent', 'text', 'muted'] as const)
+      document.documentElement.style.setProperty('--' + k, values[k])
+    document.documentElement.style.setProperty('--line', theme?.border ?? '#ffffff24')
+    document.documentElement.style.setProperty('--plugin-radius', (theme?.radius ?? 16) + 'px')
+    document.documentElement.style.setProperty(
+      '--plugin-glass',
+      String(theme?.glassOpacity ?? 0.78),
+    )
+    document.documentElement.style.setProperty(
+      '--plugin-font',
+      theme?.font === 'serif'
+        ? 'Georgia, serif'
+        : theme?.font === 'monospace'
+          ? 'monospace'
+          : 'Inter, Arial, sans-serif',
+    )
+  }, [plugins, installedPlugins, ready])
   useEffect(() => {
-    document.documentElement.dataset.motion = state.settings.reduceMotion ? 'reduced' : 'full'
-  }, [state.settings.reduceMotion])
+    document.documentElement.dataset.motion =
+      state.settings.reduceMotion || pluginAccessibility.reduceMotion ? 'reduced' : 'full'
+    document.documentElement.style.fontSize = 15 * (pluginAccessibility.fontScale ?? 1) + 'px'
+  }, [state.settings.reduceMotion, pluginAccessibility.reduceMotion, pluginAccessibility.fontScale])
   useEffect(() => {
     const update = () => setOnline(navigator.onLine)
     window.addEventListener('online', update)
@@ -551,38 +632,45 @@ export default function App() {
     }
   }
   function goBack() {
+    savePageScroll()
     if (selected) {
       ++detailSequence.current
       setSelected(null)
     } else if (pluginPage) setPluginPage(null)
     else navigate(tab === 'calendar' ? 'library' : tab === 'notifications' ? 'home' : 'settings')
     setSlideDirection('right')
-    scrollToTop()
   }
   function navigate(next: Tab) {
+    savePageScroll()
     const order: Tab[] = ['home', 'explore', 'library', 'settings']
     setSlideDirection(order.indexOf(next) >= order.indexOf(tab) ? 'left' : 'right')
     ++detailSequence.current
     setDetailLoading(false)
     setTab(next)
-    setCatalogChoice('all')
-    setGenre('')
     setSelected(null)
     setPluginPage(null)
     setError('')
-    scrollToTop()
   }
-  async function details(meta: Meta) {
+  async function details(meta: Meta, refresh = false) {
+    savePageScroll()
     const seq = ++detailSequence.current
     setSelected(meta)
     setDetailLoading(true)
-    scrollToTop()
-    const m = await metadata(catalogAddons, meta)
-    if (seq === detailSequence.current) {
-      setSelected(m)
-      setDetailLoading(false)
+    try {
+      const m = await metadata(catalogAddons, meta, {
+        refresh,
+        onUpdate: (m) => {
+          if (seq === detailSequence.current) setSelected(m)
+        },
+      })
+      if (seq === detailSequence.current) setSelected(m)
+    } catch {
+      if (seq === detailSequence.current) setSelected({ ...meta, metadataStatus: 'unavailable' })
+    } finally {
+      if (seq === detailSequence.current) setDetailLoading(false)
     }
   }
+
   function bookmark(meta: Meta) {
     setState((s) => ({
       ...s,
@@ -623,7 +711,12 @@ export default function App() {
     token,
     email,
   ])
-  async function chooseSources(meta: Meta, id = meta.id, preferredAddon?: string) {
+  async function chooseSources(
+    meta: Meta,
+    id = meta.id,
+    preferredAddon?: string,
+    forcePicker = false,
+  ) {
     setSourceTarget({ meta, id })
     setSourceList([])
     setSourceError('')
@@ -640,7 +733,10 @@ export default function App() {
       const matching = equivalentSources(rankSources(r.items, plugins), state.settings, meta)
       const ranked = matching.items
       setSourceList(ranked)
-      const nextStream = (await previouslyUsedSource(ranked, state.settings, meta, id)) ?? (preferredAddon ? matching.equivalent : undefined)
+      const nextStream = forcePicker
+        ? undefined
+        : ((await previouslyUsedSource(ranked, state.settings, meta, id)) ??
+          (preferredAddon ? matching.equivalent : undefined))
       if (seq !== sourceSequence.current) return
       if (nextStream) {
         await play(nextStream, { meta, id })
@@ -671,11 +767,16 @@ export default function App() {
       return
     handledEpisode.current = event.actionId
     const current = playback
+    sourceResume.current =
+      event.requestedVideoId === current.videoId
+        ? { videoId: current.videoId, position: event.position }
+        : null
     setPlayback(null)
     void chooseSources(
       current.meta,
       event.requestedVideoId,
       event.autoPlay ? current.stream.addonName : undefined,
+      !event.autoPlay,
     )
   }
   async function play(stream: Stream, override?: { meta: Meta; id: string }) {
@@ -703,9 +804,12 @@ export default function App() {
       if (sequence !== sourceSequence.current) return
       const p = { meta: target.meta, videoId: target.id, stream, url, subs }
       setPlayback(p)
-      const position = state.settings.rememberPosition
-        ? resumePosition(state.progress, target.meta.type, target.id)
-        : 0
+      const position =
+        sourceResume.current?.videoId === target.id
+          ? sourceResume.current.position
+          : state.settings.rememberPosition
+            ? resumePosition(state.progress, target.meta.type, target.id)
+            : 0
       if (isTauri()) {
         await invoke('play_media', {
           url,
@@ -713,8 +817,11 @@ export default function App() {
           external: state.settings.player === 'external' && isAndroid(),
           position,
           playerExtra: JSON.stringify({
-            ...episodeQueue(target.meta, target.id),
-            ...await playerOptions(state.settings),
+            ...episodeQueue(target.meta, target.id, Date.now(), hideSpoilers, state.progress),
+            ...(await playerOptions(state.settings)),
+            trackPreferences: state.settings.trackPreferences?.find(
+              (p) => p.contentId === target.meta.id,
+            ),
           }),
           progressContext: JSON.stringify({
             profileId: state.activeProfileId,
@@ -757,7 +864,11 @@ export default function App() {
         setPlayback(null)
         throw Error(t('Le choix des lecteurs externes est disponible dans l’application Android.'))
       }
-      setState((s) => ({ ...s, settings: { ...s.settings, sourcePreferences: remembered.sourcePreferences } }))
+      setState((s) => ({
+        ...s,
+        settings: { ...s.settings, sourcePreferences: remembered.sourcePreferences },
+      }))
+      sourceResume.current = null
       setSourceTarget(null)
     } catch (e) {
       setPlayback(null)
@@ -817,9 +928,18 @@ export default function App() {
       await invoke('play_download', {
         id: item.id,
         options: {
-          ...await playerOptions(state.settings),
+          ...(await playerOptions(state.settings)),
+          trackPreferences: state.settings.trackPreferences?.find(
+            (p) => p.contentId === item.meta.meta.id,
+          ),
           title: item.title,
-          ...episodeQueue(item.meta.meta, item.meta.videoId),
+          ...episodeQueue(
+            item.meta.meta,
+            item.meta.videoId,
+            Date.now(),
+            hideSpoilers,
+            state.progress,
+          ),
           context: {
             profileId: state.activeProfileId,
             accountId: token ? email : 'local',
@@ -889,29 +1009,12 @@ export default function App() {
         }
       : state
     if (signup) setState(next)
-    try {
-      const remote = await api<{ version: number; state: UserState | null }>(
-        '/account/sync',
-        'GET',
-        undefined,
-        result.token,
-      )
-      setSyncVersion(remote.version)
-      if (remote.state) setConflict({ ...remote, state: remote.state })
-      else {
-        const saved = await api<{ version: number }>(
-          '/account/sync',
-          'PUT',
-          { version: remote.version, state: snapshotState(next) },
-          result.token,
-        )
-        setSyncVersion(saved.version)
-      }
-      notify(signup ? t('Compte créé') : t('Connexion réussie'))
-    } finally {
-      setPlaybackSyncPaused(false)
-    }
+    setSyncVersion(0)
+    startupChecked.current = ''
+    setPlaybackSyncPaused(false)
+    notify(signup ? t('Compte créé') : t('Connexion réussie'))
   }
+
   const nativeAuthActive = useRef(false)
   useEffect(() => {
     if (!authOpen || !isAndroid() || nativeAuthActive.current) return
@@ -981,43 +1084,28 @@ export default function App() {
       return
     }
     setSyncing(true)
-    setError('')
     try {
-      const remote = await api<{ version: number; state: UserState | null }>(
-        '/account/sync',
-        'GET',
-        undefined,
-        token,
-      )
-      if (remote.version !== syncVersion && remote.state) {
-        setConflict({ ...remote, state: remote.state })
-        return
-      }
-      const merged = mergePlaybackState(state, remote.state?.profiles ?? [])
-      const result = await api<{ version: number }>(
-        '/account/sync',
-        'PUT',
-        { version: syncVersion, state: snapshotState(merged) },
-        token,
-      )
-      setState((current) => mergePlaybackState(current, merged.profiles))
-      setSyncVersion(result.version)
-      notify(t('Bibliothèque synchronisée'))
-    } catch (e) {
-      if ((e as { status?: number }).status === 401) {
-        setToken('')
-        setAuthOpen(true)
-      }
-      fail(e)
+      await accountSync.sync()
     } finally {
       setSyncing(false)
     }
   }
   async function prepareIntegrationProfile() {
-    const remote = await api<{ version: number; state: UserState | null }>('/account/sync', 'GET', undefined, token)
-    if (remote.state?.profiles?.some(p => p.id === state.activeProfileId)) return
-    if (remote.version !== syncVersion) throw Error(t('Synchronisez votre profil avant de connecter un service.'))
-    const result = await api<{ version: number }>('/account/sync', 'PUT', { version: remote.version, state: snapshotState(state) }, token)
+    const remote = await api<{ version: number; state: UserState | null }>(
+      '/account/sync',
+      'GET',
+      undefined,
+      token,
+    )
+    if (remote.state?.profiles?.some((p) => p.id === state.activeProfileId)) return
+    if (remote.version !== syncVersion)
+      throw Error(t('Synchronisez votre profil avant de connecter un service.'))
+    const result = await api<{ version: number }>(
+      '/account/sync',
+      'PUT',
+      { version: remote.version, state: snapshotState(state) },
+      token,
+    )
     setSyncVersion(result.version)
   }
   async function logout() {
@@ -1032,7 +1120,13 @@ export default function App() {
       fail(e)
     }
   }
-  const featured = useFeatured(catalogAddons, catalogue, state.library, tab === 'home' && !selected && !playback)
+  const featured = useFeatured(
+    catalogAddons,
+    catalogue,
+    state.library,
+    tab === 'home' && !selected && !playback,
+    state.settings.dismissedRecommendations,
+  )
   const hero = featured.current?.meta,
     saved = (m: Meta) => state.library.some((x) => x.id === m.id && x.type === m.type)
   const poster = (m: Meta) => (
@@ -1052,12 +1146,31 @@ export default function App() {
       <small>{m.releaseInfo ?? (m.type === 'series' ? t('Série') : t('Film'))}</small>
     </button>
   )
-  const visibleLibrary = state.library.filter(
-    (m) =>
-      (!(state.collections ?? []).some(c => c.id === collectionId) || (state.collections ?? []).find(c => c.id === collectionId)!.items.includes(collectionKey(m))) &&
-      matchesCategory(m, libraryFilter) &&
-      (!state.settings.hideWatched || !titleWatched(m, state.progress, releases.metas)),
-  )
+  const visibleLibrary = state.library
+    .filter(
+      (m) =>
+        (!(state.collections ?? []).some((c) => c.id === collectionId) ||
+          (state.collections ?? [])
+            .find((c) => c.id === collectionId)!
+            .items.includes(collectionKey(m))) &&
+        matchesCategory(m, libraryFilter) &&
+        (libraryStatus === 'all' ||
+          viewingStatus(m, state.progress, state.settings, releases.metas) === libraryStatus) &&
+        (!state.settings.hideWatched || !titleWatched(m, state.progress, releases.metas)),
+    )
+    .sort((a, b) => {
+      const order =
+        librarySort === 'name'
+          ? a.name.localeCompare(b.name)
+          : librarySort === 'status'
+            ? statusLabel(
+                viewingStatus(a, state.progress, state.settings, releases.metas),
+              ).localeCompare(
+                statusLabel(viewingStatus(b, state.progress, state.settings, releases.metas)),
+              )
+            : state.library.indexOf(a) - state.library.indexOf(b)
+      return libraryDescending ? -order : order
+    })
   const heading = (
     title: string,
     back = !['home', 'explore', 'library', 'settings'].includes(tab),
@@ -1086,14 +1199,480 @@ export default function App() {
           : ['home', 'explore', 'library'].includes(tab)
             ? tab
             : 'settings'
+  const visitedPages = useRef(new Set<string>())
+  const pageScroll = useRef(new Map<string, number>())
+  const screenKey =
+    state.activeProfileId +
+    ':' +
+    (selected ? 'detail:' + selected.id : pluginPage ? 'plugin:' + pluginPage.id : tab)
+  if (tab === 'home' || tab === 'explore' || tab === 'anime')
+    visitedPages.current.add(state.activeProfileId + ':' + (tab === 'anime' ? 'explore' : tab))
+  function savePageScroll() {
+    const scroller = document.querySelector<HTMLElement>('.desktop .page-slide')
+    pageScroll.current.set(screenKey, scroller ? scroller.scrollTop : window.scrollY)
+  }
+  useLayoutEffect(() => {
+    const scroller = document.querySelector<HTMLElement>('.desktop .page-slide')
+    const top = pageScroll.current.get(screenKey) ?? 0
+    const restore = () => {
+      if (scroller) scroller.scrollTop = top
+      else window.scrollTo({ top, behavior: 'instant' })
+    }
+    restore()
+    const frame = requestAnimationFrame(restore)
+    const target = scroller ?? window
+    const remember = () =>
+      pageScroll.current.set(screenKey, scroller ? scroller.scrollTop : window.scrollY)
+    target.addEventListener('scroll', remember, { passive: true })
+    return () => {
+      cancelAnimationFrame(frame)
+      target.removeEventListener('scroll', remember)
+    }
+  }, [screenKey])
+  const homePage = (
+    <main
+      key={state.activeProfileId + ':home'}
+      hidden={!!selected || !!pluginPage || tab !== 'home'}
+    >
+      <section
+        className="hero"
+        data-category={featured.current?.category}
+        onPointerEnter={(e) => {
+          if (e.pointerType === 'mouse') featured.setInteracting(true)
+        }}
+        onPointerLeave={(e) => featured.setInteracting(e.currentTarget.matches(':focus-within'))}
+        onFocusCapture={() => featured.setInteracting(true)}
+        onBlurCapture={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget)) featured.setInteracting(false)
+        }}
+      >
+        <MediaImage src={hero?.background ?? hero?.poster ?? '/art/hero.png'} eager />
+        <header className="hero-head">
+          <span className="wordmark">PRIMIO</span>
+          <div>
+            <button
+              className="icon glass"
+              aria-label={t('Rechercher')}
+              onClick={() => navigate('explore')}
+            >
+              <Search />
+            </button>
+            <button
+              className="icon glass"
+              aria-label={t('Notifications')}
+              onClick={() => navigate('notifications')}
+            >
+              <Bell />
+            </button>
+          </div>
+        </header>
+        <div className="hero-copy">
+          <span className="eyebrow">
+            {t('À LA UNE')}
+            {featured.current &&
+              ' · ' +
+                t(
+                  featured.current.category === 'movie'
+                    ? 'Film'
+                    : featured.current.category === 'series'
+                      ? 'Série'
+                      : 'Anime',
+                )}
+          </span>
+          <h1 className="serif">{hero?.name ?? t('Votre cinéma, autrement.')}</h1>
+          <p>
+            {hero
+              ? [hero.releaseInfo, ...(hero.genres ?? []).slice(0, 1)].filter(Boolean).join(' · ')
+              : t('Tous vos univers, au même endroit.')}
+          </p>
+          <div className="hero-actions">
+            <button
+              className="primary"
+              disabled={busy && !hero}
+              onClick={() => (hero ? details(hero) : navigate('addons'))}
+            >
+              <Play />
+              {hero ? t('Découvrir') : t('Explorer les addons')}
+            </button>
+            {hero && (
+              <button
+                className="icon glass large"
+                aria-label={saved(hero) ? t('Retirer de ma liste') : t('Ajouter à ma liste')}
+                onClick={() => bookmark(hero)}
+              >
+                <Bookmark fill={saved(hero) ? 'currentColor' : 'none'} />
+              </button>
+            )}
+          </div>
+        </div>
+        {featured.items.length > 1 && (
+          <div className="hero-pagination" aria-label={t('Recommandations')}>
+            {featured.items.map((item, index) => (
+              <button
+                key={item.category}
+                aria-label={t(
+                  item.category === 'movie'
+                    ? 'Film'
+                    : item.category === 'series'
+                      ? 'Série'
+                      : 'Anime',
+                )}
+                aria-pressed={item === featured.current}
+                onClick={() => featured.setIndex(index)}
+              >
+                <span />
+              </button>
+            ))}
+            <button
+              aria-label={t(
+                featured.paused ? 'Reprendre le défilement' : 'Mettre le défilement en pause',
+              )}
+              onClick={() => featured.setPaused(!featured.paused)}
+            >
+              {featured.paused ? <Play size={15} /> : <Pause size={15} />}
+            </button>
+          </div>
+        )}
+      </section>
+      {state.settings.showContinue &&
+        state.progress.some((p) => !isWatched(p) && p.position > 0) && (
+          <section className="shelf">
+            <div className="section-head">
+              <h2>{t('Reprendre')}</h2>
+              <button onClick={() => navigate('library')}>{t('Tout voir')}</button>
+            </div>
+            <div className="continue-grid">
+              {state.progress
+                .filter((p) => !isWatched(p) && p.position > 0)
+                .sort((a, b) => b.updatedAt - a.updatedAt)
+                .slice(0, 10)
+                .map((p) => (
+                  <ContinueCard
+                    key={p.type + p.videoId}
+                    item={p}
+                    addons={catalogAddons}
+                    hideSpoilers={hideSpoilers}
+                    onPlay={() => chooseSources(p, p.videoId)}
+                  />
+                ))}
+            </div>
+          </section>
+        )}
+      <section className="shelf">
+        <div className="section-head">
+          <h2>{t('À découvrir')}</h2>
+          <button onClick={() => navigate('explore')}>{t('Tout voir')}</button>
+        </div>
+        {busy && !catalogue.length ? (
+          <div className="skeleton-grid" aria-label={t('Chargement du catalogue')}>
+            {[1, 2, 3].map((i) => (
+              <CardSkeleton key={i} />
+            ))}
+          </div>
+        ) : catalogue.length ? (
+          <div className="poster-rail">{catalogue.slice(1, 13).map(poster)}</div>
+        ) : (
+          <Empty
+            title={t('Votre cinéma commence ici')}
+            action={
+              <button className="secondary" onClick={() => navigate('addons')}>
+                <Plus /> {t('Ajouter un addon')}
+              </button>
+            }
+          >
+            {t('Installez vos catalogues et sources favoris.')}
+          </Empty>
+        )}
+      </section>
+      <RandomPick addons={catalogAddons} library={state.library} onOpen={details} />
+      {(['movie', 'series', 'anime'] as const).map((category) => (
+        <Recommendations
+          key={state.activeProfileId + category}
+          category={category}
+          addons={catalogAddons}
+          library={state.library}
+          progress={state.progress}
+          dismissed={state.settings.dismissedRecommendations ?? []}
+          onDismiss={(m) =>
+            setState((s) => ({
+              ...s,
+              settings: {
+                ...s.settings,
+                dismissedRecommendations: [
+                  ...new Set([...(s.settings.dismissedRecommendations ?? []), m.type + ':' + m.id]),
+                ].slice(-2000),
+              },
+            }))
+          }
+          renderItem={poster}
+          onExplore={() => {
+            navigate('explore')
+            setKind(category)
+          }}
+        />
+      ))}
+      {plugins.some((p) => p.pages?.length) && (
+        <section className="shelf">
+          <h2>{t('Vos espaces')}</h2>
+          {plugins.flatMap((p) =>
+            (p.pages ?? []).map((page) => (
+              <button
+                key={p.id + page.id}
+                className="row"
+                onClick={() => setPluginPage({ plugin: p, id: page.id })}
+              >
+                {page.title}
+                <ChevronRight />
+              </button>
+            )),
+          )}
+        </section>
+      )}
+    </main>
+  )
+  const explorePage = (
+    <main
+      key={state.activeProfileId + ':explore'}
+      hidden={!!selected || !!pluginPage || !(tab === 'explore' || tab === 'anime')}
+    >
+      {heading(tab === 'anime' ? t('Animes') : t('Explorer'))}
+      <section className="page-content">
+        <div className="search-completion">
+          <label className="search-box">
+            <Search />
+            <input
+              placeholder={t('Films, séries, envies…')}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label={t('Rechercher un titre')}
+            />
+            {query && (
+              <button
+                className="icon"
+                aria-label={t('Effacer la recherche')}
+                onClick={() => setQuery('')}
+              >
+                <X />
+              </button>
+            )}
+          </label>
+          <SearchSuggestions
+            query={query}
+            addons={catalogAddons}
+            library={searchLibrary}
+            collections={state.collections ?? []}
+            onSelect={setQuery}
+            onOpen={details}
+            onCollection={(id) => {
+              setCollectionId(id)
+              navigate('library')
+            }}
+          />
+        </div>
+        <VoiceSearch onResult={setQuery} />
+        <details className="advanced-discover">
+          <summary>{t('Filtres avancés')}</summary>
+          <DiscoveryControls value={discoveryFilters} onChange={setDiscoveryFilters} />
+        </details>
+        <div className="explorer-filters">
+          <Choice
+            separateLabel
+            label={t('Type')}
+            value={animeFilter ? 'anime' : kind}
+            options={[
+              ['movie', t('Films')],
+              ['anime', t('Animes')],
+              ['series', t('Séries')],
+            ]}
+            onChange={(v) => {
+              setKind(v)
+              setTab('explore')
+              setCatalogChoice('all')
+              setGenre('')
+            }}
+          />
+          <Choice
+            separateLabel
+            label={t('Catalogue')}
+            value={catalogChoice}
+            options={[
+              ['all', t('Tous')],
+              ...(animeFilter ? [['seasonal', t('Par saison')] as [string, string]] : []),
+              ...Array.from(
+                new Map(
+                  catalogTargets(
+                    catalogAddons,
+                    kind,
+                    'all',
+                    searchQuery,
+                    animeFilter,
+                    genre,
+                    true,
+                  ).map(({ addon, catalog: c }) => [
+                    addon.url + '|' + c.type + '|' + c.id,
+                    [
+                      addon.url + '|' + c.type + '|' + c.id,
+                      addon.manifest.name + ' · ' + (c.name ?? c.id),
+                    ] as [string, string],
+                  ]),
+                ).values(),
+              ),
+            ]}
+            onChange={(v) => {
+              setCatalogChoice(v)
+              setGenre(v === 'seasonal' ? currentSeason() : '')
+            }}
+          />
+          <Choice
+            separateLabel
+            label={t('Genre')}
+            value={genre}
+            options={
+              catalogChoice === 'seasonal'
+                ? seasonOptions()
+                : [
+                    ['', t('Tous')],
+                    ...Array.from(
+                      new Set(
+                        catalogTargets(
+                          catalogAddons,
+                          kind,
+                          catalogChoice,
+                          searchQuery,
+                          animeFilter,
+                          '',
+                          true,
+                        ).flatMap(
+                          ({ catalog: c }) =>
+                            c.extra?.find((e) => e.name === 'genre')?.options ?? [],
+                        ),
+                      ),
+                    )
+                      .filter((g) => !/^\d{4}$/.test(g))
+                      .sort((a, b) => a.localeCompare(b))
+                      .map((g) => [g, g] as [string, string]),
+                  ]
+            }
+            onChange={setGenre}
+          />
+        </div>
+        <div className="explorer-sort">
+          <Choice
+            label={t('Trier par')}
+            value={sort.key}
+            options={[
+              ['default', t('Par défaut')],
+              ['rating', t('Note')],
+              ['name', t('Nom')],
+              ['year', t('Année')],
+            ]}
+            onChange={(key) =>
+              setState((s) => ({
+                ...s,
+                settings: {
+                  ...s.settings,
+                  explorerSort: { ...sort, key: key as typeof sort.key },
+                },
+              }))
+            }
+          />
+          <button
+            className="sort-direction"
+            aria-label={t(sort.direction === 'asc' ? 'Croissant' : 'Décroissant')}
+            title={t(sort.direction === 'asc' ? 'Croissant' : 'Décroissant')}
+            onClick={() =>
+              setState((s) => ({
+                ...s,
+                settings: {
+                  ...s.settings,
+                  explorerSort: {
+                    ...sort,
+                    direction: sort.direction === 'asc' ? 'desc' : 'asc',
+                  },
+                },
+              }))
+            }
+          >
+            {sort.direction === 'asc' ? <ArrowUp /> : <ArrowDown />}
+            <span>{t(sort.direction === 'asc' ? 'Croissant' : 'Décroissant')}</span>
+          </button>
+        </div>
+        {catalogChoice === 'seasonal' && animeFilter ? (
+          <SeasonalAnime
+            key={genre + searchQuery}
+            season={genre || currentSeason()}
+            filterItem={(m) => matchesDiscovery(m, discoveryFilters)}
+            query={searchQuery}
+            renderItem={poster}
+            sort={sort}
+          />
+        ) : searchQuery ||
+          Object.values(discoveryFilters).some((v) => v !== undefined && v !== '') ? (
+          <UniversalSearch
+            choice={catalogChoice}
+            query={searchQuery}
+            addons={catalogAddons}
+            library={searchLibrary}
+            filters={{
+              ...discoveryFilters,
+              ...(!searchQuery ? { type: animeFilter ? 'anime' : kind } : {}),
+              ...(genre ? { genre } : {}),
+            }}
+            renderItem={poster}
+          />
+        ) : (
+          <CatalogFeed
+            key={JSON.stringify([tab, kind, catalogChoice, genre, searchQuery, catalogAddons])}
+            targets={catalogTargets(
+              catalogAddons,
+              kind,
+              catalogChoice,
+              searchQuery,
+              animeFilter,
+              genre,
+            )}
+            genre={genre}
+            query={searchQuery}
+            renderItem={poster}
+            sort={sort}
+            empty={
+              <Empty title={t('Aucun résultat')}>
+                {tab === 'anime' ? (
+                  <>
+                    {t('Aucun catalogue anime.')}
+                    <button
+                      className="secondary"
+                      onClick={() => {
+                        setAddonInput('https://anime-kitsu.strem.fun/manifest.json')
+                        setAddOpen(true)
+                        setCandidate(null)
+                      }}
+                    >
+                      {t('Ajouter Anime Kitsu')}
+                    </button>
+                  </>
+                ) : (
+                  t('Essayez un autre titre ou ajoutez un catalogue compatible avec la recherche.')
+                )}
+              </Empty>
+            }
+          />
+        )}
+      </section>
+    </main>
+  )
   return (
     <div
       className={
         'app posters-' +
-        state.settings.posterSize +
-        (state.settings.showPosterLabels ? '' : ' hide-poster-labels')
+        (pluginLayout.density ?? state.settings.posterSize) +
+        ((pluginLayout.labels ?? state.settings.showPosterLabels) ? '' : ' hide-poster-labels')
       }
-      style={{ '--content-columns': state.settings.contentColumns } as React.CSSProperties}
+      style={
+        {
+          '--content-columns': pluginLayout.columns ?? state.settings.contentColumns,
+        } as React.CSSProperties
+      }
     >
       {!ready && (
         <div className="boot-screen" role="status">
@@ -1116,8 +1695,7 @@ export default function App() {
         </div>
       )}
       <div
-        inert={onboarding || profileGate}
-        key={selected?.id ?? pluginPage?.id ?? tab}
+        inert={onboarding || profileGate || profileLocked}
         className={'page-slide slide-' + slideDirection}
         onTouchStart={(e) => {
           touchStart.current = null
@@ -1163,19 +1741,14 @@ export default function App() {
           if (start && point && Math.abs(point.clientY - start.y) > 16) touchStart.current = null
         }}
       >
+        {visitedPages.current.has(state.activeProfileId + ':home') && homePage}
+        {visitedPages.current.has(state.activeProfileId + ':explore') && explorePage}
         {selected ? (
           <main className="detail">
             <div className="detail-art">
               <MediaImage src={selected.background ?? selected.poster} eager />
               <div className="detail-toolbar">
-                <button
-                  className="icon glass"
-                  aria-label={t('Retour')}
-                  onClick={() => {
-                    ++detailSequence.current
-                    setSelected(null)
-                  }}
-                >
+                <button className="icon glass" aria-label={t('Retour')} onClick={goBack}>
                   <ArrowLeft />
                 </button>
                 <div className="detail-actions">
@@ -1308,11 +1881,62 @@ export default function App() {
                   )}
                 </dl>
               ) : null}
+              {!detailLoading &&
+                selected.metadataStatus &&
+                selected.metadataStatus !== 'loaded' && (
+                  <div className="metadata-status" role="status">
+                    <p>
+                      {t(
+                        selected.metadataStatus === 'unavailable'
+                          ? 'La fiche détaillée est indisponible pour le moment.'
+                          : 'Certaines informations ne sont pas fournies par vos addons.',
+                      )}
+                    </p>
+                    <button className="secondary" onClick={() => void details(selected, true)}>
+                      {t('Réessayer')}
+                    </button>
+                  </div>
+                )}
+              <StatusChoice
+                meta={selected}
+                progress={state.progress}
+                settings={state.settings}
+                metas={releases.metas}
+                onChange={(status) =>
+                  setState((s) => ({
+                    ...s,
+                    settings: {
+                      ...s.settings,
+                      titleStates: [
+                        ...(s.settings.titleStates ?? []).filter(
+                          (x) => x.id !== collectionKey(selected),
+                        ),
+                        {
+                          id: collectionKey(selected),
+                          status,
+                          updatedAt: Date.now(),
+                          progressSignature: progressSignature(
+                            s.progress.filter(
+                              (p) => p.id === selected.id && p.type === selected.type,
+                            ),
+                          ),
+                        },
+                      ].slice(-2000),
+                    },
+                  }))
+                }
+              />
+              <WatchOrders
+                plugins={plugins}
+                progress={state.progress}
+                meta={selected}
+                onOpen={details}
+              />
               {selected.videos?.length ? (
                 <Episodes
                   key={'episodes:' + selected.id}
                   meta={selected}
-                  spoilers={state.settings.showSpoilers}
+                  spoilers={!hideSpoilers}
                   progress={state.progress}
                   onToggleWatched={(id) => toggleWatched(selected, id)}
                   onPlay={(id) => chooseSources(selected, id)}
@@ -1343,363 +1967,7 @@ export default function App() {
                 )}
             </section>
           </main>
-        ) : tab === 'home' ? (
-          <main>
-            <section className="hero" data-category={featured.current?.category}
-              onPointerEnter={(e) => { if (e.pointerType === 'mouse') featured.setInteracting(true) }}
-              onPointerLeave={(e) => featured.setInteracting(e.currentTarget.matches(':focus-within'))}
-              onFocusCapture={() => featured.setInteracting(true)}
-              onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) featured.setInteracting(false) }}>
-              <MediaImage src={hero?.background ?? hero?.poster ?? '/art/hero.png'} eager />
-              <header className="hero-head">
-                <span className="wordmark">PRIMIO</span>
-                <div>
-                  <button
-                    className="icon glass"
-                    aria-label={t('Rechercher')}
-                    onClick={() => navigate('explore')}
-                  >
-                    <Search />
-                  </button>
-                  <button
-                    className="icon glass"
-                    aria-label={t('Notifications')}
-                    onClick={() => navigate('notifications')}
-                  >
-                    <Bell />
-                  </button>
-                </div>
-              </header>
-              <div className="hero-copy">
-                <span className="eyebrow">{t('À LA UNE')}{featured.current && ' · ' + t(featured.current.category === 'movie' ? 'Film' : featured.current.category === 'series' ? 'Série' : 'Anime')}</span>
-                <h1 className="serif">{hero?.name ?? t('Votre cinéma, autrement.')}</h1>
-                <p>
-                  {hero
-                    ? [hero.releaseInfo, ...(hero.genres ?? []).slice(0, 1)]
-                        .filter(Boolean)
-                        .join(' · ')
-                    : t('Tous vos univers, au même endroit.')}
-                </p>
-                <div className="hero-actions">
-                  <button
-                    className="primary"
-                    disabled={busy && !hero}
-                    onClick={() => (hero ? details(hero) : navigate('addons'))}
-                  >
-                    <Play />
-                    {hero ? t('Découvrir') : t('Explorer les addons')}
-                  </button>
-                  {hero && (
-                    <button
-                      className="icon glass large"
-                      aria-label={saved(hero) ? t('Retirer de ma liste') : t('Ajouter à ma liste')}
-                      onClick={() => bookmark(hero)}
-                    >
-                      <Bookmark fill={saved(hero) ? 'currentColor' : 'none'} />
-                    </button>
-                  )}
-                </div>
-              </div>
-              {featured.items.length > 1 && <div className="hero-pagination" aria-label={t('Recommandations')}>
-                {featured.items.map((item, index) => <button key={item.category} aria-label={t(item.category === 'movie' ? 'Film' : item.category === 'series' ? 'Série' : 'Anime')}
-                  aria-pressed={item === featured.current} onClick={() => featured.setIndex(index)}><span /></button>)}
-                <button aria-label={t(featured.paused ? 'Reprendre le défilement' : 'Mettre le défilement en pause')} onClick={() => featured.setPaused(!featured.paused)}>
-                  {featured.paused ? <Play size={15} /> : <Pause size={15} />}
-                </button>
-              </div>}
-            </section>
-            {state.settings.showContinue &&
-              state.progress.some((p) => !isWatched(p) && p.position > 0) && (
-                <section className="shelf">
-                  <div className="section-head">
-                    <h2>{t('Reprendre')}</h2>
-                    <button onClick={() => navigate('library')}>{t('Tout voir')}</button>
-                  </div>
-                  <div className="continue-grid">
-                    {state.progress
-                      .filter((p) => !isWatched(p) && p.position > 0)
-                      .sort((a, b) => b.updatedAt - a.updatedAt)
-                      .slice(0, 10)
-                      .map((p) => (
-                        <ContinueCard
-                          key={p.type + p.videoId}
-                          item={p}
-                          addons={catalogAddons}
-                          onPlay={() => chooseSources(p, p.videoId)}
-                        />
-                      ))}
-                  </div>
-                </section>
-              )}
-            <section className="shelf">
-              <div className="section-head">
-                <h2>{t('À découvrir')}</h2>
-                <button onClick={() => navigate('explore')}>{t('Tout voir')}</button>
-              </div>
-              {busy && !catalogue.length ? (
-                <div className="skeleton-grid" aria-label={t('Chargement du catalogue')}>
-                  {[1, 2, 3].map((i) => (
-                    <CardSkeleton key={i} />
-                  ))}
-                </div>
-              ) : catalogue.length ? (
-                <div className="poster-rail">{catalogue.slice(1, 13).map(poster)}</div>
-              ) : (
-                <Empty
-                  title={t('Votre cinéma commence ici')}
-                  action={
-                    <button className="secondary" onClick={() => navigate('addons')}>
-                      <Plus /> {t('Ajouter un addon')}
-                    </button>
-                  }
-                >
-                  {t('Installez vos catalogues et sources favoris.')}
-                </Empty>
-              )}
-            </section>
-            {(['movie', 'series', 'anime'] as const).map((category) => (
-              <Recommendations
-                key={state.activeProfileId + category}
-                category={category}
-                addons={catalogAddons}
-                library={state.library}
-                renderItem={poster}
-                onExplore={() => {
-                  navigate('explore')
-                  setKind(category)
-                }}
-              />
-            ))}
-            {plugins.some((p) => p.pages?.length) && (
-              <section className="shelf">
-                <h2>{t('Vos espaces')}</h2>
-                {plugins.flatMap((p) =>
-                  (p.pages ?? []).map((page) => (
-                    <button
-                      key={p.id + page.id}
-                      className="row"
-                      onClick={() => setPluginPage({ plugin: p, id: page.id })}
-                    >
-                      {page.title}
-                      <ChevronRight />
-                    </button>
-                  )),
-                )}
-              </section>
-            )}
-          </main>
-        ) : tab === 'explore' || tab === 'anime' ? (
-          <main>
-            {heading(tab === 'anime' ? t('Animes') : t('Explorer'))}
-            <section className="page-content">
-              <label className="search-box">
-                <Search />
-                <input
-                  placeholder={t('Films, séries, envies…')}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  aria-label={t('Rechercher un titre')}
-                />
-                {query && (
-                  <button
-                    className="icon"
-                    aria-label={t('Effacer la recherche')}
-                    onClick={() => setQuery('')}
-                  >
-                    <X />
-                  </button>
-                )}
-              </label>
-              <div className="explorer-filters">
-                <Choice
-                  separateLabel
-                  label={t('Type')}
-                  value={animeFilter ? 'anime' : kind}
-                  options={[
-                    ['movie', t('Films')],
-                    ['anime', t('Animes')],
-                    ['series', t('Séries')],
-                  ]}
-                  onChange={(v) => {
-                    setKind(v)
-                    setTab('explore')
-                    setCatalogChoice('all')
-                    setGenre('')
-                  }}
-                />
-                <Choice
-                  separateLabel
-                  label={t('Catalogue')}
-                  value={catalogChoice}
-                  options={[
-                    ['all', t('Tous')],
-                    ...(animeFilter ? [['seasonal', t('Par saison')] as [string, string]] : []),
-                    ...Array.from(
-                      new Map(
-                        catalogTargets(
-                          catalogAddons,
-                          kind,
-                          'all',
-                          searchQuery,
-                          animeFilter,
-                          genre,
-                          true,
-                        ).map(({ addon, catalog: c }) => [
-                          addon.url + '|' + c.type + '|' + c.id,
-                          [
-                            addon.url + '|' + c.type + '|' + c.id,
-                            addon.manifest.name + ' · ' + (c.name ?? c.id),
-                          ] as [string, string],
-                        ]),
-                      ).values(),
-                    ),
-                  ]}
-                  onChange={(v) => {
-                    setCatalogChoice(v)
-                    setGenre(v === 'seasonal' ? currentSeason() : '')
-                  }}
-                />
-                <Choice
-                  separateLabel
-                  label={t('Genre')}
-                  value={genre}
-                  options={
-                    catalogChoice === 'seasonal'
-                      ? seasonOptions()
-                      : [
-                          ['', t('Tous')],
-                          ...Array.from(
-                            new Set(
-                              catalogTargets(
-                                catalogAddons,
-                                kind,
-                                catalogChoice,
-                                searchQuery,
-                                animeFilter,
-                                '',
-                                true,
-                              ).flatMap(
-                                ({ catalog: c }) =>
-                                  c.extra?.find((e) => e.name === 'genre')?.options ?? [],
-                              ),
-                            ),
-                          )
-                            .filter((g) => !/^\d{4}$/.test(g))
-                            .sort((a, b) => a.localeCompare(b))
-                            .map((g) => [g, g] as [string, string]),
-                        ]
-                  }
-                  onChange={setGenre}
-                />
-              </div>
-              <div className="explorer-sort">
-                <Choice
-                  label={t('Trier par')}
-                  value={sort.key}
-                  options={[
-                    ['default', t('Par défaut')],
-                    ['rating', t('Note')],
-                    ['name', t('Nom')],
-                    ['year', t('Année')],
-                  ]}
-                  onChange={(key) =>
-                    setState((s) => ({
-                      ...s,
-                      settings: {
-                        ...s.settings,
-                        explorerSort: { ...sort, key: key as typeof sort.key },
-                      },
-                    }))
-                  }
-                />
-                <button
-                  className="sort-direction"
-                  aria-label={t(sort.direction === 'asc' ? 'Croissant' : 'Décroissant')}
-                  title={t(sort.direction === 'asc' ? 'Croissant' : 'Décroissant')}
-                  onClick={() =>
-                    setState((s) => ({
-                      ...s,
-                      settings: {
-                        ...s.settings,
-                        explorerSort: {
-                          ...sort,
-                          direction: sort.direction === 'asc' ? 'desc' : 'asc',
-                        },
-                      },
-                    }))
-                  }
-                >
-                  {sort.direction === 'asc' ? <ArrowUp /> : <ArrowDown />}
-                  <span>{t(sort.direction === 'asc' ? 'Croissant' : 'Décroissant')}</span>
-                </button>
-              </div>
-              {catalogChoice === 'seasonal' && animeFilter ? (
-                <SeasonalAnime
-                  key={genre + searchQuery}
-                  season={genre || currentSeason()}
-                  query={searchQuery}
-                  renderItem={poster}
-                  sort={sort}
-                />
-              ) : searchQuery ? (
-                <GroupedSearch
-                  choice={catalogChoice}
-                  addons={catalogAddons}
-                  query={searchQuery}
-                  genre={genre}
-                  renderItem={poster}
-                  sort={sort}
-                />
-              ) : (
-                <CatalogFeed
-                  key={JSON.stringify([
-                    tab,
-                    kind,
-                    catalogChoice,
-                    genre,
-                    searchQuery,
-                    catalogAddons,
-                  ])}
-                  targets={catalogTargets(
-                    catalogAddons,
-                    kind,
-                    catalogChoice,
-                    searchQuery,
-                    animeFilter,
-                    genre,
-                  )}
-                  genre={genre}
-                  query={searchQuery}
-                  renderItem={poster}
-                  sort={sort}
-                  empty={
-                    <Empty title={t('Aucun résultat')}>
-                      {tab === 'anime' ? (
-                        <>
-                          {t('Aucun catalogue anime.')}
-                          <button
-                            className="secondary"
-                            onClick={() => {
-                              setAddonInput('https://anime-kitsu.strem.fun/manifest.json')
-                              setAddOpen(true)
-                              setCandidate(null)
-                            }}
-                          >
-                            {t('Ajouter Anime Kitsu')}
-                          </button>
-                        </>
-                      ) : (
-                        t(
-                          'Essayez un autre titre ou ajoutez un catalogue compatible avec la recherche.',
-                        )
-                      )}
-                    </Empty>
-                  }
-                />
-              )}
-            </section>
-          </main>
-        ) : tab === 'calendar' ? (
+        ) : ['home', 'explore', 'anime'].includes(tab) ? null : tab === 'calendar' ? (
           <main>
             {heading(t('Sorties'))}
             <section className="page-content">
@@ -1732,12 +2000,161 @@ export default function App() {
                   <RefreshCw size={16} /> {t('Synchroniser')}
                 </button>
               </div>
-              {importSync.pending && <p role="status" className="muted">{t(importSync.syncing ? 'Synchronisation de l’import…' : 'Import enregistré. En attente de synchronisation.')}</p>}
+              {token && (
+                <p className="muted" role="status">
+                  {t(
+                    accountSync.error
+                      ? 'Synchronisation indisponible. Nouvel essai automatique.'
+                      : accountSync.syncing
+                        ? 'Synchronisation…'
+                        : 'Synchronisation automatique active · toutes les 30 secondes',
+                  )}
+                </p>
+              )}
+              {importSync.pending && (
+                <p role="status" className="muted">
+                  {t(
+                    importSync.syncing
+                      ? 'Synchronisation de l’import…'
+                      : 'Import enregistré. En attente de synchronisation.',
+                  )}
+                </p>
+              )}
               <div className="library-selection-actions">
-                {selectingLibrary ? <><span>{selectedLibrary.length} {t('sélectionnés')}</span><button onClick={() => { setSelectingLibrary(false); setSelectedLibrary([]) }}>{t('Annuler')}</button>{collectionId && <button disabled={!selectedLibrary.length} onClick={() => { setState(s => ({...s, collections:(s.collections ?? []).map(c => c.id === collectionId ? {...c, items:c.items.filter(key => !selectedLibrary.includes(key))} : c)})); setSelectedLibrary([]); setSelectingLibrary(false) }}>{t('Retirer de la collection')}</button>}<button className="primary" disabled={!selectedLibrary.length} onClick={() => setCollectionPicker(true)}>{t('Ajouter à une collection')}</button></> : <button onClick={() => setSelectingLibrary(true)}>{t('Sélectionner')}</button>}
+                {selectingLibrary ? (
+                  <>
+                    <span>
+                      {selectedLibrary.length} {t('sélectionnés')}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setSelectingLibrary(false)
+                        setSelectedLibrary([])
+                      }}
+                    >
+                      {t('Annuler')}
+                    </button>
+                    {collectionId && (
+                      <button
+                        disabled={!selectedLibrary.length}
+                        onClick={() => {
+                          setState((s) => ({
+                            ...s,
+                            collections: (s.collections ?? []).map((c) =>
+                              c.id === collectionId
+                                ? {
+                                    ...c,
+                                    items: c.items.filter((key) => !selectedLibrary.includes(key)),
+                                  }
+                                : c,
+                            ),
+                          }))
+                          setSelectedLibrary([])
+                          setSelectingLibrary(false)
+                        }}
+                      >
+                        {t('Retirer de la collection')}
+                      </button>
+                    )}
+                    <button
+                      className="primary"
+                      disabled={!selectedLibrary.length}
+                      onClick={() => setCollectionPicker(true)}
+                    >
+                      {t('Ajouter à une collection')}
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => setSelectingLibrary(true)}>{t('Sélectionner')}</button>
+                )}
               </div>
-              {collectionPicker && <AddToCollection state={state} setState={setState} items={selectedLibrary.filter(key => state.library.some(m => collectionKey(m) === key))} onClose={() => { setCollectionPicker(false); setSelectingLibrary(false); setSelectedLibrary([]) }}/>}
-              <Collections state={state} setState={setState} selected={collectionId} onSelect={setCollectionId}/>
+              {collectionPicker && (
+                <AddToCollection
+                  state={state}
+                  setState={setState}
+                  items={selectedLibrary.filter((key) =>
+                    state.library.some((m) => collectionKey(m) === key),
+                  )}
+                  onClose={() => {
+                    setCollectionPicker(false)
+                    setSelectingLibrary(false)
+                    setSelectedLibrary([])
+                  }}
+                />
+              )}
+              <Collections
+                state={state}
+                setState={setState}
+                selected={collectionId}
+                onSelect={(id) => {
+                  setCollectionId(id)
+                  const c = state.collections?.find((c) => c.id === id)
+                  setLibrarySort(c?.sort ?? 'manual')
+                  setLibraryDescending(c?.descending ?? false)
+                  setLibraryStatus(c?.statusFilter ?? 'all')
+                }}
+              />
+              <div className="library-filters">
+                <Choice
+                  label={t('État')}
+                  value={libraryStatus}
+                  options={['all', 'planned', 'watching', 'completed'].map((s) => [
+                    s,
+                    s === 'all'
+                      ? t('Tous')
+                      : statusLabel(s as 'planned' | 'watching' | 'completed'),
+                  ])}
+                  onChange={(v) => {
+                    setLibraryStatus(v)
+                    setState((s) => ({
+                      ...s,
+                      collections: s.collections?.map((c) =>
+                        c.id === collectionId
+                          ? {
+                              ...c,
+                              statusFilter: v as 'all' | 'planned' | 'watching' | 'completed',
+                            }
+                          : c,
+                      ),
+                    }))
+                  }}
+                />
+                <Choice
+                  label={t('Trier par')}
+                  value={librarySort}
+                  options={[
+                    ['manual', t('Ajout')],
+                    ['name', t('Nom')],
+                    ['status', t('État')],
+                  ]}
+                  onChange={(v) => {
+                    setLibrarySort(v)
+                    setState((s) => ({
+                      ...s,
+                      collections: s.collections?.map((c) =>
+                        c.id === collectionId
+                          ? { ...c, sort: v as 'manual' | 'name' | 'status' }
+                          : c,
+                      ),
+                    }))
+                  }}
+                />
+                <button
+                  className="icon glass"
+                  aria-label={t(libraryDescending ? 'Ordre décroissant' : 'Ordre croissant')}
+                  onClick={() => {
+                    setLibraryDescending(!libraryDescending)
+                    setState((s) => ({
+                      ...s,
+                      collections: s.collections?.map((c) =>
+                        c.id === collectionId ? { ...c, descending: !libraryDescending } : c,
+                      ),
+                    }))
+                  }}
+                >
+                  {libraryDescending ? <ArrowDown /> : <ArrowUp />}
+                </button>
+              </div>
               <div className="chips" role="group" aria-label={t('Filtrer ma liste')}>
                 {[
                   ['all', t('Tous')],
@@ -1767,11 +2184,32 @@ export default function App() {
                 <ProgressiveList
                   key={state.activeProfileId + libraryFilter + collectionId}
                   items={visibleLibrary}
-                  renderItem={m => <SelectablePoster key={collectionKey(m)} label={m.name} selected={selectedLibrary.includes(collectionKey(m))} selecting={selectingLibrary} onSelect={() => selectLibraryItem(m)} onOpen={() => details(m)}>
-                    <MediaImage src={m.poster}/>
-                    {isWatched(findProgress(state.progress, m.type, m.id)) && <span className="watched-badge"><Check size={14}/> {t('Vu')}</span>}
-                    <strong>{m.name}</strong><small>{isAnime(m) ? t('Animes') : m.type === 'series' ? t('Série') : t('Film')}</small>
-                  </SelectablePoster>}
+                  renderItem={(m) => (
+                    <SelectablePoster
+                      key={collectionKey(m)}
+                      label={m.name}
+                      selected={selectedLibrary.includes(collectionKey(m))}
+                      selecting={selectingLibrary}
+                      onSelect={() => selectLibraryItem(m)}
+                      onOpen={() => details(m)}
+                    >
+                      <MediaImage src={m.poster} />
+                      {isWatched(findProgress(state.progress, m.type, m.id)) && (
+                        <span className="watched-badge">
+                          <Check size={14} /> {t('Vu')}
+                        </span>
+                      )}
+                      <span className="library-status">
+                        {statusLabel(
+                          viewingStatus(m, state.progress, state.settings, releases.metas),
+                        )}
+                      </span>
+                      <strong>{m.name}</strong>
+                      <small>
+                        {isAnime(m) ? t('Animes') : m.type === 'series' ? t('Série') : t('Film')}
+                      </small>
+                    </SelectablePoster>
+                  )}
                   className="poster-grid"
                 />
               ) : (
@@ -1786,15 +2224,15 @@ export default function App() {
             <div className="management-heading">
               {heading(t('Vos addons'))}
               <div className="management-action">
-              <button
-                className="primary"
-                onClick={() => {
-                  setAddOpen(true)
-                  setCandidate(null)
-                }}
-              >
-                <Plus /> {t('Ajouter un addon')}
-              </button>
+                <button
+                  className="primary"
+                  onClick={() => {
+                    setAddOpen(true)
+                    setCandidate(null)
+                  }}
+                >
+                  <Plus /> {t('Ajouter un addon')}
+                </button>
               </div>
             </div>
             <section className="page-content addon-content">
@@ -1922,25 +2360,25 @@ export default function App() {
             <div className="management-heading">
               {heading(t('Plugins Primio'))}
               <div className="management-action">
-              <label className="primary file-picker">
-                <Download /> {t('Installer un plugin')}
-                <input
-                  type="file"
-                  accept=".json,.primio"
-                  onChange={async (e) => {
-                    try {
-                      const file = e.target.files?.[0]
-                      if (!file) return
-                      if (file.size > 250000) throw Error(t('Plugin trop volumineux.'))
-                      setPluginCandidate(pluginSchema.parse(JSON.parse(await file.text())))
-                    } catch (e) {
-                      fail(e)
-                    } finally {
-                      e.target.value = ''
-                    }
-                  }}
-                />
-              </label>
+                <label className="primary file-picker">
+                  <Download /> {t('Installer un plugin')}
+                  <input
+                    type="file"
+                    accept=".json,.primio"
+                    onChange={async (e) => {
+                      try {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        if (file.size > 250000) throw Error(t('Plugin trop volumineux.'))
+                        setPluginCandidate(pluginSchema.parse(JSON.parse(await file.text())))
+                      } catch (e) {
+                        fail(e)
+                      } finally {
+                        e.target.value = ''
+                      }
+                    }}
+                  />
+                </label>
               </div>
             </div>
             <section className="page-content addon-content">
@@ -1961,62 +2399,71 @@ export default function App() {
                 </button>
               </article>
 
-              {plugins.map((p) => (
-                <article className="addon-card glass" key={p.id}>
-                  <h3>
-                    {p.name} <small>{p.version}</small>
-                  </h3>
-                  <Description text={p.description ?? ''} />
-                  <small>
-                    {t('Par')} {p.author}
-                  </small>
-                  <div className="section-head">
-                    <div className="badges">
-                      {p.permissions.map((x) => (
-                        <span key={x}>{x}</span>
-                      ))}
+              <PluginStore
+                installed={installedPlugins}
+                onInstall={setPluginCandidate}
+                onToggle={(p) =>
+                  setPlugins((list) =>
+                    p.enabled === false
+                      ? installPlugin(list, p)
+                      : list.map((x) => (x.id === p.id ? { ...x, enabled: false } : x)),
+                  )
+                }
+                onRemove={(p) => setPlugins((list) => list.filter((x) => x.id !== p.id))}
+              />
+              <WatchOrders plugins={plugins} progress={state.progress} onOpen={details} />
+              <WatchOrderBuilder library={state.library} onInstall={setPluginCandidate} />
+              {plugins
+                .filter((p) => p.pages?.length || p.addons?.length)
+                .map((p) => (
+                  <article className="addon-card glass" key={p.id}>
+                    <h3>
+                      {p.name} <small>{p.version}</small>
+                    </h3>
+                    <Description text={p.description ?? ''} />
+                    <small>
+                      {t('Par')} {p.author}
+                    </small>
+                    <div className="section-head">
+                      <div className="badges">
+                        {p.permissions.map((x) => (
+                          <span key={x}>{x}</span>
+                        ))}
+                      </div>
+                      <button
+                        className="icon"
+                        aria-label={t('Désinstaller ') + p.name}
+                        onClick={() => setPlugins((list) => list.filter((x) => x.id !== p.id))}
+                      >
+                        <Trash2 />
+                      </button>
                     </div>
-                    <button
-                      className="icon"
-                      aria-label={t('Désinstaller ') + p.name}
-                      onClick={() => setPlugins((list) => list.filter((x) => x.id !== p.id))}
-                    >
-                      <Trash2 />
-                    </button>
-                  </div>
-                  {p.addons?.map((a) => (
-                    <button
-                      className="row"
-                      key={a.manifest}
-                      onClick={() => {
-                        setAddonInput(a.manifest)
-                        setAddOpen(true)
-                        setCandidate(null)
-                      }}
-                    >
-                      {a.name}
-                      <Plus />
-                    </button>
-                  ))}
-                  {p.pages?.map((page) => (
-                    <button
-                      className="row"
-                      key={page.id}
-                      onClick={() => setPluginPage({ plugin: p, id: page.id })}
-                    >
-                      {page.title}
-                      <ChevronRight />
-                    </button>
-                  ))}
-                </article>
-              ))}
-              {!plugins.length && (
-                <Empty title={t('Un espace à personnaliser')}>
-                  {t(
-                    'Installez un fichier de plugin Primio pour ajouter de nouvelles possibilités.',
-                  )}
-                </Empty>
-              )}
+                    {p.addons?.map((a) => (
+                      <button
+                        className="row"
+                        key={a.manifest}
+                        onClick={() => {
+                          setAddonInput(a.manifest)
+                          setAddOpen(true)
+                          setCandidate(null)
+                        }}
+                      >
+                        {a.name}
+                        <Plus />
+                      </button>
+                    ))}
+                    {p.pages?.map((page) => (
+                      <button
+                        className="row"
+                        key={page.id}
+                        onClick={() => setPluginPage({ plugin: p, id: page.id })}
+                      >
+                        {page.title}
+                        <ChevronRight />
+                      </button>
+                    ))}
+                  </article>
+                ))}
             </section>
           </main>
         ) : (
@@ -2060,8 +2507,18 @@ export default function App() {
                         t('Connexion, synchronisation et profils'),
                       ],
                       [Puzzle, 'addons', t('Addons'), t('Catalogues et sources')],
-                      [SlidersHorizontal, 'diagnostics', t('Diagnostic'), t('Rapports et assistance')],
-                      [RefreshCw, 'integrations', t('Services connectés'), 'Trakt · AniList · MyAnimeList'],
+                      [
+                        SlidersHorizontal,
+                        'diagnostics',
+                        t('Diagnostic'),
+                        t('Rapports et assistance'),
+                      ],
+                      [
+                        RefreshCw,
+                        'integrations',
+                        t('Services connectés'),
+                        'Trakt · AniList · MyAnimeList',
+                      ],
                       [Sparkles, 'plugins', t('Plugins'), t('Personnaliser Primio')],
                       [Play, 'player', t('Lecteur'), t('Lecture et sous-titres')],
                       [History, 'history', t('Historique'), t('Retrouver vos visionnages')],
@@ -2149,6 +2606,7 @@ export default function App() {
                   <Profiles
                     state={state}
                     setState={setState}
+                    authorize={profilePins.unlock}
                     connected={!!token}
                     onSync={sync}
                     onError={fail}
@@ -2162,6 +2620,19 @@ export default function App() {
                       )) {
                         await invoke('download_remove', { id: item.id })
                       }
+                    }}
+                  />
+                  <PinSettings
+                    profile={activeProfile}
+                    unlock={profilePins.unlock}
+                    onChange={(pin) => {
+                      profilePins.allow({ ...activeProfile, pin })
+                      setState((s) => ({
+                        ...s,
+                        profiles: s.profiles.map((p) =>
+                          p.id === s.activeProfileId ? { ...p, pin } : p,
+                        ),
+                      }))
                     }}
                   />
                   <h2>{t('Compte')}</h2>
@@ -2184,8 +2655,14 @@ export default function App() {
                   )}
                 </>
               )}
-              {tab === 'diagnostics' && <DiagnosticsPanel token={token}/>}
-              {tab === 'integrations' && <IntegrationsPanel token={token} profileId={state.activeProfileId} prepareProfile={prepareIntegrationProfile}/>}
+              {tab === 'diagnostics' && <DiagnosticsPanel token={token} />}
+              {tab === 'integrations' && (
+                <IntegrationsPanel
+                  token={token}
+                  profileId={state.activeProfileId}
+                  prepareProfile={prepareIntegrationProfile}
+                />
+              )}
               {(tab === 'player' || tab === 'options') && (
                 <Preferences
                   section={tab}
@@ -2197,9 +2674,7 @@ export default function App() {
                 <ViewingHistory
                   items={state.progress}
                   onPlay={(p) => chooseSources(p, p.videoId)}
-                  onRemove={(p) =>
-                    setState(s => removeProgress(s, p))
-                  }
+                  onRemove={(p) => setState((s) => removeProgress(s, p))}
                 />
               )}
               {tab === 'downloads' && (
@@ -2248,7 +2723,12 @@ export default function App() {
         <div className="profile-picker">
           <header className="onboarding-top">
             <span className="wordmark">PRIMIO</span>
-            <button className="icon" aria-label={t('Fermer')} onClick={() => setProfileGate(false)}>
+            <button
+              className="icon"
+              aria-label={t('Fermer')}
+              disabled={profileLocked}
+              onClick={() => setProfileGate(false)}
+            >
               <X />
             </button>
           </header>
@@ -2259,7 +2739,8 @@ export default function App() {
                 <button
                   className="profile-card glass"
                   key={p.id}
-                  onClick={() => {
+                  onClick={async () => {
+                    if (!(await profilePins.unlock(p))) return
                     setState((s) => switchProfile(s, p.id))
                     setProfileGate(false)
                     navigate('home')
@@ -2301,7 +2782,44 @@ export default function App() {
           }}
         />
       )}
-      {castTarget && <CastPanel target={castTarget} onClose={() => setCastTarget(null)} onProgress={(position, duration) => setState(s => s.activeProfileId === castTarget.profileId ? { ...s, progress: recordProgress(s.progress, castTarget.meta, castTarget.videoId, position, duration) } : { ...s, profiles: s.profiles.map(p => p.id === castTarget.profileId ? { ...p, progress: recordProgress(p.progress, castTarget.meta, castTarget.videoId, position, duration) } : p) })} />}
+      {castTarget && (
+        <CastPanel
+          target={castTarget}
+          onClose={() => setCastTarget(null)}
+          onProgress={(position, duration) =>
+            setState((s) =>
+              s.activeProfileId === castTarget.profileId
+                ? {
+                    ...s,
+                    progress: recordProgress(
+                      s.progress,
+                      castTarget.meta,
+                      castTarget.videoId,
+                      position,
+                      duration,
+                    ),
+                  }
+                : {
+                    ...s,
+                    profiles: s.profiles.map((p) =>
+                      p.id === castTarget.profileId
+                        ? {
+                            ...p,
+                            progress: recordProgress(
+                              p.progress,
+                              castTarget.meta,
+                              castTarget.videoId,
+                              position,
+                              duration,
+                            ),
+                          }
+                        : p,
+                    ),
+                  },
+            )
+          }
+        />
+      )}
       {sourceTarget && (
         <Dialog
           title={t('Choisir une source')}
@@ -2339,7 +2857,22 @@ export default function App() {
                   busy={launching}
                   onPlay={play}
                   onDownload={downloadSource}
-                  onCast={isTauri() ? stream => { setCastTarget({ meta: sourceTarget.meta, videoId: sourceTarget.id, stream, position: findProgress(state.progress, sourceTarget.meta.type, sourceTarget.id)?.position ?? 0, profileId: state.activeProfileId }); setSourceTarget(null) } : undefined}
+                  onCast={
+                    isTauri()
+                      ? (stream) => {
+                          setCastTarget({
+                            meta: sourceTarget.meta,
+                            videoId: sourceTarget.id,
+                            stream,
+                            position:
+                              findProgress(state.progress, sourceTarget.meta.type, sourceTarget.id)
+                                ?.position ?? 0,
+                            profileId: state.activeProfileId,
+                          })
+                          setSourceTarget(null)
+                        }
+                      : undefined
+                  }
                 />
               ) : (
                 <Empty
@@ -2432,6 +2965,7 @@ export default function App() {
           />
         </Dialog>
       )}
+      {profilePins.dialog}
       <UpdatePanel ready={ready && !onboarding && !profileGate} />
       {importOpen && (
         <Dialog title={t('Importer une bibliothèque')} onClose={() => setImportOpen(false)}>
@@ -2628,6 +3162,10 @@ export default function App() {
                     pages: t('Ajouter des espaces et catalogues'),
                     addons: t('Proposer des addons à installer'),
                     sources: t('Filtrer et classer les sources'),
+                    layout: t('Personnaliser la disposition'),
+                    accessibility: t('Adapter le texte et les animations'),
+                    spoilers: t('Masquer les épisodes non vus'),
+                    watchOrder: t('Ajouter des ordres de visionnage'),
                   }[p]
                 }
               </li>
@@ -2637,7 +3175,7 @@ export default function App() {
             className="primary"
             onClick={() => {
               const p = activatePlugin(pluginCandidate, pluginCandidate.permissions)
-              setPlugins((list) => [...list.filter((x) => x.id !== p.id), p])
+              setPlugins((list) => installPlugin(list, p))
               setPluginCandidate(null)
               notify(t('Plugin installé'))
             }}

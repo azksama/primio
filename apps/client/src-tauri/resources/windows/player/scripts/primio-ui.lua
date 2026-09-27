@@ -81,7 +81,7 @@ local function render_panel(a)
     elseif panel=='style' then h=math.min(h,610) end
     local y=(height-h)/2
     rect(a,x,y,w,h,24,'20231F','14',1)
-    local title=panel=='episodes' and tr('Episodes','Épisodes') or panel=='style' and tr('Subtitle style','Style des sous-titres') or tr('Audio and subtitles','Audio et sous-titres')
+    local title=panel=='episodes' and tr('Episodes','Épisodes') or panel=='style' and tr('Subtitle style','Style des sous-titres') or panel=='speed' and tr('Playback speed','Vitesse de lecture') or tr('Audio and subtitles','Audio et sous-titres')
     label(a,x+24,y+35,title,26)
     button(a,x+w-66,y+14,44,44,'×',function()panel=nil end)
     local top=y+84
@@ -99,6 +99,7 @@ local function render_panel(a)
                 if track.lang and track.title then name=track.lang:upper()..' · '..track.title end
                 button(a,cx,top+25+(i-1)*52,col,44,name,function()
                     mp.set_property(c==1 and 'aid' or 'sid',tostring(track.id))
+                    mp.commandv('script-message-to','primio','remember-track',c==1 and 'audio' or 'sub',tostring(track.id))
                     if c==2 then mp.set_property_native('sub-visibility',track.id~='no') end
                 end,track.selected)
             end end
@@ -107,6 +108,8 @@ local function render_panel(a)
         button(a,x+24,bottom,col,44,tr('Embedded style','Style intégré'),function()forced=false;mp.set_property('sub-ass-override','no')end,not forced)
         button(a,x+40+col,bottom,col,44,tr('Primio style','Style Primio'),function()forced=true;mp.set_property('sub-ass-override','force')end,forced)
         button(a,x+24,bottom+58,w-48,44,tr('Style settings','Réglages du style'),function()open('style')end)
+    elseif panel=='speed' then
+        for i,speed in ipairs({0.5,0.75,1,1.25,1.5,1.75,2}) do button(a,x+24+((i-1)%2)*((w-60)/2+12),top+math.floor((i-1)/2)*52,(w-60)/2,44,tostring(speed)..'×',function()mp.set_property_number('speed',speed);panel=nil end,mp.get_property_number('speed',1)==speed) end
     elseif panel=='style' then
         local previewColor=mp.get_property('sub-color','#FFFFFF'):gsub('#',''):sub(1,6)
         label(a,x+w/2,top+32,tr('Your next story starts here.','Votre prochaine histoire commence ici.'),mp.get_property_number('sub-font-size',40),5,previewColor:sub(5,6)..previewColor:sub(3,4)..previewColor:sub(1,2),mp.get_property('sub-font','Inter'))
@@ -201,6 +204,8 @@ local function render()
                 local px=math.max(60,math.min(width-60,preview_x))
                 glass(a,px-44,y-45,88,30,false);label(a,px,y-30,time(preview_target),17,5)
             end
+            button(a,28,height-54,190,40,tr('Change source','Changer de source'),function()mp.commandv('script-message-to','primio','episode',config.currentVideoId)end)
+            button(a,width-318,height-54,104,40,tostring(mp.get_property_number('speed',1))..'×',function()open('speed')end)
             button(a,width-200,height-54,172,40,tr('Audio · Subtitles','Audio · Sous-titres'),function()open('tracks')end)
         end
     end
@@ -262,7 +267,7 @@ mp.add_forced_key_binding('WHEEL_UP','primio-wheel-up',function()if panel then s
 mp.add_forced_key_binding('WHEEL_DOWN','primio-wheel-down',function()if panel then scroll=scroll+1 else mp.commandv('add','volume',-5)end end)
 mp.add_key_binding('a','primio-tracks',function()open('tracks')end)
 mp.register_script_message('close',function()panel=nil end)
-mp.register_script_message('open',function(name)open(name=='episodes' and 'episodes' or name=='style' and 'style' or 'tracks')end)
+mp.register_script_message('open',function(name)open(name=='episodes' and 'episodes' or name=='style' and 'style' or name=='speed' and 'speed' or 'tracks')end)
 mp.register_script_message('next-offer',function()next_offer=true end)
 mp.register_event('start-file',function()loaded=false end)
 mp.register_event('playback-restart',function()loaded=true;last_move=mp.get_time()end)

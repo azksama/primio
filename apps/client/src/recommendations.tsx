@@ -1,18 +1,21 @@
 import { t } from './i18n'
 import { useEffect, useState, type ReactNode } from 'react'
-import { catalog, metadata } from './addons'
-import { catalogTargets } from './catalog-pager'
+import { metadata } from './addons'
 import { matchesCategory } from './preferences'
 import { Deferred } from './progressive'
-import { CardSkeleton } from './media-image'
-import type { Addon, Meta, UserState } from './types'
-export function Recommendations(props: {
+import { affinity, discoveryPool, enrichDiscovery } from './discovery'
+import type { Addon, Meta, Progress, UserState } from './types'
+type Props = {
   category: string
   addons: Addon[]
   library: UserState['library']
+  progress: Progress[]
+  dismissed: string[]
+  onDismiss: (m: Meta) => void
   renderItem: (m: Meta) => ReactNode
   onExplore: () => void
-}) {
+}
+export function Recommendations(props: Props) {
   return (
     <Deferred>
       <RecommendationShelf {...props} />
@@ -23,108 +26,119 @@ function RecommendationShelf({
   category,
   addons,
   library,
+  progress,
+  dismissed,
+  onDismiss,
   renderItem,
   onExplore,
-}: {
-  category: string
-  addons: Addon[]
-  library: UserState['library']
-  renderItem: (m: Meta) => ReactNode
-  onExplore: () => void
-}) {
+}: Props) {
   const [items, setItems] = useState<Meta[]>([]),
-    [loading, setLoading] = useState(true),
-    [inspired, setInspired] = useState('')
+    [seeds, setSeeds] = useState<Meta[]>([]),
+    [busy, setBusy] = useState(true),
+    [mood, setMood] = useState('similar'),
+    [watched, setWatched] = useState(false)
+  const historyKey = JSON.stringify(progress.map((p) => [p.id, p.type, p.position > 0, p.watched]))
   useEffect(() => {
     let active = true
-    setLoading(true)
+    setBusy(true)
     void (async () => {
-      const seed = library.find((m) => matchesCategory(m, category))
-      const full = seed ? await metadata(addons, seed) : null
-      const genres = full?.genres ?? []
-      const targets = catalogTargets(
+      const history = [
+        ...new Map(
+          progress
+            .filter((p) => (p.position > 0 || p.watched) && matchesCategory(p, category))
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+            .map((p) => [p.id, p]),
+        ).values(),
+      ].slice(0, 4)
+      const selected = history.length
+        ? history
+        : library.filter((m) => matchesCategory(m, category)).slice(0, 4)
+      const full = await Promise.all(selected.map((m) => metadata(addons, m).catch(() => m)))
+      const candidates = await enrichDiscovery(
         addons,
-        category === 'anime' ? 'series' : category,
-        'all',
-        '',
-        category === 'anime',
-        '',
-        true,
-      ).filter((t) => !t.catalog.extra?.some((e) => e.isRequired && e.name !== 'genre'))
-      const tailored = targets.flatMap((t) => {
-        const options = t.catalog.extra?.find((e) => e.name === 'genre')?.options ?? []
-        const genre = genres.find((g) => options.includes(g))
-        return genre ? [{ ...t, genre }] : []
-      })
-      const selected = (
-        tailored.length
-          ? tailored
-          : targets
-              .filter((t) => !t.catalog.extra?.some((e) => e.isRequired))
-              .map((t) => ({ ...t, genre: '' }))
-      ).slice(0, 2)
-      const result = await Promise.allSettled(
-        selected.map((t) =>
-          catalog(t.addon, t.catalog.type, t.catalog.id, t.genre ? { genre: t.genre } : undefined),
-        ),
+        await discoveryPool(addons, '', [], category),
+        24,
       )
-      const unique = new Map<string, Meta>()
-      result.forEach((r) => {
-        if (r.status === 'fulfilled')
-          r.value.forEach((m) => {
-            const key = m.type + ':' + m.id
-            if (!library.some((v) => v.id === m.id && v.type === m.type))
-              unique.set(key, category === 'anime' ? { ...m, category: 'anime' } : m)
-          })
-      })
       if (active) {
-        setItems([...unique.values()].slice(0, 12))
-        setInspired(tailored.length ? (seed?.name ?? '') : '')
+        setSeeds(full)
+        setWatched(history.length > 0)
+        setItems(
+          candidates.filter(
+            (m) =>
+              matchesCategory(m, category) &&
+              !selected.some((s) => s.id === m.id) &&
+              !library.some((s) => s.id === m.id && s.type === m.type),
+          ),
+        )
       }
     })()
       .catch(() => {
         if (active) setItems([])
       })
       .finally(() => {
-        if (active) setLoading(false)
+        if (active) setBusy(false)
       })
     return () => {
       active = false
     }
-  }, [category, addons, library])
+  }, [category, addons, library, historyKey])
+  const ranked = items
+    .filter((m) => !dismissed.includes(m.type + ':' + m.id))
+    .map((m) => ({ meta: m, ...affinity(m, seeds, mood) }))
+    .filter((m) => !['director', 'cast'].includes(mood) || m.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12)
   return (
     <section className="shelf">
       <div className="section-head">
         <h2>
-          {category === 'movie'
-            ? t('Films pour vous')
-            : category === 'series'
-              ? t('Séries pour vous')
-              : t('Animes pour vous')}
+          {t(
+            category === 'movie'
+              ? 'Films pour vous'
+              : category === 'anime'
+                ? 'Animes pour vous'
+                : 'Séries pour vous',
+          )}
         </h2>
         <button onClick={onExplore}>{t('Tout voir')}</button>
       </div>
-      {inspired && (
+      {!!seeds.length && (
         <p className="recommendation-hint">
-          {t('Parce que vous avez ajouté')}
+          {t(watched ? 'Parce que vous avez regardé' : 'Parce que vous avez ajouté')}
           {' : '}
-          {inspired}
+          {seeds.map((m) => m.name).join(', ')}
         </p>
       )}
-      {loading ? (
-        <div className="skeleton-grid">
-          {[1, 2, 3].map((i) => (
-            <CardSkeleton key={i} />
+      <div className="recommendation-moods" role="group" aria-label={t('Votre envie')}>
+        {[
+          ['similar', 'Même ambiance'],
+          ['darker', 'Plus sombre'],
+          ['funnier', 'Plus drôle'],
+          ['shorter', 'Plus court'],
+          ['director', 'Même réalisateur'],
+          ['cast', 'Acteurs en commun'],
+        ].map(([v, l]) => (
+          <button key={v} aria-pressed={v === mood} onClick={() => setMood(v)}>
+            {t(l)}
+          </button>
+        ))}
+      </div>
+      {busy ? (
+        <p role="status">{t('Recherche…')}</p>
+      ) : ranked.length ? (
+        <div className="poster-rail">
+          {ranked.map(({ meta, reasons }) => (
+            <div className="recommendation-item" key={meta.type + meta.id}>
+              {renderItem(meta)}
+              {reasons.length > 0 && <small>{reasons.map((r) => t(r)).join(' · ')}</small>}
+              <button className="recommendation-dismiss" onClick={() => onDismiss(meta)}>
+                {t('Je ne suis pas intéressé')}
+              </button>
+            </div>
           ))}
         </div>
-      ) : items.length ? (
-        <div className="poster-rail">{items.map(renderItem)}</div>
       ) : (
-        <p className="muted">
-          {category === 'anime'
-            ? t('Ajoutez un catalogue anime dans Paramètres → Addons.')
-            : t('Aucune suggestion disponible pour le moment.')}
-        </p>
+        <p className="muted">{t('Aucune suggestion disponible pour le moment.')}</p>
       )}
     </section>
   )

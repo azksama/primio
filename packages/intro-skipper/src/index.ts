@@ -6,6 +6,7 @@ export interface SkipMedia {
 export interface SkipPreferences {
   aniSkip: boolean
   skipIntro: boolean
+  skipRecaps?: boolean
 }
 export type JsonFetcher = <T>(url: string) => Promise<T>
 export interface SkipProvider {
@@ -45,7 +46,9 @@ export function createIntroSkipper(json: JsonFetcher, providers: SkipProvider[] 
     videoId: string,
     settings: SkipPreferences,
   ): Promise<SkipSegment[]> {
-    const key = [meta.id, videoId, settings.aniSkip, settings.skipIntro].join('|'),
+    const key = [meta.id, videoId, settings.aniSkip, settings.skipIntro, settings.skipRecaps].join(
+        '|',
+      ),
       cached = cache.get(key)
     if (cached && Date.now() - cached.at < 600000) return cached.segments
     const request = async () => {
@@ -74,19 +77,21 @@ export function createIntroSkipper(json: JsonFetcher, providers: SkipProvider[] 
             `https://api.aniskip.com/v2/skip-times/${malId}/${episode}?types[]=op&types[]=ed&types[]=recap&episodeLength=0`,
           )
           return validSegments(
-            (data.results ?? []).map((s) => ({
-              start: s.interval.startTime,
-              end: s.interval.endTime,
-              kind: s.skipType === 'op' ? 'intro' : s.skipType === 'recap' ? 'recap' : 'outro',
-              label:
-                s.skipType === 'op'
-                  ? 'Passer l’opening'
-                  : s.skipType === 'recap'
-                    ? 'Passer le récapitulatif'
-                    : 'Passer l’ending',
-              provider: 'AniSkip',
-              episodeLength: s.episodeLength,
-            })),
+            (data.found === false ? [] : (data.results ?? []))
+              .filter((s) => ['op', 'ed', 'recap'].includes(s.skipType))
+              .map((s) => ({
+                start: s.interval.startTime,
+                end: s.interval.endTime,
+                kind: s.skipType === 'op' ? 'intro' : s.skipType === 'recap' ? 'recap' : 'outro',
+                label:
+                  s.skipType === 'op'
+                    ? 'Passer l’opening'
+                    : s.skipType === 'recap'
+                      ? 'Passer le récapitulatif'
+                      : 'Passer l’ending',
+                provider: 'AniSkip',
+                episodeLength: s.episodeLength,
+              })),
           )
         }
       }
@@ -132,7 +137,9 @@ export function createIntroSkipper(json: JsonFetcher, providers: SkipProvider[] 
       ...providers.map((p) => p.resolve(meta, videoId, settings, json)),
     ])
     const segments = validSegments(
-      contributions.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])),
+      contributions
+        .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+        .filter((s) => settings.skipRecaps !== false || s.kind !== 'recap'),
     )
     if (cache.size > 200) cache.clear()
     cache.set(key, { at: Date.now(), segments })

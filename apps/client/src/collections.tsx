@@ -6,10 +6,32 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react'
-import { FolderPlus, Pencil, Trash2, Check } from './icons'
+import {
+  FolderPlus,
+  Pencil,
+  Trash2,
+  Check,
+  Star,
+  Heart,
+  Clapperboard,
+  Sparkles,
+  Bookmark,
+} from './icons'
 import { DialogShell } from './dialog-shell'
 import { t } from './i18n'
-import type { UserState, Meta } from './types'
+import type { UserState, Meta, Collection } from './types'
+const collectionIcons = {
+  folder: FolderPlus,
+  star: Star,
+  heart: Heart,
+  film: Clapperboard,
+  anime: Sparkles,
+  bookmark: Bookmark,
+}
+export function CollectionIcon({ name }: { name?: string }) {
+  const Icon = collectionIcons[name as keyof typeof collectionIcons]
+  return Icon ? <Icon size={18} /> : null
+}
 export const collectionKey = (item: Pick<Meta, 'type' | 'id'>) =>
   JSON.stringify([item.type, item.id])
 
@@ -150,11 +172,13 @@ export function Collections({
   const [editing, setEditing] = useState<string | null>(null),
     [name, setName] = useState(''),
     [items, setItems] = useState<string[]>([])
+  const [icon, setIcon] = useState('')
   const collections = state.collections ?? []
   const edit = (id: string) => {
     const c = collections.find((c) => c.id === id)
     setEditing(id)
     setName(c?.name ?? '')
+    setIcon(c?.icon ?? '')
     setItems(c?.items ?? [])
   }
   return (
@@ -165,6 +189,7 @@ export function Collections({
         </button>
         {collections.map((c) => (
           <button key={c.id} aria-pressed={selected === c.id} onClick={() => onSelect(c.id)}>
+            <CollectionIcon name={c.icon} />
             {c.name} <small>{c.items.length}</small>
           </button>
         ))}
@@ -189,7 +214,13 @@ export function Collections({
                 ...s,
                 collections: [
                   ...(s.collections ?? []).filter((c) => c.id !== id),
-                  { id, name: name.trim(), items },
+                  {
+                    ...s.collections?.find((c) => c.id === id),
+                    id,
+                    name: name.trim(),
+                    items,
+                    icon: (icon || undefined) as Collection['icon'],
+                  },
                 ],
               }))
               onSelect(id)
@@ -206,6 +237,32 @@ export function Collections({
                 required
               />
             </label>
+            <fieldset className="collection-icon-picker">
+              <legend>{t('Icône (facultatif)')}</legend>
+              <button type="button" aria-pressed={!icon} onClick={() => setIcon('')}>
+                {t('Aucune')}
+              </button>
+              {Object.keys(collectionIcons).map((key) => (
+                <button
+                  type="button"
+                  key={key}
+                  aria-label={t(
+                    {
+                      folder: 'Dossier',
+                      star: 'Étoile',
+                      heart: 'Cœur',
+                      film: 'Film',
+                      anime: 'Anime',
+                      bookmark: 'Marque-page',
+                    }[key] ?? key,
+                  )}
+                  aria-pressed={icon === key}
+                  onClick={() => setIcon(key)}
+                >
+                  <CollectionIcon name={key} />
+                </button>
+              ))}
+            </fieldset>
             <div className="collection-actions">
               <button className="primary" type="submit">
                 {t('Enregistrer')}

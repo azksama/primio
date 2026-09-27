@@ -1,6 +1,13 @@
 import { t } from './i18n'
-import type { Meta } from './types'
-export function episodeQueue(meta: Meta, currentId: string, now = Date.now()) {
+import { findProgress, isWatched } from './progress'
+import type { Meta, Progress } from './types'
+export function episodeQueue(
+  meta: Meta,
+  currentId: string,
+  now = Date.now(),
+  hideSpoilers = false,
+  progress: Progress[] = [],
+) {
   const episodes = (meta.type === 'movie' ? [] : (meta.videos ?? []))
     .slice()
     .sort((a, b) => (a.season ?? 1) - (b.season ?? 1) || (a.episode ?? 0) - (b.episode ?? 0))
@@ -22,7 +29,10 @@ export function episodeQueue(meta: Meta, currentId: string, now = Date.now()) {
   return {
     episodes: episodes.map((v) => ({
       id: v.id,
-      title: v.title || v.name || t('Épisode'),
+      title:
+        hideSpoilers && !isWatched(findProgress(progress, meta.type, v.id))
+          ? t('Épisode {n}', { n: v.episode ?? 0 })
+          : v.title || v.name || t('Épisode'),
       season: v.season ?? 1,
       episode: v.episode ?? 0,
     })),

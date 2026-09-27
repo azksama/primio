@@ -67,6 +67,8 @@ export const defaults: Settings = {
   skipIntro: true,
   aniSkip: true,
   autoSkipIntro: false,
+  skipRecaps: true,
+  autoSkipRecap: false,
 }
 export const avatars = Array.from({ length: 10 }, (_, i) => String(i + 1).padStart(2, '0'))
 export const avatarUrl = (avatar?: string) =>

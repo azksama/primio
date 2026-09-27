@@ -24,6 +24,25 @@ pub struct ApiError {
     data: Value,
 }
 #[tauri::command]
+async fn voice_search(app: tauri::AppHandle, language: String) -> Result<String, String> {
+    if language.len()>20 || !language.chars().all(|c|c.is_ascii_alphabetic()||c=='-') {return Err("Invalid language".into())}
+    #[cfg(target_os="android")]
+    return Ok(mobile_call(&app,"voiceSearch",json!({"text":language}))?["text"].as_str().unwrap_or("").to_owned());
+    #[cfg(target_os="windows")]
+    {
+        let _=app;
+        tauri::async_runtime::spawn_blocking(move || {
+            use std::os::windows::process::CommandExt;
+            let script = r#"$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Add-Type -AssemblyName System.Speech; $info=[System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers() | Where-Object { $_.Culture.Name -like ($env:PRIMIO_SPEECH_LANG+'*') } | Select-Object -First 1; if($info){$engine=[System.Speech.Recognition.SpeechRecognitionEngine]::new($info)}else{$engine=[System.Speech.Recognition.SpeechRecognitionEngine]::new()}; try { $engine.LoadGrammar([System.Speech.Recognition.DictationGrammar]::new()); $engine.SetInputToDefaultAudioDevice(); $engine.InitialSilenceTimeout=[TimeSpan]::FromSeconds(8); $engine.BabbleTimeout=[TimeSpan]::FromSeconds(8); $result=$engine.Recognize([TimeSpan]::FromSeconds(15)); if($result){[Console]::Write($result.Text)} } finally { $engine.Dispose() }"#;
+            let output=std::process::Command::new("powershell.exe").args(["-NoProfile","-NonInteractive","-Command",script]).env("PRIMIO_SPEECH_LANG",language).creation_flags(0x08000000).output().map_err(|_|"Voice recognition unavailable".to_string())?;
+            if !output.status.success(){return Err("Voice recognition unavailable: check the microphone and installed speech language".to_string())}
+            Ok(String::from_utf8_lossy(&output.stdout).trim().chars().take(500).collect())
+        }).await.map_err(|e|e.to_string())?
+    }
+    #[cfg(not(any(target_os="android",target_os="windows")))]
+    {let _=(app,language);Err("Voice recognition unavailable".into())}
+}
+#[tauri::command]
 async fn fetch_json(url: String) -> Result<Value, String> {
     let mut response = network::fetch_json(&url).await?;
     for extension in extensions::registry() {
@@ -150,6 +169,8 @@ async fn secure_read(app: tauri::AppHandle, key: String) -> Result<Option<String
         "state",
         "session",
         "plugins",
+        "accountSync",
+        "profilePinAttempts",
         "playerProgress",
         "notifications",
         "onboarding",
@@ -181,6 +202,8 @@ async fn secure_write(app: tauri::AppHandle, key: String, value: String) -> Resu
         "state",
         "session",
         "plugins",
+        "accountSync",
+        "profilePinAttempts",
         "notifications",
         "onboarding",
         "startupProfile",
@@ -392,6 +415,7 @@ pub fn run() {
             subtitle_fonts::prepare_subtitle_font,
             subtitle_fonts::remove_subtitle_font,
             fetch_json,
+            voice_search,
             provider_request,
             updates::update_check,
             updates::update_download,

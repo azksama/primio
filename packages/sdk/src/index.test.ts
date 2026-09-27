@@ -49,3 +49,47 @@ describe('permissions', () => {
     expect(input.length).toBe(3)
   })
 })
+
+it('bounds schema v2 customization and requires every permission', () => {
+  for (const [capability, value] of Object.entries({
+    layout: { columns: 4 },
+    spoilers: { hideUnwatched: true },
+    accessibility: { fontScale: 1.2 },
+    watchOrder: [
+      {
+        id: 'custom',
+        title: 'Order',
+        order: 'custom',
+        entries: [{ id: 'tt1', type: 'movie', name: 'Movie' }],
+      },
+    ],
+  })) {
+    expect(pluginSchema.safeParse({ ...base, schemaVersion: 2, [capability]: value }).success).toBe(
+      false,
+    )
+    expect(
+      pluginSchema.safeParse({
+        ...base,
+        schemaVersion: 2,
+        permissions: [capability],
+        [capability]: value,
+      }).success,
+    ).toBe(true)
+  }
+  expect(
+    pluginSchema.safeParse({
+      ...base,
+      schemaVersion: 2,
+      permissions: ['layout'],
+      layout: { columns: 20 },
+    }).success,
+  ).toBe(false)
+  expect(
+    pluginSchema.safeParse({
+      ...base,
+      schemaVersion: 2,
+      permissions: ['theme'],
+      theme: { glassOpacity: 0 },
+    }).success,
+  ).toBe(false)
+})

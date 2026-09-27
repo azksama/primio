@@ -47,10 +47,12 @@ export function SeasonalAnime({
   season,
   query,
   renderItem,
+  filterItem,
   sort,
 }: {
   season: string
   query: string
+  filterItem?: (m:Meta)=>boolean
   sort?: CatalogSort
   renderItem: (m: Meta) => ReactNode
 }) {
@@ -110,7 +112,7 @@ export function SeasonalAnime({
     <>
       <h2 className="season-heading">{seasonOptions().find(([id]) => id === season)?.[1]}</h2>
       <ProgressiveList
-        items={sortCatalog(state.items, sort)}
+        items={sortCatalog(state.items.filter(m=>!filterItem||filterItem(m)), sort)}
         renderItem={renderItem}
         className="poster-grid"
         loading={state.loading}

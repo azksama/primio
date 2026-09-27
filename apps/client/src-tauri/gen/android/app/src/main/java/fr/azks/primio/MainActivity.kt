@@ -7,6 +7,21 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 class MainActivity:TauriActivity(){
+ private var speech:app.tauri.plugin.Invoke?=null
+ private val speechHandler=android.os.Handler(android.os.Looper.getMainLooper())
+ private val speechTimeout=Runnable{speech?.reject("Voice recognition timed out");speech=null}
+ fun recognizeSpeech(invoke:app.tauri.plugin.Invoke,language:String){runOnUiThread{
+  if(speech!=null){invoke.reject("Voice recognition is already active");return@runOnUiThread}
+  try{val intent=android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE,language).putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS,1)
+   speech=invoke;startActivityForResult(intent,913);speechHandler.postDelayed(speechTimeout,60000)
+  }catch(_:Exception){speech=null;invoke.reject("Voice recognition unavailable")}
+ }}
+ override fun onActivityResult(requestCode:Int,resultCode:Int,data:android.content.Intent?){
+  super.onActivityResult(requestCode,resultCode,data)
+  if(requestCode==913){speechHandler.removeCallbacks(speechTimeout);val result=data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull().orEmpty();speech?.resolve(app.tauri.plugin.JSObject().put("text",if(resultCode==RESULT_OK)result else "") as app.tauri.plugin.JSObject);speech=null}
+ }
+ override fun onDestroy(){speechHandler.removeCallbacks(speechTimeout);speech?.reject("Activity closed");speech=null;super.onDestroy()}
+
  override fun onWebViewCreate(webView:WebView){
   super.onWebViewCreate(webView)
   WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)

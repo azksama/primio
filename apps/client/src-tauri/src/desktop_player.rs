@@ -290,6 +290,7 @@ async fn run(
         (1, "time-pos"),
         (2, "duration"),
         (3, "user-data/primio/request"),
+        (4, "user-data/primio/track-preferences"),
     ] {
         send(&mut pipe, json!(["observe_property", id, prop])).await?;
     }
@@ -298,6 +299,7 @@ async fn run(
     let mut lines = BufReader::new(read).lines();
     let mut timer = tokio::time::interval(Duration::from_secs(5));
     let mut loaded = false;
+    let mut context = context.clone();
     loop {
         tokio::select! {
             result=lines.next_line()=>{
@@ -307,7 +309,8 @@ async fn run(
                     "property-change"=>match event["name"].as_str().unwrap_or("") {
                         "time-pos"=>if let Some(v)=event["data"].as_f64(){*position=v},
                         "duration"=>if let Some(v)=event["data"].as_f64(){*duration=v},
-                        "user-data/primio/request"=>if event["data"]["id"].as_str().is_some(){publish(app,context,*position,*duration,true,Some(&event["data"]));break},
+                        "user-data/primio/request"=>if event["data"]["id"].as_str().is_some(){publish(app,&context,*position,*duration,true,Some(&event["data"]));break},
+                        "user-data/primio/track-preferences"=>if event["data"].is_object(){context["trackPreferences"]=event["data"].clone();publish(app,&context,*position,*duration,false,None);},
                         _=>{}
                     },
                     "file-loaded"=>{loaded=true;for sub in args["subtitles"].as_array().into_iter().flatten(){if let Some(url)=sub["url"].as_str(){send(&mut writer,json!(["sub-add",url,"auto",sub["lang"].as_str().unwrap_or(""),sub["lang"].as_str().unwrap_or("")])).await?;}}},
@@ -316,7 +319,7 @@ async fn run(
                     _=>{}
                 }
             },
-            _=timer.tick()=>{if generation!=GENERATION.load(Ordering::SeqCst){break} if child.lock().map_err(|e|e.to_string())?.try_wait().map_err(|e|e.to_string())?.is_some(){break} if *duration>0.0 {publish(app,context,*position,*duration,false,None);}}
+            _=timer.tick()=>{if generation!=GENERATION.load(Ordering::SeqCst){break} if child.lock().map_err(|e|e.to_string())?.try_wait().map_err(|e|e.to_string())?.is_some(){break} if *duration>0.0 {publish(app,&context,*position,*duration,false,None);}}
         }
     }
     Ok(())

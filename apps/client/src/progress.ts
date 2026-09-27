@@ -76,7 +76,16 @@ export interface NativeProgress {
   requestedVideoId?: string
   actionId?: string
   autoPlay?: boolean
-  context: { accountId?: string; profileId: string; meta: Meta; videoId: string }
+  context: {
+    trackPreferences?: {
+      audio?: import('./types').TrackPreference
+      subtitle?: import('./types').TrackPreference
+    }
+    accountId?: string
+    profileId: string
+    meta: Meta
+    videoId: string
+  }
   position: number
   duration: number
   updatedAt: number
@@ -100,6 +109,41 @@ export function mergeNativeProgress(state: UserState, event: NativeProgress): Us
     (profile.lastPlaybackAt ?? 0) >= event.updatedAt
   )
     return state
+  if (c.trackPreferences) {
+    const prefs = Object.fromEntries(
+      Object.entries(c.trackPreferences).map(([key, p]) => [
+        key,
+        { ...p, language: p?.language ?? '', title: p?.title ?? '' },
+      ]),
+    ) as NonNullable<typeof c.trackPreferences>
+    const valid = [prefs.audio, prefs.subtitle]
+      .filter(Boolean)
+      .every(
+        (p) =>
+          p &&
+          typeof p.language === 'string' &&
+          p.language.length <= 20 &&
+          typeof p.title === 'string' &&
+          p.title.length <= 200 &&
+          typeof p.forced === 'boolean',
+      )
+    if (valid) {
+      const update = (settings: import('./types').Settings) => ({
+        ...settings,
+        trackPreferences: [
+          ...(settings.trackPreferences ?? []).filter((p) => p.contentId !== c.meta.id),
+          { contentId: c.meta.id, ...prefs },
+        ].slice(-100),
+      })
+      state = {
+        ...state,
+        settings: c.profileId === state.activeProfileId ? update(state.settings) : state.settings,
+        profiles: state.profiles.map((p) =>
+          p.id === c.profileId ? { ...p, settings: update(p.settings) } : p,
+        ),
+      }
+    }
+  }
   const profiles = state.profiles.map((p) =>
     p.id === c.profileId ? { ...p, lastPlaybackAt: event.updatedAt } : p,
   )

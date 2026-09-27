@@ -23,6 +23,9 @@ describe('Application languages and profile images', () => {
           readFileSync('src-tauri/gen/android/app/src/main/assets/locales/' + file, 'utf8'),
         ),
       ).toEqual(JSON.parse(json))
+      expect(
+        JSON.parse(readFileSync('src-tauri/resources/windows/player/locales/' + file, 'utf8')),
+      ).toEqual(JSON.parse(json))
       for (const [key, value] of Object.entries(JSON.parse(json))) {
         expect((String(value).match(/\{\w+\}/g) ?? []).sort(), file + ':' + key).toEqual(
           (key.match(/\{\w+\}/g) ?? []).sort(),

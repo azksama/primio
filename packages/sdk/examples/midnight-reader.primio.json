@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 2,
+  "id": "community.midnight-reader",
+  "name": "Midnight Reader",
+  "version": "1.0.0",
+  "description": "A calm midnight library with spoiler protection.",
+  "author": "Primio SDK example",
+  "permissions": [
+    "theme",
+    "layout",
+    "accessibility",
+    "spoilers"
+  ],
+  "theme": {
+    "background": "#0B1220",
+    "surface": "#172236",
+    "accent": "#B7D6FF",
+    "text": "#EEF4FF",
+    "muted": "#AABBD2",
+    "radius": 16
+  },
+  "layout": {
+    "columns": 4,
+    "density": "comfortable"
+  },
+  "accessibility": {
+    "reduceMotion": true,
+    "fontScale": 1.1
+  },
+  "spoilers": {
+    "hideUnwatched": true
+  }
+}

@@ -22,6 +22,7 @@ export interface Addon {
   manifest: Manifest
 }
 export interface Meta {
+  metadataStatus?: 'loaded' | 'partial' | 'unavailable'
   id: string
   type: string
   name: string
@@ -92,6 +93,7 @@ export interface Progress extends Pick<Meta, 'id' | 'type' | 'name' | 'poster' |
   updatedAt: number
 }
 export interface Settings {
+  dismissedRecommendations?: string[]
   tvMode?: 'auto' | 'on' | 'off'
   uiLanguage: string
   contentColumns: 3 | 4 | 5
@@ -132,8 +134,18 @@ export interface Settings {
   skipIntro: boolean
   aniSkip: boolean
   autoSkipIntro: boolean
+  skipRecaps?: boolean
+  autoSkipRecap?: boolean
+  trackPreferences?: { contentId: string; audio?: TrackPreference; subtitle?: TrackPreference }[]
+  titleStates?: {
+    id: string
+    status: 'planned' | 'watching' | 'completed'
+    updatedAt: number
+    progressSignature?: string
+  }[]
 }
 export interface Profile {
+  pin?: { salt: string; hash: string } | null
   deletedProgress?: import('./progress-deletions').ProgressDeletion[]
   collections?: Collection[]
   avatar?: string
@@ -161,8 +173,18 @@ export interface Subtitle {
   url: string
   lang: string
 }
+export interface TrackPreference {
+  language: string
+  title: string
+  forced: boolean
+  off?: boolean
+}
 export interface Collection {
   id: string
   name: string
   items: string[]
+  icon?: 'folder' | 'star' | 'heart' | 'film' | 'anime' | 'bookmark'
+  sort?: 'manual' | 'name' | 'status'
+  descending?: boolean
+  statusFilter?: 'all' | 'planned' | 'watching' | 'completed'
 }

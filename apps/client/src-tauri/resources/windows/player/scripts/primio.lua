@@ -66,13 +66,52 @@ mp.observe_property('time-pos', 'number', function(_, pos)
     if not pos or requested then return end
     local duration=mp.get_property_number('duration',0)
     for i, segment in ipairs(config.skipSegments or {}) do
-        if not handled[i] and pos >= segment.start and pos < segment['end'] then
+        if not handled[i] and segment.start>=0 and segment['end']<=duration and pos >= segment.start and pos < segment['end'] and (not segment.episodeLength or segment.episodeLength==0 or math.abs(duration-segment.episodeLength)<math.max(10,duration*.03)) then
             handled[i]=true
             if segment.kind=='outro' then
                 if config.autoNextEpisode then episode(config.nextVideoId,true) else offer_next() end
-            elseif config.autoSkipIntro then mp.commandv('seek',segment['end'],'absolute') end
+            elseif (segment.kind=='intro' and config.autoSkipIntro) or (segment.kind=='recap' and config.autoSkipRecap) then mp.commandv('seek',segment['end'],'absolute') end
         end
     end
     if duration>0 and duration-pos<=30 then offer_next() end
     if config.autoNextEpisode and duration>0 and duration-pos<=0.5 then episode(config.nextVideoId,true) end
 end)
+
+local function lang(value)
+    local v=(value or ''):lower()
+    return ({fra='fr',fre='fr',eng='en',jpn='ja',kor='ko',zho='zh',chi='zh',deu='de',ger='de',spa='es',por='pt'})[v] or v
+end
+local function forced(track)
+    local title=(track.title or ''):lower()
+    return track.forced==true or title:find('forced',1,true)~=nil or title:find('forc',1,true)~=nil or title:find('signs',1,true)~=nil or title:find('songs',1,true)~=nil
+end
+local preferences=config.trackPreferences or {}
+local restored={}
+mp.register_script_message('remember-track',function(kind,id)
+    restored[kind=='audio' and 'audio' or 'subtitle']=true
+    local choice
+    for _,track in ipairs(mp.get_property_native('track-list',{})) do if track.type==kind and tostring(track.id)==id then choice=track;break end end
+    preferences[kind=='audio' and 'audio' or 'subtitle']={language=lang(choice and choice.lang),title=choice and (choice.title or ''):sub(1,200) or '',forced=choice and forced(choice) or false,off=id=='no'}
+    mp.set_property_native('user-data/primio/track-preferences',preferences)
+end)
+local function restore_preferences()
+    for _,pair in ipairs({{'audio','audio','aid'},{'subtitle','sub','sid'}}) do
+        local pref=preferences[pair[1]]
+        if pref then pref.language=lang(pref.language);pref.title=pref.title or '' end
+        if pref and not restored[pair[1]] then
+            if pref.off and pair[2]=='sub' then mp.set_property('sid','no');restored[pair[1]]=true
+            else
+                local best,score=nil,-1
+                for _,track in ipairs(mp.get_property_native('track-list',{})) do
+                    if track.type==pair[2] and ((pref.language~='' and lang(track.lang)==lang(pref.language)) or (pref.language=='' and pref.title~='' and track.title==pref.title)) and (pair[2]~='sub' or forced(track)==pref.forced) then
+                        local rank=track.title==pref.title and 2 or 1
+                        if rank>score then best=track;score=rank end
+                    end
+                end
+                if best then restored[pair[1]]=true;mp.set_property_number(pair[3],best.id);if pair[2]=='sub' then mp.set_property_native('sub-visibility',true) end end
+            end
+        end
+    end
+end
+mp.register_event('file-loaded',restore_preferences)
+mp.observe_property('track-list','native',restore_preferences)

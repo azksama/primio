@@ -131,3 +131,25 @@ describe('Primio Intro Skipper', () => {
     ).toEqual([])
   })
 })
+
+it('supports AniSkip recaps and respects the recap toggle', async () => {
+  const fetcher: JsonFetcher = async <T>() =>
+    ({
+      found: true,
+      results: [
+        { interval: { startTime: 0, endTime: 30 }, skipType: 'recap', episodeLength: 1400 },
+        { interval: { startTime: 30, endTime: 100 }, skipType: 'op', episodeLength: 1400 },
+        { interval: { startTime: 500, endTime: 520 }, skipType: 'unknown', episodeLength: 1400 },
+      ],
+    }) as T
+  const plugin = createIntroSkipper(fetcher)
+  const meta = { id: 'mal:1', type: 'anime' }
+  expect(
+    (await plugin.resolve(meta, 'mal:1:1', { aniSkip: true, skipIntro: true })).map((s) => s.kind),
+  ).toEqual(['recap', 'intro'])
+  expect(
+    (
+      await plugin.resolve(meta, 'mal:1:1', { aniSkip: true, skipIntro: true, skipRecaps: false })
+    ).map((s) => s.kind),
+  ).toEqual(['intro'])
+})

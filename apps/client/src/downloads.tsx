@@ -27,6 +27,7 @@ export async function playerOptions(s: Settings) {
     subtitleBackground: s.subtitleBackground,
     forceSubtitleStyle: s.forceSubtitleStyle,
     autoNextEpisode: s.autoNextEpisode,
+    autoSkipRecap: s.autoSkipRecap ?? false,
     reduceMotion: s.reduceMotion,
     playbackSpeed: s.playbackSpeed,
     hardwareDecoding: s.hardwareDecoding,

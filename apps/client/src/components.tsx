@@ -8,18 +8,7 @@ import { ProgressiveList } from './progressive'
 import { findProgress, isWatched } from './progress'
 import { MediaImage } from './media-image'
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import {
-  Check,
-  ChevronDown,
-  Puzzle,
-  Play,
-  Plus,
-  Trash2,
-  Pencil,
-  UserRound,
-  Info,
-  X,
-} from './icons'
+import { Check, ChevronDown, Puzzle, Play, Plus, Trash2, Pencil, UserRound, Info, X } from './icons'
 import type { Meta, UserState, Settings, Progress } from './types'
 import {
   languages,
@@ -177,8 +166,9 @@ export function Preferences({
             <small>{t('Aperçu des sous-titres')}</small>
             <span
               style={{
-                fontFamily: customFonts.family ?? (
-                  settings.subtitleFont === 'serif'
+                fontFamily:
+                  customFonts.family ??
+                  (settings.subtitleFont === 'serif'
                     ? '"Noto Serif", serif'
                     : settings.subtitleFont === 'monospace'
                       ? '"Droid Sans Mono", monospace'
@@ -368,7 +358,7 @@ export function Preferences({
             onChange={(v) => update('skipIntro', v)}
           />
           <Toggle
-            label={t('Openings et endings · AniSkip')}
+            label={t('Openings, endings et récaps · AniSkip')}
             checked={settings.aniSkip}
             onChange={(v) => update('aniSkip', v)}
           />
@@ -376,6 +366,16 @@ export function Preferences({
             label={t('Passer automatiquement les intros')}
             checked={settings.autoSkipIntro}
             onChange={(v) => update('autoSkipIntro', v)}
+          />
+          <Toggle
+            label={t('Proposer de passer les récaps')}
+            checked={settings.skipRecaps ?? true}
+            onChange={(v) => update('skipRecaps', v)}
+          />
+          <Toggle
+            label={t('Passer automatiquement les récaps')}
+            checked={settings.autoSkipRecap ?? false}
+            onChange={(v) => update('autoSkipRecap', v)}
           />
         </>
       )}
@@ -427,9 +427,16 @@ export function Preferences({
       {section === 'options' && (
         <>
           <h2>{t('Apparence et navigation')}</h2>
-          <Choice label={t('Mode TV')} value={settings.tvMode ?? 'auto'} options={[
-            ['auto', t('Automatique')], ['on', t('Activé')], ['off', t('Désactivé')],
-          ]} onChange={v => update('tvMode', v as Settings['tvMode'])}/>
+          <Choice
+            label={t('Mode TV')}
+            value={settings.tvMode ?? 'auto'}
+            options={[
+              ['auto', t('Automatique')],
+              ['on', t('Activé')],
+              ['off', t('Désactivé')],
+            ]}
+            onChange={(v) => update('tvMode', v as Settings['tvMode'])}
+          />
           <Choice
             label={t('Langue de l’application')}
             value={settings.uiLanguage}
@@ -500,6 +507,7 @@ export function Episodes({
   onToggleWatched: (id: string) => void
   onPlay: (id: string) => void
 }) {
+  const [revealed, setRevealed] = useState<string[]>([])
   const [expanded, setExpanded] = useState<string[]>([])
   const [synopsis, setSynopsis] = useState<{ title: string; text: string } | null>(null)
   const available = seasons(meta),
@@ -532,19 +540,23 @@ export function Episodes({
             future = validDate && date.getTime() > Date.now()
           const history = findProgress(progress, meta.type, v.id)
           const watched = isWatched(history)
+          const visible = spoilers || watched || revealed.includes(v.id)
+          const title = visible
+            ? v.title || v.name || t('Épisode')
+            : t('Épisode {n}', { n: v.episode ?? 0 })
           return (
             <div className="episode-entry" key={v.id}>
               <button className="episode-card" onClick={() => onPlay(v.id)}>
                 <div className="episode-image">
-                  {spoilers && v.thumbnail ? <MediaImage src={v.thumbnail} /> : null}
+                  {visible && v.thumbnail ? <MediaImage src={v.thumbnail} /> : null}
                   <Play />
                 </div>
                 <div className="episode-copy">
                   <strong>
                     {v.episode ? `${v.episode}. ` : ''}
-                    {v.title || v.name || t('Épisode')}
+                    {title}
                   </strong>
-                  {spoilers && (v.overview || v.description) && (
+                  {visible && (v.overview || v.description) && (
                     <p className="episode-synopsis">
                       {expanded.includes(v.id)
                         ? cleanDescription(v.overview || v.description || '')
@@ -585,7 +597,7 @@ export function Episodes({
                   )}
                 </div>
               </button>
-              {spoilers && Array.from(v.overview || v.description || '').length > 300 && (
+              {visible && Array.from(v.overview || v.description || '').length > 300 && (
                 <button
                   className="episode-expand text-button"
                   aria-expanded={expanded.includes(v.id)}
@@ -599,18 +611,28 @@ export function Episodes({
                 </button>
               )}
               <div className="episode-actions">
+                {!spoilers && !watched && (
+                  <button
+                    className="icon glass"
+                    aria-label={t(visible ? 'Masquer les spoilers' : 'Dévoiler cet épisode')}
+                    onClick={() =>
+                      setRevealed((ids) =>
+                        visible ? ids.filter((id) => id !== v.id) : [...ids, v.id],
+                      )
+                    }
+                  >
+                    <Info size={18} />
+                  </button>
+                )}
                 <button
                   className={'episode-watched icon ' + (watched ? 'selected' : '')}
-                  aria-label={
-                    (watched ? t('Marquer non vu : ') : t('Marquer comme vu : ')) +
-                    (v.title || v.name || t('Épisode'))
-                  }
+                  aria-label={(watched ? t('Marquer non vu : ') : t('Marquer comme vu : ')) + title}
                   aria-pressed={watched}
                   onClick={() => onToggleWatched(v.id)}
                 >
                   <Check size={18} />
                 </button>
-                {spoilers && (v.overview || v.description) && (
+                {visible && (v.overview || v.description) && (
                   <button
                     className="icon glass episode-info"
                     aria-label={t('Synopsis') + ' · ' + (v.title || v.name)}
@@ -664,12 +686,14 @@ export function Profiles({
   state,
   setState,
   connected,
+  authorize,
   onSync,
   beforeRemove,
   onError,
 }: {
   state: UserState
   setState: Dispatch<SetStateAction<UserState>>
+  authorize: (profile: UserState['profiles'][number]) => Promise<boolean>
   connected: boolean
   onSync: () => void
   beforeRemove: (id: string) => Promise<void>
@@ -722,7 +746,9 @@ export function Profiles({
           >
             <button
               className="profile-pick"
-              onClick={() => setState((s) => switchProfile(s, p.id))}
+              onClick={async () => {
+                if (await authorize(p)) setState((s) => switchProfile(s, p.id))
+              }}
               aria-pressed={p.id === state.activeProfileId}
             >
               <span className="avatar" style={{ background: p.color, color: '#101110' }}>
@@ -737,7 +763,8 @@ export function Profiles({
               <button
                 className="icon"
                 aria-label={t('Modifier ') + p.name}
-                onClick={() => {
+                onClick={async () => {
+                  if (!(await authorize(p))) return
                   setEditing(p.id)
                   setName(p.name)
                   setColor(p.color)
@@ -750,7 +777,9 @@ export function Profiles({
                 <button
                   className="icon"
                   aria-label={t('Supprimer ') + p.name}
-                  onClick={() => setRemoving(p.id)}
+                  onClick={async () => {
+                    if (await authorize(p)) setRemoving(p.id)
+                  }}
                 >
                   <Trash2 size={17} />
                 </button>

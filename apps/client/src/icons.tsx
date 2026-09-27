@@ -20,6 +20,8 @@ import DiscoverCircleIcon from '@hugeicons/core-free-icons/DiscoverCircleIcon'
 import Download04Icon from '@hugeicons/core-free-icons/Download04Icon'
 import Edit02Icon from '@hugeicons/core-free-icons/Edit02Icon'
 import Film02Icon from '@hugeicons/core-free-icons/Film02Icon'
+import FavouriteIcon from '@hugeicons/core-free-icons/FavouriteIcon'
+import StarIcon from '@hugeicons/core-free-icons/StarIcon'
 import FolderAddIcon from '@hugeicons/core-free-icons/FolderAddIcon'
 import Home01Icon from '@hugeicons/core-free-icons/Home01Icon'
 import ImageNotFound01Icon from '@hugeicons/core-free-icons/ImageNotFound01Icon'
@@ -94,3 +96,6 @@ export const Upload = icon(Upload04Icon)
 export const UserRound = icon(UserIcon)
 export const WifiOff = icon(WifiDisconnected01Icon)
 export const X = icon(Cancel01Icon)
+
+export const Heart = icon(FavouriteIcon)
+export const Star = icon(StarIcon)

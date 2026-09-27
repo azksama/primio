@@ -9,10 +9,12 @@ export function ContinueCard({
   item,
   addons,
   onPlay,
+  hideSpoilers = false,
 }: {
   item: Progress
   addons: Addon[]
   onPlay: () => void
+  hideSpoilers?: boolean
 }) {
   const [enrichment, setEnrichment] = useState<Partial<ReturnType<typeof episodeProgress>>>({})
   const episode = {
@@ -44,7 +46,7 @@ export function ContinueCard({
   }, [item.id, item.videoId, item.episodeThumbnail, item.seasonCount, addons])
   return (
     <button className="continue-card" onClick={onPlay}>
-      <MediaImage src={episode.episodeThumbnail} fallback={item.poster} />
+      <MediaImage src={hideSpoilers ? item.poster : episode.episodeThumbnail} fallback={item.poster} />
       <strong>{item.name}</strong>
       {episode.episode != null && (
         <small className="continue-episode">

@@ -123,7 +123,12 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   overlay.addView(previewPanel,FrameLayout.LayoutParams(dp(172),dp(124),Gravity.TOP or Gravity.START))
   seek=PrimioTimeline(this).apply{onSeek={fraction,done->dragging=!done;handler.removeCallbacks(hide);time.text=format(duration*fraction)+" / "+format(duration);if(done){preview.hide();previewPanel.visibility=View.GONE;command("seek",(duration*fraction).toString(),"absolute");showControls()}else if(duration>0){showSeekPreview(fraction)}}}
   bottom.addView(seek,LinearLayout.LayoutParams(-1,dp(32)))
-  bottom.addView(button("Audio · ST",tr("Audio et sous-titres")){tracks()},LinearLayout.LayoutParams(-2,dp(44)).apply{gravity=Gravity.END;rightMargin=dp(14)})
+  val playerActions=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL}
+  playerActions.addView(button(tr("Changer de source")){requestEpisode(options.optString("currentVideoId"),false)},LinearLayout.LayoutParams(-2,dp(44)))
+  playerActions.addView(View(this),LinearLayout.LayoutParams(0,1,1f))
+  playerActions.addView(button(tr("Vitesse")){val dialog=PrimioSheet(this,tr("Vitesse de lecture"));sheet=dialog;dialog.setOnDismissListener{sheet=null;showControls()};listOf(0.5,0.75,1.0,1.25,1.5,1.75,2.0).forEach{speed->dialog.option("${speed}×",false){command("set","speed",speed.toString());dialog.dismiss()}};dialog.show()},LinearLayout.LayoutParams(-2,dp(44)).apply{rightMargin=dp(12)})
+  playerActions.addView(button("Audio · ST",tr("Audio et sous-titres")){tracks()},LinearLayout.LayoutParams(-2,dp(44)))
+  bottom.addView(playerActions)
   overlay.addView(bottom,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
   loading=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;contentDescription=tr("Chargement de la vidéo")}
   val artwork=ImageView(this).apply{setImageResource(R.drawable.primio_brand);scaleType=ImageView.ScaleType.FIT_CENTER}
@@ -194,7 +199,8 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
  private fun command(vararg args:String){if(handle==0L)return;try{nativeCommand(handle,JSONArray(args.toList()).toString())}catch(e:Exception){feedback("Commande indisponible")}}
  private fun poll(){if(handle==0L)return;try{
   last=JSONObject(nativeState(handle));val nextPosition=last.optDouble("position",position);if(nextPosition!=position)stalledAt=SystemClock.elapsedRealtime();position=nextPosition;duration=last.optDouble("duration",duration)
-  if(!loaded&&last.optBoolean("loaded")){loaded=true;showControls();if(options.optString("language")=="original"){val tracks=last.optJSONArray("tracks")?:JSONArray();val original=(0 until tracks.length()).map{tracks.getJSONObject(it)}.firstOrNull{it.optString("type")=="audio"&&Regex("(?i)\\boriginal\\b|\\bVO\\b").containsMatchIn(it.optString("title"))};original?.let{command("set","aid",it.optInt("id").toString())}};val subs=options.optJSONArray("subtitles")?:JSONArray();if(options.optBoolean("showSubtitles",true)){val preferred=options.optString("subtitleLanguage");val sub=(0 until subs.length()).map{subs.getJSONObject(it)}.firstOrNull{it.optString("lang")==preferred};if(sub!=null)selectExternalSubtitle(sub)}}
+  if(!loaded&&last.optBoolean("loaded")){loaded=true;showControls();if(options.optString("language")=="original"){val tracks=last.optJSONArray("tracks")?:JSONArray();val original=(0 until tracks.length()).map{tracks.getJSONObject(it)}.firstOrNull{it.optString("type")=="audio"&&Regex("(?i)\\boriginal\\b|\\bVO\\b").containsMatchIn(it.optString("title"))};original?.let{command("set","aid",it.optInt("id").toString())}};val subs=options.optJSONArray("subtitles")?:JSONArray();if(options.optBoolean("showSubtitles",true)&&options.optJSONObject("trackPreferences")?.optJSONObject("subtitle")==null){val preferred=options.optString("subtitleLanguage");val sub=(0 until subs.length()).map{subs.getJSONObject(it)}.firstOrNull{it.optString("lang")==preferred};if(sub!=null)selectExternalSubtitle(sub)};restoreTrackPreferences()}
+  if(loaded)restoreTrackPreferences()
   loading.visibility=if(!reportedError&&!loaded)View.VISIBLE else View.GONE;buffering.visibility=if(loaded&&!reportedError&&last.optBoolean("buffering"))View.VISIBLE else View.GONE;if(!loaded)overlay.visibility=View.GONE
   if(!dragging){seek.fraction=if(duration>0)(position/duration).toFloat() else 0f;seek.buffered=if(duration>0)(last.optDouble("bufferedUntil",position)/duration).toFloat() else 0f;time.text=format(position)+" / "+format(duration);remaining.text=if(duration>position)"−"+format(duration-position) else ""}
   if(last.optBoolean("eof")){if(duration>0)position=duration;if(options.optBoolean("autoNextEpisode",true)&&options.optString("nextVideoId").isNotBlank())requestEpisode(options.getString("nextVideoId"),true)else{emit(true);finish()};return}
@@ -204,7 +210,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   seek.segments=if(duration>0)(0 until segments.length()).map{segments.getJSONObject(it)}.filter{it.optDouble("start",-1.0)>=0&&it.optDouble("end",0.0)>it.optDouble("start")&&it.optDouble("end")<=duration}.map{Pair((it.optDouble("start")/duration).toFloat(),(it.optDouble("end")/duration).toFloat())}else emptyList()
   currentSegment=(0 until segments.length()).map{segments.getJSONObject(it)}.firstOrNull{val start=it.optDouble("start",-1.0);val end=it.optDouble("end",-1.0);val reference=it.optDouble("episodeLength",0.0);start>=0&&end>start&&end<=duration&&position>=start&&position<end&&!skipped.contains(start)&&(reference==0.0||abs(duration-reference)<max(10.0,duration*0.03))}
   skipButton.visibility=View.GONE
-  currentSegment?.let{if(it.optString("kind")=="outro"&&options.optBoolean("autoNextEpisode",true)&&options.optString("nextVideoId").isNotBlank()){position=duration;requestEpisode(options.getString("nextVideoId"),true);return};skipButton.text=it.optString("label",tr(if(it.optString("kind")=="outro")"Passer le générique" else "Passer l’intro"));if(options.optBoolean("autoSkipIntro")&&it.optString("kind")=="intro"){skipped.add(it.optDouble("start"));command("seek",it.optDouble("end").toString(),"absolute")}}
+  currentSegment?.let{if(it.optString("kind")=="outro"&&options.optBoolean("autoNextEpisode",true)&&options.optString("nextVideoId").isNotBlank()){position=duration;requestEpisode(options.getString("nextVideoId"),true);return};skipButton.text=it.optString("label",tr(if(it.optString("kind")=="outro")"Passer le générique" else "Passer l’intro"));if((options.optBoolean("autoSkipIntro")&&it.optString("kind")=="intro")||(options.optBoolean("autoSkipRecap")&&it.optString("kind")=="recap")){skipped.add(it.optDouble("start"));command("seek",it.optDouble("end").toString(),"absolute")}}
   val hasNext=options.optString("nextVideoId").isNotBlank()
   if(loaded&&hasNext&&duration>0&&((duration-position).coerceAtLeast(0.0)<=30.0||currentSegment?.optString("kind")=="outro"))nextEpisodeOffered=true
   val nextAvailable=nextEpisodeOffered&&((duration-position).coerceAtLeast(0.0)<=30.0||currentSegment?.optString("kind")=="outro")
@@ -286,6 +292,34 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   if(existing!=null)command("set","sid",existing.optInt("id").toString())else command("sub-add",url,"select",sub.optString("lang"),sub.optString("lang"))
   command("set","sub-visibility","yes")
  }
+ private fun languageCode(value:String):String {val v=value.lowercase(Locale.ROOT);return mapOf("fra" to "fr","fre" to "fr","eng" to "en","jpn" to "ja","kor" to "ko","zho" to "zh","chi" to "zh","deu" to "de","ger" to "de","spa" to "es","por" to "pt")[v]?:v}
+ private fun forcedTrack(track:JSONObject)=track.optBoolean("forced")||Regex("(?i)forced|forc[ée]s?|signs|songs").containsMatchIn(track.optString("title"))
+ private val restoredPreferences=mutableSetOf<String>()
+ private fun rememberTrack(type:String,track:JSONObject?,off:Boolean=false){
+  restoredPreferences.add(if(type=="audio")"audio" else "subtitle")
+  val context=options.optJSONObject("context")?:return
+  val preferences=context.optJSONObject("trackPreferences")?:options.optJSONObject("trackPreferences")?:JSONObject()
+  preferences.put(if(type=="audio")"audio" else "subtitle",JSONObject().put("language",languageCode(track?.optString("lang")?:"")).put("title",(track?.optString("title")?:"").take(200)).put("forced",track?.let{forcedTrack(it)}?:false).put("off",off))
+  context.put("trackPreferences",preferences);emit(false)
+ }
+ private fun restoreTrackPreferences(){
+  val preferences=options.optJSONObject("trackPreferences")?:return
+  val tracks=last.optJSONArray("tracks")?:return
+  val entries=(0 until tracks.length()).map{tracks.getJSONObject(it)}
+  for((kind,type) in listOf("audio" to "audio","subtitle" to "sub")){
+   if(restoredPreferences.contains(kind))continue
+   val pref=preferences.optJSONObject(kind)?:continue
+   if(type=="sub"&&pref.optBoolean("off")){command("set","sid","no");restoredPreferences.add(kind);continue}
+   val lang=languageCode(pref.optString("language"));val title=pref.optString("title")
+   val match=entries.filter{it.optString("type")==type&&(if(lang.isNotBlank())languageCode(it.optString("lang"))==lang else title.isNotBlank()&&it.optString("title")==title)&&(type!="sub"||forcedTrack(it)==pref.optBoolean("forced"))}.maxByOrNull{if(title.isNotBlank()&&it.optString("title")==title)2 else 1}
+   if(match!=null){restoredPreferences.add(kind);command("set",if(type=="audio")"aid" else "sid",match.optInt("id").toString());if(type=="sub")command("set","sub-visibility","yes")}
+   else if(type=="sub"&&lang.isNotBlank()){
+    val external=options.optJSONArray("subtitles")?:JSONArray()
+    val sub=(0 until external.length()).map{external.getJSONObject(it)}.firstOrNull{languageCode(it.optString("lang"))==lang&&forcedTrack(it)==pref.optBoolean("forced")}
+    if(sub!=null){restoredPreferences.add(kind);selectExternalSubtitle(sub)}
+   }
+  }
+ }
  private fun tracks(){
   handler.removeCallbacks(hide);sheet?.dismiss()
   val dialog=PrimioSheet(this,tr("Audio et sous-titres"))
@@ -297,12 +331,12 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
    columns.addView(column,LinearLayout.LayoutParams(0,-2,1f).apply{if(type=="audio")rightMargin=dp(12)})
    column.addView(text(tr(if(type=="audio")"PISTES AUDIO" else "SOUS-TITRES"),12f).apply{setPadding(0,dp(4),0,dp(12))})
    val tracks=entries.filter{it.optString("type")==type&&it.optString("externalUrl").isBlank()}
-   if(type=="sub")option(column,tr("Désactivés"),entries.none{it.optString("type")=="sub"&&it.optBoolean("selected")}){command("set","sid","no");dialog.dismiss()}
+   if(type=="sub")option(column,tr("Désactivés"),entries.none{it.optString("type")=="sub"&&it.optBoolean("selected")}){command("set","sid","no");rememberTrack("sub",null,true);dialog.dismiss()}
    if(tracks.isEmpty())column.addView(text(tr(if(type=="audio")"Aucune piste audio disponible" else "Aucun sous-titre disponible"),12f))
-   tracks.forEachIndexed{i,track->option(column,trackName(track,i),track.optBoolean("selected")){command("set",if(type=="audio")"aid" else "sid",track.getInt("id").toString());if(type=="sub")command("set","sub-visibility","yes");dialog.dismiss()}}
+   tracks.forEachIndexed{i,track->option(column,trackName(track,i),track.optBoolean("selected")){command("set",if(type=="audio")"aid" else "sid",track.getInt("id").toString());if(type=="sub")command("set","sub-visibility","yes");rememberTrack(type,track);dialog.dismiss()}}
    if(type=="sub"){
     val external=options.optJSONArray("subtitles")?:JSONArray()
-    for(i in 0 until external.length()){val sub=external.getJSONObject(i);val selected=entries.any{it.optString("externalUrl")==sub.optString("url")&&it.optBoolean("selected")};option(column,trackName(JSONObject().put("lang",sub.optString("lang")),i),selected){selectExternalSubtitle(sub);dialog.dismiss()}}
+    for(i in 0 until external.length()){val sub=external.getJSONObject(i);val selected=entries.any{it.optString("externalUrl")==sub.optString("url")&&it.optBoolean("selected")};option(column,trackName(JSONObject().put("lang",sub.optString("lang")),i),selected){selectExternalSubtitle(sub);rememberTrack("sub",sub);dialog.dismiss()}}
    }
   }
   dialog.content.addView(columns)

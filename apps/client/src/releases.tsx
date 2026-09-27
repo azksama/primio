@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Bell, RefreshCw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Bell, RefreshCw } from './icons'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { version } from '../package.json'
 import { metadata } from './addons'

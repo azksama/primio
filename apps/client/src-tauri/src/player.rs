@@ -87,9 +87,13 @@ pub extern "system" fn Java_fr_azks_primio_PlayerActivity_nativeCreate(
                 "sub-font-size",
                 o["subtitleSize"].as_i64().unwrap_or(40).clamp(24, 72),
             )?;
+            if let Some(directory) = o["customFont"]["directory"].as_str() {
+                m.set_option("sub-fonts-dir", directory)?;
+            }
             m.set_option(
                 "sub-font",
                 match o["subtitleFont"].as_str() {
+                    Some("custom") => o["customFont"]["family"].as_str().unwrap_or("Roboto"),
                     Some("serif") => "Noto Serif",
                     Some("monospace") => "Droid Sans Mono",
                     _ => "Roboto",
@@ -283,7 +287,7 @@ pub extern "system" fn Java_fr_azks_primio_PlayerActivity_nativeState(
    let field=|name:&str|format!("track-list/{i}/{name}");
    json!({"id":p.mpv.get_property::<i64>(&field("id")).unwrap_or(0),"type":p.mpv.get_property::<String>(&field("type")).unwrap_or_default(),"lang":p.mpv.get_property::<String>(&field("lang")).unwrap_or_default(),"title":p.mpv.get_property::<String>(&field("title")).unwrap_or_default(),"codec":p.mpv.get_property::<String>(&field("codec")).unwrap_or_default(),"channels":p.mpv.get_property::<i64>(&field("demux-channel-count")).unwrap_or(0),"externalUrl":p.mpv.get_property::<String>(&field("external-filename")).unwrap_or_default(),"selected":p.mpv.get_property::<bool>(&field("selected")).unwrap_or(false)})
   }).collect::<Vec<_>>();
-        json!({"subtitleStyle":p.mpv.get_property::<String>("sub-ass-override").unwrap_or_default(),"cacheBytes":p.mpv.get_property::<i64>("demuxer-cache-state/file-cache-bytes").unwrap_or(0),"bufferedUntil":p.mpv.get_property::<f64>("demuxer-cache-time").unwrap_or(0.0),"position":p.position,"duration":p.duration,"paused":p.mpv.get_property::<bool>("pause").unwrap_or(false),"buffering":p.mpv.get_property::<bool>("paused-for-cache").unwrap_or(false),"eof":p.ended || p.mpv.get_property::<bool>("eof-reached").unwrap_or(false),"loaded":p.loaded,"tracks":tracks,"error":p.last_error})
+        json!({"subtitleFont":p.mpv.get_property::<String>("sub-font").unwrap_or_default(),"subtitleStyle":p.mpv.get_property::<String>("sub-ass-override").unwrap_or_default(),"cacheBytes":p.mpv.get_property::<i64>("demuxer-cache-state/file-cache-bytes").unwrap_or(0),"bufferedUntil":p.mpv.get_property::<f64>("demuxer-cache-time").unwrap_or(0.0),"position":p.position,"duration":p.duration,"paused":p.mpv.get_property::<bool>("pause").unwrap_or(false),"buffering":p.mpv.get_property::<bool>("paused-for-cache").unwrap_or(false),"eof":p.ended || p.mpv.get_property::<bool>("eof-reached").unwrap_or(false),"loaded":p.loaded,"tracks":tracks,"error":p.last_error})
     };
     env.new_string(result.to_string())
         .map(|s| s.into_raw())

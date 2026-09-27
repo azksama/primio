@@ -1,5 +1,5 @@
 import { useState, type Dispatch, type SetStateAction } from 'react'
-import { Upload } from 'lucide-react'
+import { Upload } from './icons'
 import { Choice, Toggle } from './components'
 import { PasswordField } from './password-field'
 import {
@@ -16,11 +16,13 @@ export function ImportPanel({
   setState,
   onDone,
   onBusyChange,
+  account = '',
 }: {
   state: UserState
   setState: Dispatch<SetStateAction<UserState>>
   onDone: () => void
   onBusyChange?: (busy: boolean) => void
+  account?: string
 }) {
   const [provider, setProvider] = useState('stremio'),
     [busy, setBusy] = useState(false),
@@ -168,17 +170,13 @@ export function ImportPanel({
             disabled={!((library && preview.library.length) || (addons && selectedAddons.length))}
             onClick={() => {
               try {
-                setState((current) =>
-                  mergeImport(
-                    current,
-                    {
-                      ...preview,
-                      addons: preview.addons.filter((addon) => selectedAddons.includes(addon.url)),
-                    },
-                    addons,
-                    library,
-                  ),
-                )
+                const selection = { ...preview, addons: addons ? preview.addons.filter(addon => selectedAddons.includes(addon.url)) : [], library: library ? preview.library : [] }
+                mergeImport(state, selection)
+                const batch = { id: crypto.randomUUID(), account: account.trim().toLowerCase(), profileId: state.activeProfileId, library: selection.library, addons: selection.addons }
+                setState(current => ({
+                  ...mergeImport(current, selection),
+                  pendingImports: account ? [...(current.pendingImports ?? []), batch] : current.pendingImports,
+                }))
                 onDone()
               } catch (e) {
                 setError(e instanceof Error ? e.message : String(e))

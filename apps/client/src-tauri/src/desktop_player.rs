@@ -88,6 +88,9 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
     settings["cacheLimitBytes"] = json!(cache_bytes);
     std::fs::write(&config, settings.to_string()).map_err(|e| e.to_string())?;
     let mut command = Command::new(executable);
+    if let Some(directory) = extra["customFont"]["directory"].as_str() {
+        command.arg(format!("--sub-fonts-dir={directory}"));
+    }
     command
         .creation_flags(0x08000000)
         .stdin(Stdio::null())

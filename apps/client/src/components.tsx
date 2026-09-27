@@ -1,3 +1,4 @@
+import { SubtitleFontImport, useSubtitleFonts, selectFont } from './subtitle-font-picker'
 import { LanguageFlag } from './language-flag'
 import { cleanDescription } from './content'
 import { DialogShell } from './dialog-shell'
@@ -18,7 +19,7 @@ import {
   UserRound,
   Info,
   X,
-} from 'lucide-react'
+} from './icons'
 import type { Meta, UserState, Settings, Progress } from './types'
 import {
   languages,
@@ -165,6 +166,7 @@ export function Preferences({
   settings: Settings
   onChange: (s: Settings) => void
 }) {
+  const customFonts = useSubtitleFonts()
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     onChange({ ...settings, [key]: value })
   return (
@@ -175,12 +177,12 @@ export function Preferences({
             <small>{t('Aperçu des sous-titres')}</small>
             <span
               style={{
-                fontFamily:
+                fontFamily: customFonts.family ?? (
                   settings.subtitleFont === 'serif'
                     ? '"Noto Serif", serif'
                     : settings.subtitleFont === 'monospace'
                       ? '"Droid Sans Mono", monospace'
-                      : 'Roboto, sans-serif',
+                      : 'Roboto, sans-serif'),
                 fontSize: settings.subtitleSize / 2,
                 color: settings.subtitleColor,
                 background: settings.subtitleBackground ? '#000B' : 'transparent',
@@ -266,14 +268,20 @@ export function Preferences({
           />
           <Choice
             label={t('Police')}
-            value={settings.subtitleFont}
+            value={customFonts.selected || settings.subtitleFont}
             options={[
               ['sans-serif', t('Sans empattement')],
               ['serif', t('Avec empattement')],
               ['monospace', t('Monospace')],
+              ...customFonts.fonts.map((f): [string, string] => [f.id, f.family]),
             ]}
-            onChange={(v) => update('subtitleFont', v as Settings['subtitleFont'])}
+            onChange={(v) => {
+              const custom = customFonts.fonts.some((f) => f.id === v)
+              selectFont(custom ? v : '')
+              if (!custom) update('subtitleFont', v as Settings['subtitleFont'])
+            }}
           />
+          <SubtitleFontImport selected={customFonts.selected} />
           <Choice
             label={t('Couleur')}
             value={settings.subtitleColor}

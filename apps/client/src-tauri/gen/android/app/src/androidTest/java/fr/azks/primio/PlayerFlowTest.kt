@@ -43,7 +43,7 @@ class PlayerFlowTest {
         context.getSharedPreferences("primio-settings",0).edit().putString("language",previousLanguage).commit()
     }
 
-    private fun start(position: Double = 0.0, automatic: Boolean = false, outro: Boolean = false, next: Boolean = true, multiTrack: Boolean = false, externalUrl: String = "", forceStyle: Boolean = false, previewFrame: Boolean = false) {
+    private fun start(position: Double = 0.0, automatic: Boolean = false, outro: Boolean = false, next: Boolean = true, multiTrack: Boolean = false, externalUrl: String = "", forceStyle: Boolean = false, previewFrame: Boolean = false, intro: Boolean = false, customFont: Boolean = false) {
         val file = File(context.getExternalFilesDir(null), if(previewFrame) "validation-preview.mp4" else if(multiTrack) "validation.mkv" else "validation.mp4")
         assertTrue("Run scripts/test-android-player.ps1 to install the video fixture", file.isFile)
         val episodes = JSONArray().put(JSONObject().put("id", "qa:1").put("title", "Premier épisode").put("season", 1).put("episode", 1))
@@ -55,6 +55,13 @@ class PlayerFlowTest {
             .put("autoNextEpisode", automatic).put("forceSubtitleStyle", forceStyle)
             .put("context", JSONObject().put("videoId", "qa:1").put("profileId", "qa"))
         if(externalUrl.isNotBlank()) options.put("subtitles",JSONArray().put(JSONObject().put("url",externalUrl).put("lang","jpn")))
+        if(intro) options.put("skipSegments",JSONArray().put(JSONObject().put("start",0).put("end",20).put("kind","intro")))
+        if(customFont){
+            val directory=File(context.cacheDir,"qa-fonts").apply{mkdirs()}
+            val font=File(directory,"cormorant.ttf")
+            context.assets.open("fonts/cormorant-garamond.ttf").use{input->font.outputStream().use{input.copyTo(it)}}
+            options.put("subtitleFont","custom").put("customFont",JSONObject().put("family","Cormorant Garamond Light").put("directory",directory.absolutePath).put("path",font.absolutePath))
+        }
         if (outro) options.put("skipSegments", JSONArray().put(JSONObject().put("start", 10).put("end", 20).put("kind", "outro")))
         activity = instrumentation.startActivitySync(Intent(context, PlayerActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK).putExtra("options", options.toString()))
@@ -144,6 +151,29 @@ class PlayerFlowTest {
         click("2. Deuxième épisode")
         waitForNext()
         assertFalse("Manual episode selection must open sources", journal().getBoolean("autoPlay"))
+    }
+
+    @Test fun introShowsFiveSecondCountdownBeforeSkipButton() {
+        start(next=false,intro=true)
+        waitUntil("Missing intro countdown"){views().filterIsInstance<PrimioCountdown>().any{it.isShown}}
+        val observed=SystemClock.elapsedRealtime()
+        capture("native-intro-countdown")
+        assertNull(find("Passer l’intro"))
+        SystemClock.sleep(3500)
+        assertNull("Skip button appeared before the countdown finished",find("Passer l’intro"))
+        waitUntil("Missing skip button after five seconds"){find("Passer l’intro")!=null}
+        assertTrue(SystemClock.elapsedRealtime()-observed>=4400)
+        click("Passer l’intro")
+        waitUntil("Intro was not skipped"){playerState().optDouble("position")>=19.5}
+    }
+
+    @Test fun customFontReachesTheNativeSubtitleRenderer() {
+        start(next=false,customFont=true,forceStyle=true,multiTrack=true)
+        waitUntil("Custom font was not selected by libass"){playerState().optString("subtitleFont")=="Cormorant Garamond Light"}
+        click("Audio et sous-titres")
+        click("Réglages du style")
+        assertNotNull(find("Cormorant Garamond Light"))
+        capture("native-custom-font")
     }
 
     @Test fun offersNextInFinalThirtySecondsWithoutAutoSkipping() {

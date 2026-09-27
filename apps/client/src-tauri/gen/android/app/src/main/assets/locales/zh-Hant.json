@@ -552,5 +552,17 @@
   "sélectionnés": "項已選取",
   "Sélectionner": "選取",
   "Synchronisez votre profil avant de connecter un service.": "連接服務前請同步個人資料。",
-  "Retirer de la collection": "從收藏集中移除"
+  "Retirer de la collection": "從收藏集中移除",
+  "Synchronisation de l’import…": "正在同步匯入內容…",
+  "Import enregistré. En attente de synchronisation.": "匯入已儲存，等待同步。",
+  "Importer une police": "匯入字型",
+  "Supprimer la police importée": "刪除匯入的字型",
+  "TTF / OTF · 5 Mo maximum · Sur cet appareil": "TTF / OTF · 最大5 MB · 僅此裝置",
+  "Police invalide. Choisissez un fichier TTF ou OTF de moins de 5 Mo (10 polices maximum).": "字型無效。請選擇小於5 MB的TTF或OTF檔案（最多10種字型）。",
+  "Impossible de supprimer la police.": "無法刪除字型。",
+  "Recommandations": "推薦",
+  "Reprendre le défilement": "繼續輪播",
+  "Mettre le défilement en pause": "暫停輪播",
+  "Passer le générique": "跳過片尾",
+  "Rapports et assistance": "報告與支援"
 }

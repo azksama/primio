@@ -34,7 +34,7 @@ local function style(force)
     mp.set_property('sub-ass-override', force and 'force' or 'no')
     mp.set_property_number('sub-font-size', config.subtitleSize or 40)
     local fonts = {['sans-serif']='Inter',serif='Georgia',monospace='Consolas'}
-    mp.set_property('sub-font', fonts[config.subtitleFont] or 'Inter')
+    mp.set_property('sub-font', config.subtitleFont=='custom' and config.customFont and config.customFont.family or fonts[config.subtitleFont] or 'Inter')
     mp.set_property('sub-color', config.subtitleColor or '#FFFFFF')
     mp.set_property_number('sub-border-size', config.subtitleOutline or 2)
     mp.set_property('sub-back-color', config.subtitleBackground and '#99000000' or '#00000000')

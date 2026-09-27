@@ -74,7 +74,7 @@ class PrimioPlugin(private val activity:Activity):Plugin(activity) {
       .put("subtitleSize",args.subtitleSize).put("playbackSpeed",args.playbackSpeed).put("hardwareDecoding",args.hardwareDecoding).put("cacheSizeGb",args.cacheSizeGb)
       .put("headers",org.json.JSONObject(args.headers)).put("subtitles",org.json.JSONArray(args.subtitles))
     val extra=org.json.JSONObject(args.playerExtra)
-    for(key in listOf("episodes","currentVideoId","nextVideoId","logo","reduceMotion","autoNextEpisode","forceSubtitleStyle","subtitleFont","subtitleColor","subtitleOutline","subtitleBackground")){if(extra.has(key))options.put(key,extra.get(key))}
+    for(key in listOf("episodes","currentVideoId","nextVideoId","logo","reduceMotion","autoNextEpisode","forceSubtitleStyle","subtitleFont","customFont","subtitleColor","subtitleOutline","subtitleBackground")){if(extra.has(key))options.put(key,extra.get(key))}
     activity.startActivity(Intent(activity,PlayerActivity::class.java).putExtra("options",options.toString()))
    }
    invoke.resolve()

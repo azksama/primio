@@ -596,5 +596,17 @@
   "sélectionnés": "selected",
   "Sélectionner": "Select",
   "Synchronisez votre profil avant de connecter un service.": "Sync your profile before connecting a service.",
-  "Retirer de la collection": "Remove from collection"
+  "Retirer de la collection": "Remove from collection",
+  "Synchronisation de l’import…": "Syncing import…",
+  "Import enregistré. En attente de synchronisation.": "Import saved. Waiting to sync.",
+  "Importer une police": "Import a font",
+  "Supprimer la police importée": "Delete imported font",
+  "TTF / OTF · 5 Mo maximum · Sur cet appareil": "TTF / OTF · 5 MB maximum · On this device",
+  "Police invalide. Choisissez un fichier TTF ou OTF de moins de 5 Mo (10 polices maximum).": "Invalid font. Choose a TTF or OTF file under 5 MB (10 fonts maximum).",
+  "Impossible de supprimer la police.": "Unable to delete the font.",
+  "Recommandations": "Recommendations",
+  "Reprendre le défilement": "Resume slideshow",
+  "Mettre le défilement en pause": "Pause slideshow",
+  "Passer le générique": "Skip credits",
+  "Rapports et assistance": "Reports and support"
 }

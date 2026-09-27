@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "node ../../scripts/sync-native-locales.mjs && tsc --noEmit && vite build",
+    "build": "node ../../scripts/sync-native-locales.mjs && node ../../scripts/sync-native-icons.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "tauri": "tauri"
@@ -13,11 +13,12 @@
   "dependencies": {
     "@fontsource/cormorant-garamond": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
+    "@hugeicons/core-free-icons": "^4.3.5",
+    "@hugeicons/react": "^1.1.10",
     "@primio/intro-skipper": "file:../../packages/intro-skipper",
     "@primio/sdk": "file:../../packages/sdk",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-deep-link": "^2.4.10",
-    "lucide-react": "^0.577.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

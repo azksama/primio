@@ -6,7 +6,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react'
-import { FolderPlus, Pencil, Trash2, Check } from 'lucide-react'
+import { FolderPlus, Pencil, Trash2, Check } from './icons'
 import { DialogShell } from './dialog-shell'
 import { t } from './i18n'
 import type { UserState, Meta } from './types'

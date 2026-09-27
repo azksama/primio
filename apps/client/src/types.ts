@@ -146,6 +146,7 @@ export interface Profile {
   settings: Settings
 }
 export interface UserState {
+  pendingImports?: import('./import-sync').PendingImport[]
   deletedProgress?: import('./progress-deletions').ProgressDeletion[]
   collections?: Collection[]
   library: Pick<Meta, 'id' | 'type' | 'name' | 'poster' | 'category'>[]

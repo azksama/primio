@@ -1,5 +1,5 @@
 import { useState, type InputHTMLAttributes } from 'react'
-import { Eye, EyeOff } from 'lucide-react'
+import { Eye, EyeOff } from './icons'
 import { t } from './i18n'
 export function PasswordField(props: InputHTMLAttributes<HTMLInputElement>) {
   const [visible, setVisible] = useState(false)

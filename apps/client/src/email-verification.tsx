@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Mail, CheckCircle2 } from 'lucide-react'
+import { Mail, CheckCircle2 } from './icons'
 import { api } from './platform'
 import { DialogShell } from './dialog-shell'
 import { t } from './i18n'

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X } from 'lucide-react'
+import { X } from './icons'
 import { Choice } from './components'
 import { t, locale } from './i18n'
 import { durationLabel, isAnime } from './preferences'

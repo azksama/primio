@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ImageOff } from 'lucide-react'
+import { ImageOff } from './icons'
 
 export function MediaImage({
   src,

@@ -1,6 +1,7 @@
 local mp = require 'mp'
 local assdraw = require 'mp.assdraw'
 local utils = require 'mp.utils'
+local icons = dofile(mp.find_config_file('primio-icons.lua'))
 local config = {}
 local file = io.open(os.getenv('PRIMIO_PLAYER_CONFIG') or '', 'r')
 if file then config = utils.parse_json(file:read('*a')) or {}; file:close() end
@@ -16,6 +17,8 @@ local hits, panel, scroll, last_move, loaded, logo_visible = {}, nil, 0, mp.get_
 local preview_visible=false
 local preview_target,preview_x=0,0
 local next_offer=false
+local countdown_key,countdown_elapsed,countdown_tick="",0,mp.get_time()
+local skipped_segments={}
 local season, forced = nil, config.forceSubtitleStyle == true
 local function escape(s) return tostring(s or ''):gsub('\\','\\e'):gsub('{','\\{'):gsub('}','\\}'):gsub('[\r\n]+',' ') end
 local function shorten(s, n)
@@ -32,22 +35,21 @@ local function rect(a,x,y,w,h,r,color,alpha,border)
     a:draw_start(); a:round_rect_cw(x,y,x+w,y+h,r,r); a:draw_stop()
 end
 local function label(a,x,y,s,size,align,color,font)
-    a:new_event(); a:append(string.format('{\\an%d\\pos(%.1f,%.1f)\\fn%s\\fs%d\\bord0\\shad0\\1c&H%s&}%s',align or 4,x,y,font or 'Inter',size or 18,color or 'F3F2E9',escape(s)))
+    a:new_event(); a:append(string.format('{\\an%d\\pos(%.1f,%.1f)\\fn%s\\fs%d\\bord0\\shad1.2\\blur0.4\\4a&H40&\\1c&H%s&}%s',align or 4,x,y,font or 'Inter',size or 18,color or 'F3F2E9',escape(s)))
 end
 local function glass(a,x,y,w,h,active)
-    rect(a,x,y,w,h,math.min(22,h/2),active and '606456' or '33372F','35',1)
-    rect(a,x+3,y+2,w-6,math.min(14,h/3),math.min(10,h/4),'B9BEB0','E6')
+    rect(a,x,y,w,h,math.min(22,h/2),active and '727269' or '2D2E2B','80',1)
+    rect(a,x+2,y+2,w-4,h-4,math.min(20,h/2-2),'D7DBD1','F5',0.5)
 end
 local function button(a,x,y,w,h,text,action,active)
     glass(a,x,y,w,h,active);label(a,x+w/2,y+h/2,shorten(text,math.floor(w/9)),18,5)
     hits[#hits+1]={x=x,y=y,w=w,h=h,action=action}
 end
 local function icon(a,x,y,kind)
-    a:new_event();a:append(string.format('{\\an7\\pos(%f,%f)\\1c&HF3F2E9&\\bord0\\shad0}',x,y));a:draw_start()
-    if kind=='play' then a:move_to(-8,-13);a:line_to(14,0);a:line_to(-8,13);a:line_to(-8,-13)
-    elseif kind=='pause' then a:rect_cw(-11,-13,-4,13);a:rect_cw(4,-13,11,13)
-    else a:move_to(-12,0);a:line_to(0,-12);a:line_to(3,-9);a:line_to(-4,-2);a:line_to(13,-2);a:line_to(13,2);a:line_to(-4,2);a:line_to(3,9);a:line_to(0,12);a:line_to(-12,0) end
-    a:draw_stop()
+    local half=kind=='back' and 16 or 20
+    for _,path in ipairs(icons[kind] or icons.play) do
+        a:new_event();a:append(string.format('{\\an7\\pos(%f,%f)\\1c&HF3F2E9&\\bord0\\shad0\\p1}%s{\\p0}',x-half,y-half,path))
+    end
 end
 local function open(name) panel=name;scroll=0;last_move=mp.get_time() end
 local function hide_logo() if logo_visible then mp.commandv('overlay-remove',42);logo_visible=false end end
@@ -108,9 +110,11 @@ local function render_panel(a)
     elseif panel=='style' then
         local previewColor=mp.get_property('sub-color','#FFFFFF'):gsub('#',''):sub(1,6)
         label(a,x+w/2,top+32,tr('Your next story starts here.','Votre prochaine histoire commence ici.'),mp.get_property_number('sub-font-size',40),5,previewColor:sub(5,6)..previewColor:sub(3,4)..previewColor:sub(1,2),mp.get_property('sub-font','Inter'))
+        local fonts={'Inter','Georgia','Consolas'}
+        if config.customFont and config.customFont.family then fonts[#fonts+1]=config.customFont.family end
         local rows={
             {tr('Size','Taille'),{'28','34','40','48','56'},function(v)set_style('sub-font-size',tonumber(v))end},
-            {tr('Font','Police'),{'Inter','Georgia','Consolas'},function(v)set_style('sub-font',v)end},
+            {tr('Font','Police'),fonts,function(v)set_style('sub-font',v)end},
             {tr('Color','Couleur'),{tr('White','Blanc'),tr('Yellow','Jaune'),tr('Cream','Crème')},function(v)set_style('sub-color',v==tr('Yellow','Jaune') and '#FFE082' or v==tr('Cream','Crème') and '#E7E3C7' or '#FFFFFF')end},
             {tr('Outline','Contour'),{'0','1','2','3','4'},function(v)set_style('sub-border-size',tonumber(v))end},
             {tr('Background','Fond'),{tr('None','Aucun'),tr('Dark','Sombre')},function(v)set_style('sub-back-color',v==tr('Dark','Sombre') and '#99000000' or '#00000000')end}
@@ -178,7 +182,6 @@ local function render()
         hide_logo()
         if panel then render_panel(a)
         elseif mp.get_time()-last_move<3 or mp.get_property_native('pause') then
-            rect(a,0,0,width,110,0,'000000','95');rect(a,0,height-145,width,145,0,'000000','90')
             button(a,24,24,48,48,'',leave_player);icon(a,48,48,'back')
             label(a,92,48,shorten(config.title or mp.get_property('media-title','Primio'),math.floor((width-285)/17)),30,4,nil,'Cormorant Garamond Light')
             if #(config.episodes or {})>0 then button(a,width-168,24,144,48,tr('Episodes','Épisodes'),function()open('episodes')end)end
@@ -186,11 +189,12 @@ local function render()
             button(a,width/2-36,height/2-36,72,72,'',function()mp.commandv('cycle','pause')end);icon(a,width/2,height/2,mp.get_property_native('pause') and 'play' or 'pause')
             button(a,width/2+70,height/2-30,90,60,'+ '..(config.seekForward or 30),function()mp.commandv('seek',config.seekForward or 30,'relative')end)
             local pos,duration=mp.get_property_number('time-pos',0),mp.get_property_number('duration',0)
-            label(a,28,height-110,time(pos)..' / '..time(duration),17)
-            label(a,width-28,height-110,'−'..time(duration-pos),17,6)
+            label(a,28,height-88,time(pos)..' / '..time(duration),17,1)
+            label(a,width-28,height-88,'−'..time(duration-pos),17,3)
             local y,w=height-80,width-56;local fill=duration>0 and math.min(1,pos/duration)*w or 0
             rect(a,28,y,w,7,3,'9EA18F','A0');if fill>1 then rect(a,28,y-2,fill,11,5,'D4DDC2','C0',2);rect(a,28,y,fill,7,3,'DBDFC7','15')end
-            rect(a,22+fill,y-3,13,13,6,'FFFFFF','00')
+            rect(a,15+fill,y-9.5,26,26,13,'EAE8D1','C0')
+            rect(a,19+fill,y-5.5,18,18,9,'FFFFFF','00',1)
             hits[#hits+1]={x=22,y=y-12,w=w+12,h=30,action=function(mx)if duration>0 then mp.commandv('seek',math.max(0,math.min(1,(mx-28)/w))*duration,'absolute+exact')end end}
             if preview_visible then
                 rect(a,preview_x-4,y-2,8,11,4,'FFFFFF','50')
@@ -200,7 +204,39 @@ local function render()
             button(a,width-200,height-54,172,40,tr('Audio · Subtitles','Audio · Sous-titres'),function()open('tracks')end)
         end
     end
-    if next_offer and not buffering and not panel and not pip then button(a,width-248,height-180,220,48,tr('Next episode','Épisode suivant'),function()next_offer=false;mp.commandv('script-message-to','primio','next')end) end
+    local pos,duration=mp.get_property_number('time-pos',0),mp.get_property_number('duration',0)
+    local segment
+    for _,s in ipairs(config.skipSegments or {}) do
+        if s.start>=0 and s['end']>s.start and s['end']<=duration and pos>=s.start and pos<s['end'] and not skipped_segments[s.start] and
+            (not s.episodeLength or s.episodeLength==0 or math.abs(duration-s.episodeLength)<math.max(10,duration*.03)) then segment=s;break end
+    end
+    local next_available=next_offer and (duration-pos<=30 or (segment and segment.kind=='outro'))
+    local key=next_available and 'next' or segment and (segment.kind..':'..segment.start) or ''
+    local now=mp.get_time()
+    if key~=countdown_key then countdown_key=key;countdown_elapsed=0;countdown_tick=now end
+    if not buffering and not panel and not pip and key~='' then
+        countdown_elapsed=countdown_elapsed+math.min(.25,now-countdown_tick)
+        local x,y=width-76,height-180
+        if countdown_elapsed<5 then
+            glass(a,x,y,48,48,false)
+            a:new_event();a:append('{\\an7\\pos(0,0)\\bord0\\shad0\\1c&HF3F2E9&}');a:draw_start()
+            local sweep=math.max(1,math.ceil(90*(1-countdown_elapsed/5)))
+            for i=1,sweep do
+                local from=-math.pi/2+(i-1)/90*2*math.pi;local to=-math.pi/2+i/90*2*math.pi
+                a:move_to(x+24+20*math.cos(from),y+24+20*math.sin(from))
+                a:line_to(x+24+22*math.cos(from),y+24+22*math.sin(from))
+                a:line_to(x+24+22*math.cos(to),y+24+22*math.sin(to))
+                a:line_to(x+24+20*math.cos(to),y+24+20*math.sin(to))
+            end
+            a:draw_stop();label(a,x+24,y+24,tostring(math.ceil(5-countdown_elapsed)),18,5)
+        elseif next_available then
+            button(a,width-248,y,220,48,tr('Next episode','Épisode suivant'),function()next_offer=false;mp.commandv('script-message-to','primio','next')end)
+        elseif segment then
+            button(a,width-248,y,220,48,segment.kind=='outro' and tr('Skip credits','Passer le générique') or tr('Skip intro','Passer l’intro'),function()skipped_segments[segment.start]=true;mp.commandv('seek',segment['end'],'absolute+exact')end)
+        end
+    end
+    countdown_tick=now
+    mp.set_property_native('user-data/primio/countdown',{key=key,elapsed=countdown_elapsed,visible=key~='' and countdown_elapsed<5 and not buffering and not panel and not pip})
     overlay.res_x=width;overlay.res_y=height;overlay.data=a.text;overlay:update()
 end
 mp.add_forced_key_binding('mouse_move','primio-move',function()

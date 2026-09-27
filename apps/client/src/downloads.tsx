@@ -1,7 +1,8 @@
+import { customFontOptions } from './subtitle-fonts'
 import { t } from './i18n'
 import { useEffect, useState } from 'react'
 import { invoke, isTauri } from '@tauri-apps/api/core'
-import { Download, Play, Trash2 } from 'lucide-react'
+import { Download, Play, Trash2 } from './icons'
 import type { Meta, Settings } from './types'
 export interface OfflineItem {
   id: string
@@ -11,7 +12,7 @@ export interface OfflineItem {
   total: number
   meta: { meta: Meta; videoId: string; profileId: string; accountId: string }
 }
-export function playerOptions(s: Settings) {
+export async function playerOptions(s: Settings) {
   return {
     locale: s.uiLanguage,
     language: s.audioLanguage,
@@ -31,6 +32,7 @@ export function playerOptions(s: Settings) {
     hardwareDecoding: s.hardwareDecoding,
     cacheSizeGb: s.cacheSizeGb,
     deleteWatched: s.deleteWatchedDownloads,
+    ...await customFontOptions(),
   }
 }
 export function Downloads({

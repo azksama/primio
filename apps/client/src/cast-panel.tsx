@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Cast, Pause, Play, Square } from 'lucide-react'
+import { Cast, Pause, Play, Square } from './icons'
 import { DialogShell } from './dialog-shell'
 import { isAndroid } from './platform'
 import { t } from './i18n'

@@ -1,7 +1,7 @@
 import { sortCatalog, type CatalogSort } from './catalog-sort'
 import { t } from './i18n'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { LoaderCircle } from 'lucide-react'
+import { LoaderCircle } from './icons'
 import { createCatalogPager, type CatalogTarget } from './catalog-pager'
 import type { Meta } from './types'
 import { CardSkeleton } from './media-image'

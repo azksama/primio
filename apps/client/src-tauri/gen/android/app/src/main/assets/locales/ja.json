@@ -552,5 +552,17 @@
   "sélectionnés": "件選択中",
   "Sélectionner": "選択",
   "Synchronisez votre profil avant de connecter un service.": "サービスに接続する前にプロフィールを同期してください。",
-  "Retirer de la collection": "コレクションから削除"
+  "Retirer de la collection": "コレクションから削除",
+  "Synchronisation de l’import…": "インポートを同期中…",
+  "Import enregistré. En attente de synchronisation.": "インポートを保存しました。同期待ちです。",
+  "Importer une police": "フォントをインポート",
+  "Supprimer la police importée": "インポートしたフォントを削除",
+  "TTF / OTF · 5 Mo maximum · Sur cet appareil": "TTF / OTF · 最大5 MB · このデバイスのみ",
+  "Police invalide. Choisissez un fichier TTF ou OTF de moins de 5 Mo (10 polices maximum).": "無効なフォントです。5 MB未満のTTFまたはOTFを選択してください（最大10個）。",
+  "Impossible de supprimer la police.": "フォントを削除できませんでした。",
+  "Recommandations": "おすすめ",
+  "Reprendre le défilement": "スライドショーを再開",
+  "Mettre le défilement en pause": "スライドショーを一時停止",
+  "Passer le générique": "エンディングをスキップ",
+  "Rapports et assistance": "レポートとサポート"
 }

@@ -3,7 +3,8 @@
 Le code de Primio est MIT. Ce choix ne modifie pas la licence de ses dépendances ou contenus.
 
 - Tauri 2 et Wry : MIT / Apache-2.0.
-- React et Lucide : MIT / ISC selon package.
+- React : MIT.
+- Hugeicons Stroke Rounded (core-free-icons et React) : MIT. Licence : [docs/HUGEICONS-LICENSE.md](docs/HUGEICONS-LICENSE.md). Les tracés des contrôles natifs sont générés depuis les mêmes icônes.
 - AdonisJS : MIT.
 - libmpv2 6.0.0 : LGPL-2.1, https://github.com/kohsine/libmpv-rs.
 - libmpv, FFmpeg, libass et bibliothèques associées : licences amont, dont LGPL et éventuellement GPL selon options de compilation.

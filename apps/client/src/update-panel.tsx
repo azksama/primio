@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { Download, RefreshCw } from 'lucide-react'
+import { Download, RefreshCw } from './icons'
 import { DialogShell } from './dialog-shell'
 import { t } from './i18n'
 interface Update {

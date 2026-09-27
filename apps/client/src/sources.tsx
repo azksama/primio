@@ -1,7 +1,7 @@
 import { LanguageFlag } from './language-flag'
 import { languageName } from './i18n'
 import { useState } from 'react'
-import { Cast, Download, Play } from 'lucide-react'
+import { Cast, Download, Play } from './icons'
 import { Choice } from './components'
 import { t } from './i18n'
 import type { Stream, Settings } from './types'

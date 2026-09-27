@@ -110,26 +110,25 @@ html.desktop,
   right: auto;
   bottom: auto;
   transform: none;
-  flex: 0 0 72px;
-  height: 72px;
-  min-height: 72px;
-  width: min(680px, calc(100% - 48px));
+  flex: 0 0 68px;
+  height: 68px;
+  min-height: 68px;
+  width: min(470px, calc(100% - 40px));
   max-width: none;
   margin: 12px auto 16px;
-  padding: 7px;
+  padding: 5px;
   z-index: 20;
 }
 .desktop .bottom-nav button {
-  border-radius: 14px;
   min-width: 0;
-  padding: 7px 20px;
+  padding: 5px 12px;
 }
 .desktop .bottom-nav button:hover,
 .desktop .bottom-nav button:focus-visible {
   background: #ffffff12;
 }
 .desktop .bottom-nav span {
-  font-size: 12px;
+  font-size: 10px;
 }
 .desktop .boot-screen,
 .desktop .onboarding,

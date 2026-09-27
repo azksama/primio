@@ -1,3 +1,4 @@
+import { useFeatured } from './featured'
 import {
   EmailVerification,
   type VerificationChallenge,
@@ -8,6 +9,7 @@ import { ContinueCard } from './continue-card'
 import { defaultSort } from './catalog-sort'
 import { UpdatePanel } from './update-panel'
 import { ImportPanel } from './import-panel'
+import { useImportSync } from './import-sync'
 import { removeProgress } from './progress-deletions'
 import { Collections, collectionKey, SelectablePoster, AddToCollection } from './collections'
 import { DiagnosticsPanel } from './diagnostics-panel'
@@ -50,6 +52,7 @@ import {
   ArrowLeft,
   Plus,
   Play,
+  Pause,
   Check,
   X,
   ChevronRight,
@@ -64,7 +67,7 @@ import {
   Copy,
   ArrowUp,
   ArrowDown,
-} from 'lucide-react'
+} from './icons'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { activatePlugin, pluginSchema, rankSources, type PrimioPlugin } from '@primio/sdk'
@@ -255,6 +258,7 @@ export default function App() {
   )
   const currentPlayback = useRef<Playback | null>(null)
   usePlaybackSync(state, setState, token, ready && !conflict && !playbackSyncPaused)
+  const importSync = useImportSync(state, setState, token, email, ready && !conflict && !playbackSyncPaused, setSyncVersion)
   currentPlayback.current = playback
   const notify = (text: string) => {
     setToast(text)
@@ -710,7 +714,7 @@ export default function App() {
           position,
           playerExtra: JSON.stringify({
             ...episodeQueue(target.meta, target.id),
-            ...playerOptions(state.settings),
+            ...await playerOptions(state.settings),
           }),
           progressContext: JSON.stringify({
             profileId: state.activeProfileId,
@@ -813,7 +817,7 @@ export default function App() {
       await invoke('play_download', {
         id: item.id,
         options: {
-          ...playerOptions(state.settings),
+          ...await playerOptions(state.settings),
           title: item.title,
           ...episodeQueue(item.meta.meta, item.meta.videoId),
           context: {
@@ -1028,7 +1032,8 @@ export default function App() {
       fail(e)
     }
   }
-  const hero = catalogue[0],
+  const featured = useFeatured(catalogAddons, catalogue, state.library, tab === 'home' && !selected && !playback)
+  const hero = featured.current?.meta,
     saved = (m: Meta) => state.library.some((x) => x.id === m.id && x.type === m.type)
   const poster = (m: Meta) => (
     <button
@@ -1340,7 +1345,11 @@ export default function App() {
           </main>
         ) : tab === 'home' ? (
           <main>
-            <section className="hero">
+            <section className="hero" data-category={featured.current?.category}
+              onPointerEnter={(e) => { if (e.pointerType === 'mouse') featured.setInteracting(true) }}
+              onPointerLeave={(e) => featured.setInteracting(e.currentTarget.matches(':focus-within'))}
+              onFocusCapture={() => featured.setInteracting(true)}
+              onBlurCapture={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) featured.setInteracting(false) }}>
               <MediaImage src={hero?.background ?? hero?.poster ?? '/art/hero.png'} eager />
               <header className="hero-head">
                 <span className="wordmark">PRIMIO</span>
@@ -1362,7 +1371,7 @@ export default function App() {
                 </div>
               </header>
               <div className="hero-copy">
-                <span className="eyebrow">{t('À LA UNE')}</span>
+                <span className="eyebrow">{t('À LA UNE')}{featured.current && ' · ' + t(featured.current.category === 'movie' ? 'Film' : featured.current.category === 'series' ? 'Série' : 'Anime')}</span>
                 <h1 className="serif">{hero?.name ?? t('Votre cinéma, autrement.')}</h1>
                 <p>
                   {hero
@@ -1391,6 +1400,13 @@ export default function App() {
                   )}
                 </div>
               </div>
+              {featured.items.length > 1 && <div className="hero-pagination" aria-label={t('Recommandations')}>
+                {featured.items.map((item, index) => <button key={item.category} aria-label={t(item.category === 'movie' ? 'Film' : item.category === 'series' ? 'Série' : 'Anime')}
+                  aria-pressed={item === featured.current} onClick={() => featured.setIndex(index)}><span /></button>)}
+                <button aria-label={t(featured.paused ? 'Reprendre le défilement' : 'Mettre le défilement en pause')} onClick={() => featured.setPaused(!featured.paused)}>
+                  {featured.paused ? <Play size={15} /> : <Pause size={15} />}
+                </button>
+              </div>}
             </section>
             {state.settings.showContinue &&
               state.progress.some((p) => !isWatched(p) && p.position > 0) && (
@@ -1712,10 +1728,11 @@ export default function App() {
                     n: state.library.length,
                   })}
                 </p>
-                <button onClick={sync} disabled={syncing}>
+                <button onClick={sync} disabled={syncing || importSync.syncing}>
                   <RefreshCw size={16} /> {t('Synchroniser')}
                 </button>
               </div>
+              {importSync.pending && <p role="status" className="muted">{t(importSync.syncing ? 'Synchronisation de l’import…' : 'Import enregistré. En attente de synchronisation.')}</p>}
               <div className="library-selection-actions">
                 {selectingLibrary ? <><span>{selectedLibrary.length} {t('sélectionnés')}</span><button onClick={() => { setSelectingLibrary(false); setSelectedLibrary([]) }}>{t('Annuler')}</button>{collectionId && <button disabled={!selectedLibrary.length} onClick={() => { setState(s => ({...s, collections:(s.collections ?? []).map(c => c.id === collectionId ? {...c, items:c.items.filter(key => !selectedLibrary.includes(key))} : c)})); setSelectedLibrary([]); setSelectingLibrary(false) }}>{t('Retirer de la collection')}</button>}<button className="primary" disabled={!selectedLibrary.length} onClick={() => setCollectionPicker(true)}>{t('Ajouter à une collection')}</button></> : <button onClick={() => setSelectingLibrary(true)}>{t('Sélectionner')}</button>}
               </div>
@@ -1766,12 +1783,9 @@ export default function App() {
           </main>
         ) : tab === 'addons' ? (
           <main>
-            {heading(t('Vos addons'))}
-            <section className="page-content addon-content">
-              <p className="intro">{t('Un cinéma à votre image.')}</p>
-              <p className="muted">
-                {t('Catalogues, sources et sous-titres, réunis dans Primio.')}
-              </p>
+            <div className="management-heading">
+              {heading(t('Vos addons'))}
+              <div className="management-action">
               <button
                 className="primary"
                 onClick={() => {
@@ -1781,6 +1795,14 @@ export default function App() {
               >
                 <Plus /> {t('Ajouter un addon')}
               </button>
+              </div>
+            </div>
+            <section className="page-content addon-content">
+              <p className="intro">{t('Un cinéma à votre image.')}</p>
+              <p className="muted">
+                {t('Catalogues, sources et sous-titres, réunis dans Primio.')}
+              </p>
+
               <div className="section-head">
                 <h2>{t('Installés')}</h2>
                 <span className="muted">{state.addons.length}</span>
@@ -1897,24 +1919,9 @@ export default function App() {
           </main>
         ) : tab === 'plugins' ? (
           <main>
-            {heading(t('Plugins Primio'))}
-            <section className="page-content addon-content">
-              <p className="intro">{t('Faites de Primio le vôtre.')}</p>
-              <p className="muted">{t('Thèmes, espaces, catalogues et classement des sources.')}</p>
-              <article className="addon-card glass">
-                <div className="row unlined">
-                  <Sparkles />
-                  <div className="grow">
-                    <h3>Primio Intro Skipper</h3>
-                    <small>Plugin intégré · 0.2.0</small>
-                  </div>
-                  <Check />
-                </div>
-                <p className="muted">{t('Passer les intros et les génériques.')}</p>
-                <button className="secondary" onClick={() => setSkipOpen(true)}>
-                  {t('Configurer le saut des génériques')}
-                </button>
-              </article>
+            <div className="management-heading">
+              {heading(t('Plugins Primio'))}
+              <div className="management-action">
               <label className="primary file-picker">
                 <Download /> {t('Installer un plugin')}
                 <input
@@ -1934,6 +1941,26 @@ export default function App() {
                   }}
                 />
               </label>
+              </div>
+            </div>
+            <section className="page-content addon-content">
+              <p className="intro">{t('Faites de Primio le vôtre.')}</p>
+              <p className="muted">{t('Thèmes, espaces, catalogues et classement des sources.')}</p>
+              <article className="addon-card glass">
+                <div className="row unlined">
+                  <Sparkles />
+                  <div className="grow">
+                    <h3>Primio Intro Skipper</h3>
+                    <small>Plugin intégré · 0.2.0</small>
+                  </div>
+                  <Check />
+                </div>
+                <p className="muted">{t('Passer les intros et les génériques.')}</p>
+                <button className="secondary" onClick={() => setSkipOpen(true)}>
+                  {t('Configurer le saut des génériques')}
+                </button>
+              </article>
+
               {plugins.map((p) => (
                 <article className="addon-card glass" key={p.id}>
                   <h3>
@@ -2251,6 +2278,7 @@ export default function App() {
       )}
       {ready && onboarding && (
         <Onboarding
+          account={email}
           state={state}
           setState={setState}
           connected={!!token}
@@ -2408,6 +2436,7 @@ export default function App() {
       {importOpen && (
         <Dialog title={t('Importer une bibliothèque')} onClose={() => setImportOpen(false)}>
           <ImportPanel
+            account={email}
             state={state}
             setState={setState}
             onDone={() => {

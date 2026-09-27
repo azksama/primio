@@ -1,7 +1,7 @@
 import { t } from './i18n'
 import { appLanguages, languageName } from './i18n'
 import { useState, type Dispatch, type SetStateAction } from 'react'
-import { ArrowLeft, ArrowRight, Check, Play, Puzzle, UserRound } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Play, Puzzle, UserRound } from './icons'
 import { Choice, Toggle, AvatarPicker } from './components'
 import { languages, avatarUrl } from './preferences'
 import { ImportPanel } from './import-panel'
@@ -10,6 +10,7 @@ export function Onboarding({
   state,
   setState,
   connected,
+  account,
   onAccount,
   onAddon,
   onFinish,
@@ -17,6 +18,7 @@ export function Onboarding({
   state: UserState
   setState: Dispatch<SetStateAction<UserState>>
   connected: boolean
+  account: string
   onAccount: () => void
   onAddon: () => void
   onFinish: () => Promise<void>
@@ -198,6 +200,7 @@ export function Onboarding({
               </div>
             ) : (
               <ImportPanel
+                account={account}
                 state={state}
                 setState={setState}
                 onDone={() => setImported(true)}

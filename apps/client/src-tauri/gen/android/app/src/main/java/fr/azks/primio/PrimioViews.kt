@@ -89,10 +89,11 @@ class PrimioTimeline(context:Context):View(context) {
   paint.shader=LinearGradient(0f,y-half,0f,y+half,intArrayOf(0x66ffffff,0x15ffffff),null,Shader.TileMode.CLAMP)
   canvas.drawRoundRect(track,radius,radius,paint)
   paint.shader=null;paint.style=Paint.Style.FILL
-  val thumb=(if(dragging)7 else 5)*density
-  paint.color=0x22f5edda;canvas.drawCircle(x,y,thumb+5*density,paint)
+  val thumb=(if(dragging)9 else 7)*density
+  paint.color=0x55f5edda;canvas.drawCircle(x,y,thumb+5*density,paint)
   paint.shader=LinearGradient(x,y-thumb,x,y+thumb,intArrayOf(Color.WHITE,0xffd7cfb5.toInt()),null,Shader.TileMode.CLAMP)
   canvas.drawCircle(x,y,thumb,paint);paint.shader=null
+  paint.style=Paint.Style.STROKE;paint.strokeWidth=density;paint.color=0x99303030.toInt();canvas.drawCircle(x,y,thumb,paint);paint.style=Paint.Style.FILL
  }
  override fun onTouchEvent(e:MotionEvent):Boolean {
   when(e.actionMasked){
@@ -119,13 +120,22 @@ class PrimioIconButton(context:Context,symbol:String,description:String,action:(
  var symbol=symbol;set(value){if(field!=value){field=value;invalidate()}}
  private val paint=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=PrimioStyle.ivory;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND;strokeWidth=1.8f}
  init{contentDescription=description;isClickable=true;isFocusable=true;background=PrimioStyle.focusGlass(context);minimumHeight=PrimioStyle.dp(context,48);minimumWidth=PrimioStyle.dp(context,48);setOnClickListener{action()}}
- override fun onDraw(canvas:Canvas){super.onDraw(canvas);val size=PrimioStyle.dp(context,if(symbol=="back")26 else 32).toFloat();val saved=canvas.save();canvas.translate((width-size)/2,(height-size)/2);canvas.scale(size/24,size/24);paint.style=Paint.Style.STROKE
-  when(symbol){
-   "back"->{val path=Path().apply{moveTo(12f,19f);lineTo(5f,12f);lineTo(12f,5f);moveTo(5f,12f);lineTo(19f,12f)};canvas.drawPath(path,paint)}
-   "eye","eye-off"->{val path=Path().apply{moveTo(2f,12f);cubicTo(6f,4f,18f,4f,22f,12f);cubicTo(18f,20f,6f,20f,2f,12f)};canvas.drawPath(path,paint);canvas.drawCircle(12f,12f,3f,paint);if(symbol=="eye-off")canvas.drawLine(3f,3f,21f,21f,paint)}
-   "play"->{val path=Path().apply{moveTo(7f,4f);lineTo(20f,12f);lineTo(7f,20f);close()};canvas.drawPath(path,paint)}
-   else->{canvas.drawRoundRect(RectF(6f,4f,9f,20f),1f,1f,paint);canvas.drawRoundRect(RectF(15f,4f,18f,20f),1f,1f,paint)}
-  };canvas.restoreToCount(saved)
+ override fun onDraw(canvas:Canvas){super.onDraw(canvas);val size=PrimioStyle.dp(context,if(symbol=="back")32 else 40).toFloat();val saved=canvas.save();canvas.translate((width-size)/2,(height-size)/2);canvas.scale(size/24,size/24);paint.style=Paint.Style.STROKE
+  (PrimioIcons.paths[symbol]?:PrimioIcons.paths.getValue("pause")).forEach{canvas.drawPath(it,paint)};canvas.restoreToCount(saved)
  }
  override fun onInitializeAccessibilityNodeInfo(info:AccessibilityNodeInfo){super.onInitializeAccessibilityNodeInfo(info);info.className="android.widget.Button"}
+}
+
+class PrimioCountdown(context:Context):View(context) {
+ var elapsed=0f;set(value){field=value.coerceIn(0f,5f);contentDescription=PrimioI18n.text(context,"{n} secondes",mapOf("n" to ceil(5f-field).toInt()));invalidate()}
+ private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
+ init{background=PrimioStyle.glass(context,24);importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_YES}
+ override fun onDraw(canvas:Canvas){
+  val d=resources.displayMetrics.density;val inset=4*d
+  paint.style=Paint.Style.STROKE;paint.strokeWidth=2*d;paint.color=0x44ffffff;paint.strokeCap=Paint.Cap.ROUND
+  val circle=RectF(inset,inset,width-inset,height-inset);canvas.drawOval(circle,paint)
+  paint.color=PrimioStyle.ivory;canvas.drawArc(circle,-90f,360f*(1-elapsed/5f),false,paint)
+  paint.style=Paint.Style.FILL;paint.textSize=16*d;paint.textAlign=Paint.Align.CENTER
+  canvas.drawText(ceil(5f-elapsed).toInt().coerceAtLeast(1).toString(),width/2f,height/2f-(paint.ascent()+paint.descent())/2,paint)
+ }
 }

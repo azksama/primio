@@ -11,6 +11,7 @@ mod playback_sync;
 #[cfg(target_os = "android")]
 mod player;
 mod updates;
+mod subtitle_fonts;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::Manager;
@@ -388,6 +389,8 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
+            subtitle_fonts::prepare_subtitle_font,
+            subtitle_fonts::remove_subtitle_font,
             fetch_json,
             provider_request,
             updates::update_check,

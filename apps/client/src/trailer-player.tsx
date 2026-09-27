@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft } from './icons'
 import { DialogShell } from './dialog-shell'
 import { trailerEmbedUrl } from './content'
 import { t } from './i18n'

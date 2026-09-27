@@ -41,6 +41,10 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
  private lateinit var time:TextView
  private lateinit var remaining:TextView
  private lateinit var skipButton:TextView
+ private lateinit var skipCountdown:PrimioCountdown
+ private var countdownKey=""
+ private var countdownElapsed=0f
+ private var countdownTick=0L
  private lateinit var nextEpisodeButton:TextView
  private var nextEpisodeOffered=false
  private var currentSegment:JSONObject?=null
@@ -109,15 +113,18 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   center.addView(button("+ $forward",PrimioI18n.text(this,"Avancer de {n} secondes",mapOf("n" to forward))){jump(true)}.apply{setPadding(dp(4),0,dp(4),0);textSize=14f;maxLines=1},LinearLayout.LayoutParams(dp(54),dp(48)).apply{setMargins(dp(12),0,dp(12),0)})
   overlay.addView(center,FrameLayout.LayoutParams(-1,dp(92),Gravity.CENTER))
   val bottom=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(28),dp(16),dp(28),dp(20));background=GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,intArrayOf(Color.TRANSPARENT,0xdd000000.toInt()))}
-  val labels=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL}
+  val labels=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL;setPadding(dp(14),0,dp(14),0)}
   time=text("00:00",13f);remaining=text("",12f)
-  labels.addView(time,LinearLayout.LayoutParams(0,-2,1f));labels.addView(remaining,LinearLayout.LayoutParams(-2,-2).apply{rightMargin=dp(18)});labels.addView(button("Audio · ST",tr("Audio et sous-titres")){tracks()});bottom.addView(labels)
+  time.maxLines=1;remaining.maxLines=1
+  labels.addView(time,LinearLayout.LayoutParams(0,-2,1f));labels.addView(remaining,LinearLayout.LayoutParams(-2,-2));bottom.addView(labels)
   previewPanel=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;background=PrimioStyle.glass(this@PlayerActivity,12);visibility=View.GONE;setPadding(dp(6),dp(6),dp(6),dp(6))}
   val previewImage=ImageView(this).apply{scaleType=ImageView.ScaleType.FIT_CENTER};previewPanel.addView(previewImage,LinearLayout.LayoutParams(dp(160),dp(90)))
   previewTime=text("",13f).apply{gravity=Gravity.CENTER};previewPanel.addView(previewTime);preview=PrimioPreview(options,previewImage)
   overlay.addView(previewPanel,FrameLayout.LayoutParams(dp(172),dp(124),Gravity.TOP or Gravity.START))
   seek=PrimioTimeline(this).apply{onSeek={fraction,done->dragging=!done;handler.removeCallbacks(hide);time.text=format(duration*fraction)+" / "+format(duration);if(done){preview.hide();previewPanel.visibility=View.GONE;command("seek",(duration*fraction).toString(),"absolute");showControls()}else if(duration>0){showSeekPreview(fraction)}}}
-  bottom.addView(seek,LinearLayout.LayoutParams(-1,dp(44)));overlay.addView(bottom,FrameLayout.LayoutParams(-1,dp(132),Gravity.BOTTOM))
+  bottom.addView(seek,LinearLayout.LayoutParams(-1,dp(32)))
+  bottom.addView(button("Audio · ST",tr("Audio et sous-titres")){tracks()},LinearLayout.LayoutParams(-2,dp(44)).apply{gravity=Gravity.END;rightMargin=dp(14)})
+  overlay.addView(bottom,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
   loading=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;contentDescription=tr("Chargement de la vidéo")}
   val artwork=ImageView(this).apply{setImageResource(R.drawable.primio_brand);scaleType=ImageView.ScaleType.FIT_CENTER}
   loading.addView(artwork,LinearLayout.LayoutParams(dp(140),dp(80)))
@@ -135,6 +142,8 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   nextEpisodeButton=button(tr("Épisode suivant")){position=duration;requestEpisode(options.optString("nextVideoId"),true)}
   nextEpisodeButton.visibility=View.GONE
   root.addView(nextEpisodeButton,FrameLayout.LayoutParams(-2,dp(48),Gravity.BOTTOM or Gravity.END).apply{rightMargin=dp(28);bottomMargin=dp(144)})
+  skipCountdown=PrimioCountdown(this).apply{visibility=View.GONE}
+  root.addView(skipCountdown,FrameLayout.LayoutParams(dp(48),dp(48),Gravity.BOTTOM or Gravity.END).apply{rightMargin=dp(28);bottomMargin=dp(144)})
   setContentView(root)
   focus=AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MOVIE).build()).setOnAudioFocusChangeListener{if(it<0)command("set","pause","yes")}.build()
   audio.requestAudioFocus(focus)
@@ -194,13 +203,21 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   val segments=options.optJSONArray("skipSegments")?:JSONArray()
   seek.segments=if(duration>0)(0 until segments.length()).map{segments.getJSONObject(it)}.filter{it.optDouble("start",-1.0)>=0&&it.optDouble("end",0.0)>it.optDouble("start")&&it.optDouble("end")<=duration}.map{Pair((it.optDouble("start")/duration).toFloat(),(it.optDouble("end")/duration).toFloat())}else emptyList()
   currentSegment=(0 until segments.length()).map{segments.getJSONObject(it)}.firstOrNull{val start=it.optDouble("start",-1.0);val end=it.optDouble("end",-1.0);val reference=it.optDouble("episodeLength",0.0);start>=0&&end>start&&end<=duration&&position>=start&&position<end&&!skipped.contains(start)&&(reference==0.0||abs(duration-reference)<max(10.0,duration*0.03))}
-  skipButton.visibility=if(currentSegment!=null)View.VISIBLE else View.GONE
-  currentSegment?.let{if(it.optString("kind")=="outro"&&options.optBoolean("autoNextEpisode",true)&&options.optString("nextVideoId").isNotBlank()){position=duration;requestEpisode(options.getString("nextVideoId"),true);return};skipButton.text=it.optString("label",tr("Passer l’intro"));if(options.optBoolean("autoSkipIntro")&&it.optString("kind")=="intro"){skipped.add(it.optDouble("start"));command("seek",it.optDouble("end").toString(),"absolute")}}
+  skipButton.visibility=View.GONE
+  currentSegment?.let{if(it.optString("kind")=="outro"&&options.optBoolean("autoNextEpisode",true)&&options.optString("nextVideoId").isNotBlank()){position=duration;requestEpisode(options.getString("nextVideoId"),true);return};skipButton.text=it.optString("label",tr(if(it.optString("kind")=="outro")"Passer le générique" else "Passer l’intro"));if(options.optBoolean("autoSkipIntro")&&it.optString("kind")=="intro"){skipped.add(it.optDouble("start"));command("seek",it.optDouble("end").toString(),"absolute")}}
   val hasNext=options.optString("nextVideoId").isNotBlank()
   if(loaded&&hasNext&&duration>0&&((duration-position).coerceAtLeast(0.0)<=30.0||currentSegment?.optString("kind")=="outro"))nextEpisodeOffered=true
-  nextEpisodeButton.visibility=if(nextEpisodeOffered&&!reportedError&&!last.optBoolean("buffering"))View.VISIBLE else View.GONE
-  if(nextEpisodeButton.visibility==View.VISIBLE)skipButton.visibility=View.GONE
-  if(isInPictureInPictureMode){overlay.visibility=View.GONE;skipButton.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;gestureLabel.visibility=View.GONE}
+  val nextAvailable=nextEpisodeOffered&&((duration-position).coerceAtLeast(0.0)<=30.0||currentSegment?.optString("kind")=="outro")
+  val key=if(nextAvailable)"next" else currentSegment?.let{it.optString("kind")+":"+it.optDouble("start")}?:""
+  val canShow=loaded&&!reportedError&&!last.optBoolean("buffering")&&!isInPictureInPictureMode&&sheet==null&&hasWindowFocus()
+  if(key!=countdownKey){countdownKey=key;countdownElapsed=0f;countdownTick=now}
+  if(canShow&&key.isNotEmpty())countdownElapsed+=((now-countdownTick).coerceIn(0,500))/1000f
+  countdownTick=now
+  skipCountdown.elapsed=countdownElapsed
+  skipCountdown.visibility=if(canShow&&key.isNotEmpty()&&countdownElapsed<5f)View.VISIBLE else View.GONE
+  nextEpisodeButton.visibility=if(canShow&&nextAvailable&&countdownElapsed>=5f)View.VISIBLE else View.GONE
+  skipButton.visibility=if(canShow&&!nextAvailable&&currentSegment!=null&&countdownElapsed>=5f)View.VISIBLE else View.GONE
+  if(isInPictureInPictureMode){overlay.visibility=View.GONE;gestureLabel.visibility=View.GONE}
   if(Build.VERSION.SDK_INT>=31)setPictureInPictureParams(pipParams())
   pause.symbol=if(last.optBoolean("paused"))"play" else "pause"
   // mpv's disk cache is append-only. Stop disk writes with headroom for packets in flight.
@@ -215,7 +232,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   if(duration>0&&position.isFinite())try{PrimioStore.write(this,"playerProgress",payload.toString())}catch(e:Exception){android.util.Log.e("PrimioPlayer","Progress persistence failed",e)}
   nativeProgress(payload.toString())
  }
- private fun showError(message:String){loading.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;skipButton.visibility=View.GONE;sheet?.dismiss();sheet=PrimioSheet(this,"Lecture indisponible").apply{section(message);option("Revenir aux sources"){finish()};show()}}
+ private fun showError(message:String){loading.visibility=View.GONE;skipCountdown.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;skipButton.visibility=View.GONE;sheet?.dismiss();sheet=PrimioSheet(this,"Lecture indisponible").apply{section(message);option("Revenir aux sources"){finish()};show()}}
  private fun loadLogo(view:ImageView,url:String){
   if(!url.startsWith("https://"))return
   Thread{
@@ -301,18 +318,21 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   val dialog=PrimioSheet(this,tr("Style des sous-titres"))
   val preview=text(tr("Votre histoire commence."),options.optInt("subtitleSize",40)/2f).apply{gravity=Gravity.CENTER;setPadding(dp(12),dp(14),dp(12),dp(14))}
   dialog.content.addView(preview)
-  fun applyStyle(){
-   forceSubtitleStyle=true;options.put("forceSubtitleStyle",true)
-   val font=when(options.optString("subtitleFont")){"serif"->"Noto Serif";"monospace"->"Droid Sans Mono";else->"Roboto"}
-   command("set","sub-ass-override","force");command("set","sub-font-size",options.optInt("subtitleSize",40).toString());command("set","sub-font",font);command("set","sub-color",options.optString("subtitleColor","#FFFFFF"));command("set","sub-border-size",options.optInt("subtitleOutline",2).toString());command("set","sub-back-color",if(options.optBoolean("subtitleBackground"))"#99000000" else "#00000000")
-   preview.textSize=options.optInt("subtitleSize",40)/2f;preview.typeface=android.graphics.Typeface.create(font,0);preview.setTextColor(Color.parseColor(options.optString("subtitleColor","#FFFFFF")));preview.setBackgroundColor(if(options.optBoolean("subtitleBackground"))0x99000000.toInt() else Color.TRANSPARENT);preview.setShadowLayer(options.optInt("subtitleOutline",2).toFloat(),0f,0f,Color.BLACK)
+  fun applyStyle(updatePlayer:Boolean=true){
+   if(updatePlayer){forceSubtitleStyle=true;options.put("forceSubtitleStyle",true)}
+   val custom=options.optJSONObject("customFont")
+   val font=when(options.optString("subtitleFont")){"custom"->custom?.optString("family","Roboto")?:"Roboto";"serif"->"Noto Serif";"monospace"->"Droid Sans Mono";else->"Roboto"}
+   if(updatePlayer){command("set","sub-ass-override","force");command("set","sub-font-size",options.optInt("subtitleSize",40).toString());command("set","sub-font",font);command("set","sub-color",options.optString("subtitleColor","#FFFFFF"));command("set","sub-border-size",options.optInt("subtitleOutline",2).toString());command("set","sub-back-color",if(options.optBoolean("subtitleBackground"))"#99000000" else "#00000000")}
+   preview.textSize=options.optInt("subtitleSize",40)/2f;preview.typeface=if(options.optString("subtitleFont")=="custom"&&custom!=null)runCatching{android.graphics.Typeface.createFromFile(custom.getString("path"))}.getOrDefault(android.graphics.Typeface.DEFAULT) else android.graphics.Typeface.create(font,0);preview.setTextColor(Color.parseColor(options.optString("subtitleColor","#FFFFFF")));preview.setBackgroundColor(if(options.optBoolean("subtitleBackground"))0x99000000.toInt() else Color.TRANSPARENT);preview.setShadowLayer(options.optInt("subtitleOutline",2).toFloat(),0f,0f,Color.BLACK)
   }
+  applyStyle(false)
   fun choices(label:String,key:String,values:List<Pair<Any,String>>){
    dialog.section(tr(label));val row=LinearLayout(this)
    values.forEach{(value,name)->row.addView(PrimioStyle.button(this,name){options.put(key,value);applyStyle()}.apply{textSize=12f;setPadding(dp(8),dp(8),dp(8),dp(8))},LinearLayout.LayoutParams(0,-2,1f).apply{rightMargin=dp(8)})};dialog.content.addView(row)
   }
   choices("Taille des sous-titres","subtitleSize",listOf(32 to tr("Petite"),40 to tr("Moyenne"),48 to tr("Grande"),56 to tr("Très grande")))
   choices("Police","subtitleFont",listOf("sans-serif" to tr("Sans empattement"),"serif" to tr("Avec empattement"),"monospace" to tr("Monospace")))
+  options.optJSONObject("customFont")?.let{custom->dialog.content.addView(PrimioStyle.button(this,custom.optString("family")){options.put("subtitleFont","custom");applyStyle()})}
   choices("Couleur","subtitleColor",listOf("#FFFFFF" to tr("Blanc"),"#F5DE93" to tr("Ivoire"),"#BDE6FF" to tr("Bleu clair"),"#BFE3C2" to tr("Vert clair")))
   choices("Contour","subtitleOutline",listOf(0 to tr("Aucun"),1 to tr("Fin"),2 to tr("Moyen"),4 to tr("Épais")))
   choices("Fond","subtitleBackground",listOf(false to tr("Aucun"),true to tr("Noir")))
@@ -337,7 +357,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
  override fun onUserLeaveHint(){super.onUserLeaveHint();if(Build.VERSION.SDK_INT<31)enterPip()}
  override fun onPictureInPictureModeChanged(inPip:Boolean,configuration:android.content.res.Configuration){
   super.onPictureInPictureModeChanged(inPip,configuration)
-  if(inPip){overlay.visibility=View.GONE;skipButton.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;gestureLabel.visibility=View.GONE}else{if(lifecycleStopped){finish()}else showControls()}
+  if(inPip){skipCountdown.visibility=View.GONE;overlay.visibility=View.GONE;skipButton.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;gestureLabel.visibility=View.GONE}else{if(lifecycleStopped){finish()}else showControls()}
  }
  private var lifecycleStopped=false
  override fun onStart(){super.onStart();lifecycleStopped=false}

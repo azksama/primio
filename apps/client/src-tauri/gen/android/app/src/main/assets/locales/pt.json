@@ -552,5 +552,17 @@
   "sélectionnés": "selecionados",
   "Sélectionner": "Selecionar",
   "Synchronisez votre profil avant de connecter un service.": "Sincronize o perfil antes de conectar um serviço.",
-  "Retirer de la collection": "Remover da coleção"
+  "Retirer de la collection": "Remover da coleção",
+  "Synchronisation de l’import…": "A sincronizar a importação…",
+  "Import enregistré. En attente de synchronisation.": "Importação guardada. A aguardar sincronização.",
+  "Importer une police": "Importar fonte",
+  "Supprimer la police importée": "Excluir fonte importada",
+  "TTF / OTF · 5 Mo maximum · Sur cet appareil": "TTF / OTF · Máximo de 5 MB · Neste dispositivo",
+  "Police invalide. Choisissez un fichier TTF ou OTF de moins de 5 Mo (10 polices maximum).": "Fonte inválida. Escolha um arquivo TTF ou OTF com menos de 5 MB (máximo de 10 fontes).",
+  "Impossible de supprimer la police.": "Não foi possível excluir a fonte.",
+  "Recommandations": "Recomendações",
+  "Reprendre le défilement": "Retomar apresentação",
+  "Mettre le défilement en pause": "Pausar apresentação",
+  "Passer le générique": "Pular créditos",
+  "Rapports et assistance": "Relatórios e suporte"
 }

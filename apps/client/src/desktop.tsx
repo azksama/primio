@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { Minus, Square, Copy, X } from 'lucide-react'
+import { Minus, Square, Copy, X } from './icons'
 import { isDesktop } from './platform'
 import { t } from './i18n'
 import './desktop.css'

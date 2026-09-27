@@ -552,5 +552,17 @@
   "sélectionnés": "ausgewählt",
   "Sélectionner": "Auswählen",
   "Synchronisez votre profil avant de connecter un service.": "Synchronisiere dein Profil, bevor du einen Dienst verbindest.",
-  "Retirer de la collection": "Aus Sammlung entfernen"
+  "Retirer de la collection": "Aus Sammlung entfernen",
+  "Synchronisation de l’import…": "Import wird synchronisiert…",
+  "Import enregistré. En attente de synchronisation.": "Import gespeichert. Synchronisierung ausstehend.",
+  "Importer une police": "Schriftart importieren",
+  "Supprimer la police importée": "Importierte Schriftart löschen",
+  "TTF / OTF · 5 Mo maximum · Sur cet appareil": "TTF / OTF · Maximal 5 MB · Auf diesem Gerät",
+  "Police invalide. Choisissez un fichier TTF ou OTF de moins de 5 Mo (10 polices maximum).": "Ungültige Schriftart. Wähle eine TTF- oder OTF-Datei unter 5 MB (maximal 10 Schriftarten).",
+  "Impossible de supprimer la police.": "Die Schriftart konnte nicht gelöscht werden.",
+  "Recommandations": "Empfehlungen",
+  "Reprendre le défilement": "Diashow fortsetzen",
+  "Mettre le défilement en pause": "Diashow pausieren",
+  "Passer le générique": "Abspann überspringen",
+  "Rapports et assistance": "Berichte und Hilfe"
 }

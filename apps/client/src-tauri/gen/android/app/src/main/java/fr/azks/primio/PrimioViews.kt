@@ -15,7 +15,7 @@ object PrimioStyle {
  val ivory=Color.rgb(243,241,235)
  fun dp(c:Context,n:Int)=(n*c.resources.displayMetrics.density).toInt()
  fun glass(c:Context,radius:Int=26)=GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(0xa86c7066.toInt(),0x78333730.toInt(),0x9c1c1e1b.toInt())).apply{cornerRadius=dp(c,radius).toFloat();setStroke(dp(c,1),0x88e8e4d5.toInt())}
- fun focusGlass(c:Context)=android.graphics.drawable.StateListDrawable().apply{addState(intArrayOf(android.R.attr.state_focused),glass(c).apply{setStroke(dp(c,3),ivory)});addState(intArrayOf(android.R.attr.state_pressed),glass(c).apply{setStroke(dp(c,2),ivory)});addState(intArrayOf(),glass(c))}
+ fun focusGlass(c:Context,radius:Int=26)=android.graphics.drawable.StateListDrawable().apply{addState(intArrayOf(android.R.attr.state_focused),glass(c,radius).apply{setStroke(dp(c,3),ivory)});addState(intArrayOf(android.R.attr.state_pressed),glass(c,radius).apply{setStroke(dp(c,2),ivory)});addState(intArrayOf(),glass(c,radius))}
  fun text(c:Context,label:String,size:Float=15f)=TextView(c).apply{text=label;textSize=size;setTextColor(ivory);fontFeatureSettings="tnum"}
  fun button(c:Context,label:String,description:String=label,action:()->Unit)=text(c,label,15f).apply{contentDescription=description;gravity=Gravity.CENTER;minHeight=dp(c,48);minWidth=dp(c,48);setPadding(dp(c,16),dp(c,10),dp(c,16),dp(c,10));background=focusGlass(c);isClickable=true;isFocusable=true;setOnClickListener{action()}}
 }
@@ -91,7 +91,7 @@ class PrimioTimeline(context:Context):View(context) {
   paint.shader=null;paint.style=Paint.Style.FILL
   val thumb=(if(dragging)9 else 7)*density
   paint.color=0x55f5edda;canvas.drawCircle(x,y,thumb+5*density,paint)
-  paint.shader=LinearGradient(x,y-thumb,x,y+thumb,intArrayOf(Color.WHITE,0xffd7cfb5.toInt()),null,Shader.TileMode.CLAMP)
+  paint.color=Color.WHITE;paint.shader=LinearGradient(x,y-thumb,x,y+thumb,intArrayOf(Color.WHITE,0xffd7cfb5.toInt()),null,Shader.TileMode.CLAMP)
   canvas.drawCircle(x,y,thumb,paint);paint.shader=null
   paint.style=Paint.Style.STROKE;paint.strokeWidth=density;paint.color=0x99303030.toInt();canvas.drawCircle(x,y,thumb,paint);paint.style=Paint.Style.FILL
  }
@@ -119,8 +119,8 @@ class PrimioSpinner(context:Context):View(context) {
 class PrimioIconButton(context:Context,symbol:String,description:String,action:()->Unit):View(context) {
  var symbol=symbol;set(value){if(field!=value){field=value;invalidate()}}
  private val paint=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=PrimioStyle.ivory;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND;strokeWidth=1.8f}
- init{contentDescription=description;isClickable=true;isFocusable=true;background=PrimioStyle.focusGlass(context);minimumHeight=PrimioStyle.dp(context,48);minimumWidth=PrimioStyle.dp(context,48);setOnClickListener{action()}}
- override fun onDraw(canvas:Canvas){super.onDraw(canvas);val size=PrimioStyle.dp(context,if(symbol=="back")32 else 40).toFloat();val saved=canvas.save();canvas.translate((width-size)/2,(height-size)/2);canvas.scale(size/24,size/24);paint.style=Paint.Style.STROKE
+ init{contentDescription=description;isClickable=true;isFocusable=true;background=PrimioStyle.focusGlass(context,99);minimumHeight=PrimioStyle.dp(context,48);minimumWidth=PrimioStyle.dp(context,48);setOnClickListener{action()}}
+ override fun onDraw(canvas:Canvas){super.onDraw(canvas);val size=PrimioStyle.dp(context,if(symbol=="play"||symbol=="pause")40 else 28).toFloat();val saved=canvas.save();canvas.translate((width-size)/2,(height-size)/2);canvas.scale(size/24,size/24);paint.style=Paint.Style.STROKE
   (PrimioIcons.paths[symbol]?:PrimioIcons.paths.getValue("pause")).forEach{canvas.drawPath(it,paint)};canvas.restoreToCount(saved)
  }
  override fun onInitializeAccessibilityNodeInfo(info:AccessibilityNodeInfo){super.onInitializeAccessibilityNodeInfo(info);info.className="android.widget.Button"}

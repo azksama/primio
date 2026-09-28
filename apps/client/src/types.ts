@@ -31,6 +31,8 @@ export interface Meta {
   background?: string
   description?: string
   releaseInfo?: string
+  rating?: number
+  ratingSource?: string
   imdbRating?: string
   genres?: string[]
   cast?: string[]
@@ -61,6 +63,7 @@ export interface Meta {
   }[]
 }
 export interface Stream {
+  sourceKey?: string
   url?: string
   externalUrl?: string
   infoHash?: string

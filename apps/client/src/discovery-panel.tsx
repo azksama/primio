@@ -11,7 +11,10 @@ import {
   type DiscoveryFilters,
 } from './discovery'
 import { matchesCategory } from './preferences'
-import { t } from './i18n'
+import { t, locale } from './i18n'
+import { discoveryService } from './random-discovery'
+import { tmdbToken } from './metadata-provider'
+import { Shuffle, SlidersHorizontal, ChevronDown, ArrowRight, LoaderCircle } from './icons'
 
 export function DiscoveryControls({
   value,
@@ -56,8 +59,9 @@ export function DiscoveryControls({
         <label>
           {t('Type')}
           <select
+            aria-label={t('Type')}
             value={value.type ?? ''}
-            onChange={(e) => onChange({ ...value, type: e.target.value })}
+            onChange={(e) => onChange({ ...value, type: e.target.value, genre: undefined })}
           >
             {[
               ['', 'Tous'],
@@ -76,6 +80,7 @@ export function DiscoveryControls({
         <label>
           {t('Genre')}
           <select
+            aria-label={t('Genre')}
             value={value.genre ?? ''}
             onChange={(e) => onChange({ ...value, genre: e.target.value })}
           >
@@ -90,7 +95,7 @@ export function DiscoveryControls({
               'Romance',
               'Science Fiction',
               'Thriller',
-            ].map((g) => (
+            ].filter(g => value.type !== 'series' || !['Horror','Romance','Thriller'].includes(g)).map((g) => (
               <option key={g} value={g}>
                 {g || t('Tous')}
               </option>
@@ -135,77 +140,83 @@ export function DiscoveryControls({
   )
 }
 
-export function RandomPick({
-  addons,
-  library,
-  onOpen,
-}: {
-  addons: Addon[]
-  library: Meta[]
-  onOpen: (m: Meta) => void
+export function AdvancedFilters({ value, onChange }: {
+  value: DiscoveryFilters; onChange: (v: DiscoveryFilters) => void
 }) {
+  const count = Object.values(value).filter(v => v !== undefined && v !== '').length
+  return <details className="advanced-discover">
+    <summary><SlidersHorizontal size={18} /><span>{t('Filtres avancés')}</span>
+      {count > 0 && <span className="filter-count">{count}</span>}<ChevronDown size={16} />
+    </summary>
+    <div className="advanced-filter-panel"><DiscoveryControls value={value} onChange={onChange} /></div>
+  </details>
+}
+
+export function RandomPick({ onOpen, onConfigure, accountId }: { onOpen: (m: Meta) => void; onConfigure: () => void; accountId: string }) {
   const [filters, setFilters] = useState<DiscoveryFilters>({}),
     [busy, setBusy] = useState(false),
     [result, setResult] = useState<Meta | null>(null),
-    [message, setMessage] = useState('')
-  const pool = useRef<{ key: string; items: Meta[] } | null>(null)
+    [message, setMessage] = useState(''),
+    [criteria, setCriteria] = useState(false),
+    [configured, setConfigured] = useState<boolean | null>(null)
+  useEffect(() => {
+    let active = true
+    const refresh = () => { void tmdbToken(accountId).then(value => { if (active) setConfigured(!!value) }).catch(() => { if (active) setConfigured(false) }) }
+    refresh(); window.addEventListener('primio-metadata-changed', refresh)
+    return () => { active = false; window.removeEventListener('primio-metadata-changed', refresh) }
+  }, [accountId])
+  const recent = useRef<string[]>([])
+  const invalidYears = !!(filters.from && filters.to && filters.from > filters.to)
   const draw = async () => {
-    setBusy(true)
-    setMessage('')
+    if (busy || invalidYears) return
+    setBusy(true); setMessage('')
     try {
-      const key = JSON.stringify(addons),
-        cached =
-          pool.current?.key === key
-            ? pool.current.items
-            : await enrichDiscovery(addons, await discoveryPool(addons, '', library))
-      pool.current = { key, items: cached }
-      const items = cached.filter((m) => matchesDiscovery(m, filters))
-      const choices = items.length > 1 ? items.filter((m) => m.id !== result?.id) : items
-      if (!choices.length) {
-        setResult(null)
-        setMessage(t('Aucun titre ne correspond. Élargissez les critères ou ajoutez un catalogue.'))
-        return
-      }
-      const random = crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296
-      setResult(choices[Math.floor(random * choices.length)])
-    } catch {
-      setMessage(t('Impossible de charger les catalogues. Réessayez.'))
-    } finally {
-      setBusy(false)
-    }
+      const body = Object.fromEntries(Object.entries(filters).filter(([,v]) => v !== '' && v !== undefined))
+      const token = await tmdbToken(accountId)
+      setConfigured(!!token)
+      const data = await discoveryService(token)({
+        ...body, language: locale(), exclude: recent.current.slice(-20),
+      })
+      setResult(data.item)
+      if (data.item) recent.current = [...recent.current, data.item.id].slice(-20)
+      else setMessage(t('Aucun titre ne correspond. Essayez des critères plus larges.'))
+    } catch (error) {
+      const code = (error as { code?: string }).code
+      setMessage(t(code === 'TMDB_NOT_CONFIGURED'
+        ? 'Ajoutez votre jeton TMDB pour découvrir des films et des séries.'
+        : code === 'TMDB_INVALID_TOKEN'
+          ? 'Votre jeton TMDB a expiré ou est invalide. Remplacez-le dans les paramètres.'
+        : code === 'PROVIDER_BUSY'
+          ? 'La recherche est très sollicitée. Réessayez dans un instant.'
+          : 'Impossible de trouver une suggestion. Réessayez.'))
+    } finally { setBusy(false) }
   }
-  return (
-    <details className="random-pick glass">
-      <summary>{t('Je ne sais pas quoi regarder')}</summary>
-      <DiscoveryControls type value={filters} onChange={setFilters} />
-      <button className="primary" disabled={busy} onClick={() => void draw()}>
-        {t(busy ? 'Recherche…' : result ? 'Une autre idée' : 'Surprenez-moi')}
+  return <section className="random-pick" aria-label={t('Je ne sais pas quoi regarder')}>
+    <div className="random-heading">
+      <div className="random-copy"><span className="eyebrow">{t('À votre tour de découvrir')}</span>
+        <h2>{t('Je ne sais pas quoi regarder')}</h2>
+        <p>{t('Un film, une série ou un anime pour ce soir.')}</p>
+      </div>
+      <button className="random-draw" disabled={busy || invalidYears} onClick={() => void draw()}>
+        {busy ? <LoaderCircle className="spin" size={21} /> : <Shuffle size={21} />}
+        <span>{t(busy ? 'Recherche…' : result ? 'Une autre idée' : 'Surprenez-moi')}</span>
       </button>
-      <p className="muted">
-        {t(
-          'Tirage parmi vos catalogues chargés. Les critères exigent des métadonnées renseignées.',
-        )}
-      </p>
-      {message && <p role="status">{message}</p>}
-      {result && (
-        <button className="random-result" onClick={() => onOpen(result!)}>
-          {result.poster && <img src={result.poster} alt="" />}
-          <span>
-            <strong>{result.name}</strong>
-            <small>
-              {[
-                result.releaseInfo,
-                result.runtime,
-                result.imdbRating && `IMDb ${result.imdbRating}`,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </small>
-          </span>
-        </button>
-      )}
-    </details>
-  )
+    </div>
+    <button className="random-criteria" aria-expanded={criteria} aria-controls="random-criteria" onClick={() => setCriteria(!criteria)}>
+      <SlidersHorizontal size={17} /><span>{t('Affiner mes envies')}</span><ChevronDown size={15} />
+    </button>
+    <fieldset id="random-criteria" hidden={!criteria} disabled={busy}><DiscoveryControls type value={filters} onChange={value => { setFilters(value); setResult(null); setMessage('') }} /></fieldset>
+    {message && <p className="discovery-message" role="status">{message}</p>}
+    {configured === false && <div className="random-provider"><span>{t('Animes via AniList. Films et séries avec votre jeton TMDB.')}</span><button onClick={onConfigure}>{t('Configurer TMDB')}<ArrowRight size={15} /></button></div>}
+    {result && <button className="random-result" onClick={() => onOpen(result)}>
+      {result.poster && <img src={result.poster} alt="" />}
+      <span><strong>{result.name}</strong>
+        <small>{[result.releaseInfo, result.runtime,
+          result.rating && `${result.ratingSource} ${result.rating}/10`].filter(Boolean).join(' · ')}</small>
+        <span className="random-open">{t('Voir la fiche')} <ArrowRight size={16} /></span>
+      </span>
+    </button>}
+  </section>
 }
 
 export function SearchSuggestions({

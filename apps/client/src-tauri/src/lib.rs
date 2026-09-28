@@ -176,6 +176,7 @@ async fn secure_read(app: tauri::AppHandle, key: String) -> Result<Option<String
         "onboarding",
         "startupProfile",
         "downloadPolicy",
+        "metadataCredentials",
     ]
     .contains(&key.as_str())
     {
@@ -208,6 +209,7 @@ async fn secure_write(app: tauri::AppHandle, key: String, value: String) -> Resu
         "onboarding",
         "startupProfile",
         "downloadPolicy",
+        "metadataCredentials",
     ]
     .contains(&key.as_str())
         || value.len() > 2_000_000

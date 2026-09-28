@@ -16,6 +16,7 @@ const page = await browser.newPage({
     ? undefined
     : 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36',
 })
+await page.route('**/qa-logo.svg', route => route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="500" height="170"><text x="250" y="115" text-anchor="middle" fill="white" font-family="Georgia" font-size="76">After the rain</text></svg>'}))
 const errors = []
 page.on('pageerror', (error) => errors.push(error.message))
 const now = Date.now()
@@ -23,6 +24,7 @@ const metas = Array.from({ length: 18 }, (_, i) => ({
   id: 'qa' + i,
   type: ['movie', 'series', 'anime'][i % 3],
   name: 'QA ' + ['Movie', 'Series', 'Anime'][i % 3] + ' ' + i,
+  logo: '/qa-logo.svg',
   poster: '/avatars/' + String((i % 10) + 1).padStart(2, '0') + '.jpg',
   background: '/avatars/01.jpg',
   genres: ['Adventure', 'Science Fiction'],
@@ -127,6 +129,7 @@ await page.addInitScript(
         extra: [{ name: 'search' }, { name: 'genre', options: ['Adventure'] }],
       })),
     }
+    window.__randomCalls = 0
     window.__catalogCalls = 0
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} }
     window.isTauri = true
@@ -167,6 +170,7 @@ await page.addInitScript(
           }
           if (url.pathname.includes('/meta/'))
             return { meta: metas.find((m) => url.pathname.endsWith('/' + m.id + '.json')) }
+          if(window.__holdFirstStreams && url.host==='qa.example') await new Promise(r=>window.__releaseStreams=r)
           return {
             streams: [
               { name: '1080p WEB-DL', title: '1.5 GB', url: 'https://media.example/one.mp4' },
@@ -174,6 +178,12 @@ await page.addInitScript(
               { name: '4K BluRay', title: '8 GB', url: 'https://media.example/three.mp4' },
             ],
           }
+        }
+        if (command === 'provider_request' && args.operation === 'tmdb') {
+          if(args.body.token !== 'private-ui-token')throw Error('TMDB HTTP 401')
+          if(args.body.path === 'authentication') return {success:true}
+          if(args.body.path.startsWith('discover/')){window.__randomCalls++;await new Promise(r=>setTimeout(r,200));return {total_pages:1,results:[{id:1}]}}
+          return {id:1,imdb_id:'qa0',title:'After the rain',runtime:105,vote_average:8.2}
         }
         if (command === 'api_request')
           return {
@@ -199,12 +209,30 @@ try {
   await page.goto(process.argv[2] ?? 'http://127.0.0.1:1420')
   const nav = page.getByRole('navigation')
   await expect(nav).toBeVisible()
-  await page.locator('.random-pick summary').click()
+  await page.getByRole('button', { name: 'Configure TMDB', exact:true }).click()
+  await page.getByLabel('API Read Access Token').fill('invalid-token')
+  await page.getByRole('button', { name:'Verify and save',exact:true }).click()
+  await expect(page.locator('.metadata-settings [role=alert]')).toBeVisible()
+  await page.getByLabel('API Read Access Token').fill('private-ui-token')
+  await page.getByRole('button', { name:'Verify and save',exact:true }).click()
+  await expect(page.locator('.metadata-heading')).toContainText('Connected')
+  expect(await page.getByLabel('API Read Access Token').inputValue()).toBe('')
+  expect(await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('secure_read',{key:'state'}))).not.toContain('private-ui-token')
+  await page.screenshot({path:output+'/metadata-settings.png'})
+  await nav.getByRole('button',{name:'Home',exact:true}).click()
+  await page.locator('.random-pick').getByRole('button', { name: 'Refine my picks' }).click()
+  await page.locator('.random-pick').getByLabel('Type',{exact:true}).selectOption('movie')
   await page
     .locator('.random-pick')
     .getByRole('button', { name: 'Surprise me', exact: true })
     .click()
   await expect(page.locator('.random-result')).toBeVisible()
+  expect(await page.evaluate(()=>window.__randomCalls)).toBe(1)
+  await page.locator('.random-result').click()
+  await expect(page.locator('.detail-logo')).toBeVisible()
+  await expect(page.locator('.copy-title')).toHaveText('QA Movie 0')
+  await page.screenshot({path:output+'/detail-logo.png'})
+  await page.locator('.detail-toolbar').getByRole('button',{name:'Back',exact:true}).click()
   await page.locator('.random-pick').scrollIntoViewIfNeeded()
   await page.screenshot({ path: output + '/mobile-random.png' })
   await nav.getByRole('button', { name: 'Explore', exact: true }).click()
@@ -267,6 +295,20 @@ try {
   if ((await page.evaluate(() => window.__catalogCalls)) !== callsBefore)
     throw Error('Navigation refetched catalog results')
 
+  await firstResult.click()
+  await page.evaluate(()=>window.__holdFirstStreams=true)
+  await page.getByRole('button',{name:'Continue watching',exact:true}).click()
+  const sources=page.locator('.sources')
+  await expect(sources.locator('.compact-source')).toHaveCount(3)
+  await expect(sources.locator('.source-addons button').nth(1)).toContainText('QA Catalog')
+  await expect(sources.locator('.source-addons button').nth(1).locator('.spin')).toBeVisible()
+  await sources.locator('.compact-source').first().evaluate(el=>window.__earlySource=el)
+  await page.screenshot({path:output+'/sources-progressive.png'})
+  await page.evaluate(()=>{window.__holdFirstStreams=false;window.__releaseStreams()})
+  await expect(sources.locator('.compact-source')).toHaveCount(6)
+  expect(await sources.locator('.compact-source').nth(3).evaluate(el=>el===window.__earlySource)).toBe(true)
+  await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click()
+  await page.getByRole('button',{name:'Back',exact:true}).first().click()
   await nav.getByRole('button', { name: 'Settings', exact: true }).click()
   await page
     .getByRole('button', { name: /Account and profiles/ })

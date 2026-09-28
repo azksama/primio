@@ -333,21 +333,32 @@ export async function metadata(
     if (options.onUpdate) entry.listeners.delete(options.onUpdate)
   }
 }
-export async function streams(addons: Addon[], type: string, id: string) {
+export type StreamResults = {
+  items: Stream[]
+  failed: number
+  providers: number
+  pending: number
+  groups: { key: string; name: string; pending: boolean; failed: boolean }[]
+}
+export async function streams(addons: Addon[], type: string, id: string, onUpdate?: (result: StreamResults) => void) {
   const eligible = addons.filter((x) => supports(x, 'stream', type, id))
-  const results = await Promise.allSettled(
-    eligible.map(
-      async (a) =>
-        (await json<{ streams: Stream[] }>(resourceUrl(a, 'stream', type, id))).streams?.map(
-          (s) => ({ ...s, addonName: a.manifest.name, addonKey: a.url }),
-        ) ?? [],
-    ),
-  )
-  return {
-    items: results.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])),
-    failed: results.filter((r) => r.status === 'rejected').length,
-    providers: eligible.length,
-  }
+  // Slots stay in configured priority order, regardless of network response order.
+  const slots = eligible.map((a) => ({ key: a.url, name: a.manifest.name, pending: true, failed: false, items: [] as Stream[] }))
+  const snapshot = (): StreamResults => ({
+    items: slots.flatMap(s => s.items), failed: slots.filter(s => s.failed).length,
+    providers: slots.length, pending: slots.filter(s => s.pending).length,
+    groups: slots.map(({ items: _items, ...group }) => ({ ...group })),
+  })
+  onUpdate?.(snapshot())
+  await Promise.all(slots.map(async (slot, index) => {
+    try {
+      const result = await json<{ streams?: Stream[] }>(resourceUrl(eligible[index], 'stream', type, id))
+      if (!Array.isArray(result.streams)) throw Error('Invalid stream response')
+      slot.items = result.streams.filter(s => s && typeof s === 'object').map((s, i) => ({ ...s, addonName: slot.name, addonKey: slot.key, sourceKey: slot.key + ":" + i }))
+    } catch { slot.failed = true }
+    finally { slot.pending = false; onUpdate?.(snapshot()) }
+  }))
+  return snapshot()
 }
 export async function subtitles(addons: Addon[], type: string, id: string): Promise<Subtitle[]> {
   const results = await Promise.allSettled(

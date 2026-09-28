@@ -32,6 +32,12 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
  private var handle=0L
  private lateinit var options:JSONObject
  private lateinit var root:FrameLayout
+ private lateinit var top:LinearLayout
+ private lateinit var center:LinearLayout
+ private lateinit var playerActions:LinearLayout
+ private var scrubbing=false
+ private var scrubTarget=0.0
+ private var scrubWasPaused=false
  private lateinit var overlay:FrameLayout
  private lateinit var seek:PrimioTimeline
  private lateinit var preview:PrimioPreview
@@ -44,7 +50,6 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
  private lateinit var skipCountdown:PrimioCountdown
  private var countdownKey=""
  private var countdownElapsed=0f
- private var countdownTick=0L
  private lateinit var nextEpisodeButton:TextView
  private var nextEpisodeOffered=false
  private var currentSegment:JSONObject?=null
@@ -101,20 +106,22 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   val surface=SurfaceView(this);surface.holder.addCallback(this);root.addView(surface,FrameLayout.LayoutParams(-1,-1))
   val gestureLayer=View(this);root.addView(gestureLayer,FrameLayout.LayoutParams(-1,-1));installGestures(gestureLayer)
   overlay=FrameLayout(this);root.addView(overlay,FrameLayout.LayoutParams(-1,-1))
-  val top=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL;setPadding(dp(24),dp(14),dp(24),dp(8));background=GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,intArrayOf(0xbb000000.toInt(),Color.TRANSPARENT))}
+  top=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL;setPadding(dp(24),dp(14),dp(24),dp(8))}
   top.addView(PrimioIconButton(this,"back",tr("Retour")){leavePlayer()},LinearLayout.LayoutParams(dp(48),dp(48)))
-  top.addView(text(options.optString("title","Primio"),24f).apply{typeface=android.graphics.Typeface.createFromAsset(assets,"fonts/cormorant-garamond.ttf");setPadding(dp(16),0,dp(12),0);maxLines=2},LinearLayout.LayoutParams(0,-2,1f))
+  top.addView(PrimioIconButton(this,"close",tr("Fermer")){finish()},LinearLayout.LayoutParams(dp(48),dp(48)).apply{leftMargin=dp(10)})
+  top.addView(text(options.optString("title","Primio"),28f).apply{typeface=android.graphics.Typeface.createFromAsset(assets,"fonts/cormorant-garamond.ttf");setPadding(dp(16),0,dp(12),0);setShadowLayer(dp(2).toFloat(),0f,dp(1).toFloat(),0xcc000000.toInt());maxLines=3;setAutoSizeTextTypeUniformWithConfiguration(12,28,1,android.util.TypedValue.COMPLEX_UNIT_SP)},LinearLayout.LayoutParams(0,dp(68),1f))
   if((options.optJSONArray("episodes")?.length()?:0)>0)top.addView(button(tr("Épisodes"),tr("Choisir un épisode")){episodes()})
-  overlay.addView(top,FrameLayout.LayoutParams(-1,dp(80),Gravity.TOP))
-  val center=LinearLayout(this).apply{gravity=Gravity.CENTER}
-  center.addView(button("− $rewind",PrimioI18n.text(this,"Reculer de {n} secondes",mapOf("n" to rewind))){jump(false)}.apply{setPadding(dp(4),0,dp(4),0);textSize=14f;maxLines=1},LinearLayout.LayoutParams(dp(54),dp(48)).apply{setMargins(dp(12),0,dp(12),0)})
+  overlay.addView(top,FrameLayout.LayoutParams(-1,dp(90),Gravity.TOP))
+  center=LinearLayout(this).apply{gravity=Gravity.CENTER}
+  center.addView(PrimioIconButton(this,"rewind",PrimioI18n.text(this,"Reculer de {n} secondes",mapOf("n" to rewind))){jump(false)},LinearLayout.LayoutParams(dp(56),dp(56)).apply{setMargins(dp(16),0,dp(16),0)})
   pause=PrimioIconButton(this,"pause",tr("Lecture ou pause")){command("cycle","pause");showControls()}
-  center.addView(pause,LinearLayout.LayoutParams(dp(58),dp(54)))
-  center.addView(button("+ $forward",PrimioI18n.text(this,"Avancer de {n} secondes",mapOf("n" to forward))){jump(true)}.apply{setPadding(dp(4),0,dp(4),0);textSize=14f;maxLines=1},LinearLayout.LayoutParams(dp(54),dp(48)).apply{setMargins(dp(12),0,dp(12),0)})
+  center.addView(pause,LinearLayout.LayoutParams(dp(64),dp(64)))
+  center.addView(PrimioIconButton(this,"forward",PrimioI18n.text(this,"Avancer de {n} secondes",mapOf("n" to forward))){jump(true)},LinearLayout.LayoutParams(dp(56),dp(56)).apply{setMargins(dp(16),0,dp(16),0)})
   overlay.addView(center,FrameLayout.LayoutParams(-1,dp(92),Gravity.CENTER))
-  val bottom=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(28),dp(16),dp(28),dp(20));background=GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,intArrayOf(Color.TRANSPARENT,0xdd000000.toInt()))}
+  val bottom=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(28),dp(16),dp(28),dp(20))}
   val labels=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL;setPadding(dp(14),0,dp(14),0)}
   time=text("00:00",13f);remaining=text("",12f)
+  for(label in listOf(time,remaining))label.setShadowLayer(dp(2).toFloat(),0f,dp(1).toFloat(),0xee000000.toInt())
   time.maxLines=1;remaining.maxLines=1
   labels.addView(time,LinearLayout.LayoutParams(0,-2,1f));labels.addView(remaining,LinearLayout.LayoutParams(-2,-2));bottom.addView(labels)
   previewPanel=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;background=PrimioStyle.glass(this@PlayerActivity,12);visibility=View.GONE;setPadding(dp(6),dp(6),dp(6),dp(6))}
@@ -122,19 +129,19 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   previewTime=text("",13f).apply{gravity=Gravity.CENTER};previewPanel.addView(previewTime);preview=PrimioPreview(options,previewImage)
   overlay.addView(previewPanel,FrameLayout.LayoutParams(dp(172),dp(124),Gravity.TOP or Gravity.START))
   seek=PrimioTimeline(this).apply{onSeek={fraction,done->dragging=!done;handler.removeCallbacks(hide);time.text=format(duration*fraction)+" / "+format(duration);if(done){preview.hide();previewPanel.visibility=View.GONE;command("seek",(duration*fraction).toString(),"absolute");showControls()}else if(duration>0){showSeekPreview(fraction)}}}
-  bottom.addView(seek,LinearLayout.LayoutParams(-1,dp(32)))
-  val playerActions=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL}
-  playerActions.addView(button(tr("Changer de source")){requestEpisode(options.optString("currentVideoId"),false)},LinearLayout.LayoutParams(-2,dp(44)))
+  bottom.addView(seek,LinearLayout.LayoutParams(-1,dp(32)).apply{bottomMargin=dp(12)})
+  playerActions=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL}
+  playerActions.addView(PrimioIconButton(this,"source",tr("Source")){requestEpisode(options.optString("currentVideoId"),false)},LinearLayout.LayoutParams(dp(48),dp(48)))
   playerActions.addView(View(this),LinearLayout.LayoutParams(0,1,1f))
-  playerActions.addView(button(tr("Vitesse")){val dialog=PrimioSheet(this,tr("Vitesse de lecture"));sheet=dialog;dialog.setOnDismissListener{sheet=null;showControls()};listOf(0.5,0.75,1.0,1.25,1.5,1.75,2.0).forEach{speed->dialog.option("${speed}×",false){command("set","speed",speed.toString());dialog.dismiss()}};dialog.show()},LinearLayout.LayoutParams(-2,dp(44)).apply{rightMargin=dp(12)})
-  playerActions.addView(button("Audio · ST",tr("Audio et sous-titres")){tracks()},LinearLayout.LayoutParams(-2,dp(44)))
+  playerActions.addView(PrimioIconButton(this,"speed",tr("Vitesse")){val dialog=PrimioSheet(this,tr("Vitesse de lecture"));sheet=dialog;dialog.setOnDismissListener{sheet=null;showControls()};listOf(0.5,0.75,1.0,1.25,1.5,1.75,2.0).forEach{speed->dialog.option("${speed}×",false){command("set","speed",speed.toString());dialog.dismiss()}};dialog.show()},LinearLayout.LayoutParams(dp(48),dp(48)).apply{rightMargin=dp(12)})
+  playerActions.addView(PrimioIconButton(this,"subtitles",tr("Audio et sous-titres")){tracks()},LinearLayout.LayoutParams(dp(48),dp(48)))
   bottom.addView(playerActions)
   overlay.addView(bottom,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
   loading=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;contentDescription=tr("Chargement de la vidéo")}
   val artwork=ImageView(this).apply{setImageResource(R.drawable.primio_brand);scaleType=ImageView.ScaleType.FIT_CENTER}
   loading.addView(artwork,LinearLayout.LayoutParams(dp(140),dp(80)))
   loadingLabel=text(options.optString("title","Primio"),13f).apply{gravity=Gravity.CENTER;maxLines=2;setPadding(dp(8),dp(10),dp(8),0)};loading.addView(loadingLabel)
-  root.addView(loading,FrameLayout.LayoutParams(dp(240),-2,Gravity.CENTER))
+  root.addView(loading,FrameLayout.LayoutParams(min(dp(460),(resources.displayMetrics.widthPixels*.7f).toInt()),-2,Gravity.CENTER))
   buffering=text("···",22f).apply{visibility=View.GONE;contentDescription=tr("Chargement")};root.addView(buffering,FrameLayout.LayoutParams(dp(48),dp(40),Gravity.BOTTOM or Gravity.START).apply{leftMargin=dp(24);bottomMargin=dp(140)})
   breathing=android.animation.ObjectAnimator.ofFloat(loading,View.ALPHA,.35f,1f).apply{duration=1500;repeatMode=android.animation.ValueAnimator.REVERSE;repeatCount=android.animation.ValueAnimator.INFINITE;if(!options.optBoolean("reduceMotion"))start()}
   loadLogo(artwork,options.optString("logo"))
@@ -161,12 +168,13 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
    override fun onScale(d:ScaleGestureDetector):Boolean{scale*=d.scaleFactor;if(scale>1.12f&&!fillScreen){fillScreen=true;command("set","panscan","1");feedback(tr("Remplir l’écran"))}else if(scale<.88f&&fillScreen){fillScreen=false;command("set","panscan","0");feedback(tr("Ajuster à l’écran"))};return true}
   })
   var startVolume=0;var startBrightness=0.5f;var vertical=false
+  var downX=0f;var downY=0f;var downTime=0L;var startPosition=0.0
   val detector=GestureDetector(this,object:GestureDetector.SimpleOnGestureListener(){
    override fun onDown(e:MotionEvent):Boolean {startVolume=audio.getStreamVolume(AudioManager.STREAM_MUSIC);startBrightness=window.attributes.screenBrightness.takeIf{it>=0}?:0.5f;vertical=false;return true}
-   override fun onSingleTapConfirmed(e:MotionEvent):Boolean{if(overlay.visibility==View.VISIBLE)overlay.visibility=View.GONE else showControls();return true}
+   override fun onSingleTapConfirmed(e:MotionEvent):Boolean{if(scrubbing)return true;if(overlay.visibility==View.VISIBLE)overlay.visibility=View.GONE else showControls();return true}
    override fun onDoubleTap(e:MotionEvent):Boolean{jump(e.x>root.width/2);return true}
    override fun onScroll(first:MotionEvent?,e:MotionEvent,dx:Float,dy:Float):Boolean {
-    if(first==null)return false
+    if(first==null||scrubbing)return false
     val delta=first.y-e.y
     if(!vertical&&(abs(delta)<dp(16)||abs(delta)<abs(e.x-first.x)))return true
     vertical=true;handler.removeCallbacks(hide);val change=delta/root.height.coerceAtLeast(1)*1.4f
@@ -174,9 +182,39 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
     else{val max=audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);val volume=(startVolume+change*max).roundToInt().coerceIn(0,max);audio.setStreamVolume(AudioManager.STREAM_MUSIC,volume,0);feedback("♫  Volume ${(volume*100f/max.coerceAtLeast(1)).roundToInt()} %")};return true
    }
   })
-  layer.setOnTouchListener{_,event->pinch.onTouchEvent(event);if(event.pointerCount>1||pinching){if(event.actionMasked==MotionEvent.ACTION_UP||event.actionMasked==MotionEvent.ACTION_CANCEL)pinching=false;true}else{val handled=detector.onTouchEvent(event);if(vertical&&(event.actionMasked==MotionEvent.ACTION_UP||event.actionMasked==MotionEvent.ACTION_CANCEL))showControls();handled}}
+  detector.setIsLongpressEnabled(false)
+  layer.setOnTouchListener{_,event->
+   if(event.actionMasked==MotionEvent.ACTION_DOWN){downX=event.x;downY=event.y;downTime=event.eventTime;startPosition=position}
+   pinch.onTouchEvent(event)
+   if(event.pointerCount>1||pinching){
+    if(scrubbing)endScrub(false)
+    if(event.actionMasked==MotionEvent.ACTION_UP||event.actionMasked==MotionEvent.ACTION_CANCEL)pinching=false
+    true
+   }else{
+    val dx=event.x-downX;val dy=event.y-downY
+    if(event.actionMasked==MotionEvent.ACTION_MOVE&&!scrubbing&&!vertical&&loaded&&duration>0&&event.eventTime-downTime>=350&&abs(dx)>dp(12)&&abs(dx)>abs(dy)*1.5f){
+     scrubbing=true;dragging=true;scrubWasPaused=last.optBoolean("paused");command("set","pause","yes")
+     top.visibility=View.INVISIBLE;center.visibility=View.INVISIBLE;playerActions.visibility=View.INVISIBLE;remaining.visibility=View.INVISIBLE
+     skipButton.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;skipCountdown.visibility=View.GONE;gestureLabel.visibility=View.GONE
+     preview.hide();previewPanel.visibility=View.GONE;overlay.visibility=View.VISIBLE;handler.removeCallbacks(hide)
+     val cancel=MotionEvent.obtain(event);cancel.action=MotionEvent.ACTION_CANCEL;detector.onTouchEvent(cancel);cancel.recycle()
+    }
+    if(scrubbing){
+     scrubTarget=(startPosition+dx/dp(8).coerceAtLeast(1)).roundToInt().toDouble().coerceIn(0.0,(duration-0.1).coerceAtLeast(0.0))
+     seek.fraction=(scrubTarget/duration).toFloat();time.text=format(scrubTarget)+" / "+format(duration)
+     if(event.actionMasked==MotionEvent.ACTION_UP||event.actionMasked==MotionEvent.ACTION_CANCEL)endScrub(event.actionMasked==MotionEvent.ACTION_UP)
+     true
+    }else{detector.onTouchEvent(event);if(vertical&&(event.actionMasked==MotionEvent.ACTION_UP||event.actionMasked==MotionEvent.ACTION_CANCEL))showControls();true}
+   }
+  }
  }
- private fun jump(ahead:Boolean){val amount=if(ahead)forward else -rewind;command("seek",amount.toString(),"relative");feedback((if(ahead)"+" else "−")+PrimioI18n.text(this,"{n} secondes",mapOf("n" to abs(amount))));showControls()}
+ private fun endScrub(commit:Boolean){
+  if(!scrubbing)return
+  if(commit)command("seek",scrubTarget.toString(),"absolute+exact")
+  command("set","pause",if(scrubWasPaused)"yes" else "no")
+  scrubbing=false;dragging=false;top.visibility=View.VISIBLE;center.visibility=View.VISIBLE;playerActions.visibility=View.VISIBLE;remaining.visibility=View.VISIBLE;showControls()
+ }
+ private fun jump(ahead:Boolean){val amount=if(ahead)forward else -rewind;command("seek",amount.toString(),"relative");showControls()}
  override fun onKeyDown(keyCode:Int,event:KeyEvent):Boolean {
   if(sheet==null){when(keyCode){
    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,KeyEvent.KEYCODE_SPACE->{command("cycle","pause");showControls();return true}
@@ -201,28 +239,34 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   last=JSONObject(nativeState(handle));val nextPosition=last.optDouble("position",position);if(nextPosition!=position)stalledAt=SystemClock.elapsedRealtime();position=nextPosition;duration=last.optDouble("duration",duration)
   if(!loaded&&last.optBoolean("loaded")){loaded=true;showControls();if(options.optString("language")=="original"){val tracks=last.optJSONArray("tracks")?:JSONArray();val original=(0 until tracks.length()).map{tracks.getJSONObject(it)}.firstOrNull{it.optString("type")=="audio"&&Regex("(?i)\\boriginal\\b|\\bVO\\b").containsMatchIn(it.optString("title"))};original?.let{command("set","aid",it.optInt("id").toString())}};val subs=options.optJSONArray("subtitles")?:JSONArray();if(options.optBoolean("showSubtitles",true)&&options.optJSONObject("trackPreferences")?.optJSONObject("subtitle")==null){val preferred=options.optString("subtitleLanguage");val sub=(0 until subs.length()).map{subs.getJSONObject(it)}.firstOrNull{it.optString("lang")==preferred};if(sub!=null)selectExternalSubtitle(sub)};restoreTrackPreferences()}
   if(loaded)restoreTrackPreferences()
-  loading.visibility=if(!reportedError&&!loaded)View.VISIBLE else View.GONE;buffering.visibility=if(loaded&&!reportedError&&last.optBoolean("buffering"))View.VISIBLE else View.GONE;if(!loaded)overlay.visibility=View.GONE
+  loading.visibility=if(!reportedError&&!loaded)View.VISIBLE else View.GONE;buffering.visibility=if(loaded&&!scrubbing&&!reportedError&&last.optBoolean("buffering"))View.VISIBLE else View.GONE;if(!loaded)overlay.visibility=View.GONE
   if(!dragging){seek.fraction=if(duration>0)(position/duration).toFloat() else 0f;seek.buffered=if(duration>0)(last.optDouble("bufferedUntil",position)/duration).toFloat() else 0f;time.text=format(position)+" / "+format(duration);remaining.text=if(duration>position)"−"+format(duration-position) else ""}
   if(last.optBoolean("eof")){if(duration>0)position=duration;if(options.optBoolean("autoNextEpisode",true)&&options.optString("nextVideoId").isNotBlank())requestEpisode(options.getString("nextVideoId"),true)else{emit(true);finish()};return}
   val now=SystemClock.elapsedRealtime()
   if(!reportedError&&((!loaded&&now-openedAt>45000)||(last.optBoolean("buffering")&&now-stalledAt>60000))){reportedError=true;showError(tr("La source ne répond pas. Essayez une autre source."))}
   val segments=options.optJSONArray("skipSegments")?:JSONArray()
   seek.segments=if(duration>0)(0 until segments.length()).map{segments.getJSONObject(it)}.filter{it.optDouble("start",-1.0)>=0&&it.optDouble("end",0.0)>it.optDouble("start")&&it.optDouble("end")<=duration}.map{Pair((it.optDouble("start")/duration).toFloat(),(it.optDouble("end")/duration).toFloat())}else emptyList()
-  currentSegment=(0 until segments.length()).map{segments.getJSONObject(it)}.firstOrNull{val start=it.optDouble("start",-1.0);val end=it.optDouble("end",-1.0);val reference=it.optDouble("episodeLength",0.0);start>=0&&end>start&&end<=duration&&position>=start&&position<end&&!skipped.contains(start)&&(reference==0.0||abs(duration-reference)<max(10.0,duration*0.03))}
+  val validSegments=(0 until segments.length()).map{segments.getJSONObject(it)}.filter{val start=it.optDouble("start",-1.0);val end=it.optDouble("end",-1.0);val reference=it.optDouble("episodeLength",0.0);start>=0&&end>start&&end<=duration&&!skipped.contains(start)&&(reference==0.0||abs(duration-reference)<max(10.0,duration*0.03))}
+  currentSegment=validSegments.firstOrNull{position>=it.optDouble("start")&&position<it.optDouble("end")}
+  val upcoming=validSegments.filter{val delta=it.optDouble("start")-position;delta>0&&delta<=5}.minByOrNull{it.optDouble("start")}
   skipButton.visibility=View.GONE
-  currentSegment?.let{if(it.optString("kind")=="outro"&&options.optBoolean("autoNextEpisode",true)&&options.optString("nextVideoId").isNotBlank()){position=duration;requestEpisode(options.getString("nextVideoId"),true);return};skipButton.text=it.optString("label",tr(if(it.optString("kind")=="outro")"Passer le générique" else "Passer l’intro"));if((options.optBoolean("autoSkipIntro")&&it.optString("kind")=="intro")||(options.optBoolean("autoSkipRecap")&&it.optString("kind")=="recap")){skipped.add(it.optDouble("start"));command("seek",it.optDouble("end").toString(),"absolute")}}
+  if(!scrubbing)currentSegment?.let{
+   val kind=it.optString("kind")
+   if(kind=="outro"&&options.optBoolean("autoNextEpisode",true)&&options.optString("nextVideoId").isNotBlank()){position=duration;requestEpisode(options.getString("nextVideoId"),true);return}
+   skipButton.text=it.optString("label",tr(when(kind){"outro"->"Passer le générique";"recap"->"Passer le récap";else->"Passer l’intro"}))
+   if((options.optBoolean("autoSkipIntro")&&kind=="intro")||(options.optBoolean("autoSkipRecap")&&kind=="recap")){skipped.add(it.optDouble("start"));command("seek",it.optDouble("end").toString(),"absolute")}
+  }
   val hasNext=options.optString("nextVideoId").isNotBlank()
-  if(loaded&&hasNext&&duration>0&&((duration-position).coerceAtLeast(0.0)<=30.0||currentSegment?.optString("kind")=="outro"))nextEpisodeOffered=true
-  val nextAvailable=nextEpisodeOffered&&((duration-position).coerceAtLeast(0.0)<=30.0||currentSegment?.optString("kind")=="outro")
-  val key=if(nextAvailable)"next" else currentSegment?.let{it.optString("kind")+":"+it.optDouble("start")}?:""
-  val canShow=loaded&&!reportedError&&!last.optBoolean("buffering")&&!isInPictureInPictureMode&&sheet==null&&hasWindowFocus()
-  if(key!=countdownKey){countdownKey=key;countdownElapsed=0f;countdownTick=now}
-  if(canShow&&key.isNotEmpty())countdownElapsed+=((now-countdownTick).coerceIn(0,500))/1000f
-  countdownTick=now
+  val nextAvailable=loaded&&hasNext&&duration>0&&((duration-position).coerceAtLeast(0.0)<=30.0||currentSegment?.optString("kind")=="outro")
+  if(nextAvailable)nextEpisodeOffered=true
+  val fallbackCountdown=hasNext&&duration>35&&duration-position>30&&duration-position<=35&&currentSegment==null
+  countdownKey=upcoming?.let{it.optString("kind")+":"+it.optDouble("start")}?:if(fallbackCountdown)"next" else ""
+  countdownElapsed=when{upcoming!=null->(5-(upcoming.optDouble("start")-position)).toFloat();fallbackCountdown->(35-(duration-position)).toFloat();else->5f}.coerceIn(0f,5f)
+  val canShow=loaded&&!scrubbing&&!reportedError&&!last.optBoolean("buffering")&&!isInPictureInPictureMode&&sheet==null&&hasWindowFocus()
   skipCountdown.elapsed=countdownElapsed
-  skipCountdown.visibility=if(canShow&&key.isNotEmpty()&&countdownElapsed<5f)View.VISIBLE else View.GONE
-  nextEpisodeButton.visibility=if(canShow&&nextAvailable&&countdownElapsed>=5f)View.VISIBLE else View.GONE
-  skipButton.visibility=if(canShow&&!nextAvailable&&currentSegment!=null&&countdownElapsed>=5f)View.VISIBLE else View.GONE
+  skipCountdown.visibility=if(canShow&&countdownKey.isNotEmpty()&&currentSegment==null&&!nextAvailable)View.VISIBLE else View.GONE
+  nextEpisodeButton.visibility=if(canShow&&nextAvailable)View.VISIBLE else View.GONE
+  skipButton.visibility=if(canShow&&!nextAvailable&&currentSegment!=null)View.VISIBLE else View.GONE
   if(isInPictureInPictureMode){overlay.visibility=View.GONE;gestureLabel.visibility=View.GONE}
   if(Build.VERSION.SDK_INT>=31)setPictureInPictureParams(pipParams())
   pause.symbol=if(last.optBoolean("paused"))"play" else "pause"
@@ -232,7 +276,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   if(SystemClock.elapsedRealtime()>=nextProgress){emit(false);nextProgress=SystemClock.elapsedRealtime()+5000}
  }catch(e:Exception){loadingLabel.text="Connexion au lecteur…"}}
  private fun format(seconds:Double):String {val n=seconds.toInt().coerceAtLeast(0);return if(n>=3600)String.format(Locale.ROOT,"%d:%02d:%02d",n/3600,n/60%60,n%60)else String.format(Locale.ROOT,"%02d:%02d",n/60,n%60)}
- private fun showControls(){if(isInPictureInPictureMode||!loaded||last.optBoolean("buffering")||reportedError)return;overlay.visibility=View.VISIBLE;handler.removeCallbacks(hide);handler.postDelayed(hide,4500)}
+ private fun showControls(){if(scrubbing||isInPictureInPictureMode||!loaded||last.optBoolean("buffering")||reportedError)return;overlay.visibility=View.VISIBLE;handler.removeCallbacks(hide);handler.postDelayed(hide,4500)}
  private fun emit(closed:Boolean){
   val payload=JSONObject().put("context",options.optJSONObject("context")?:JSONObject()).put("position",position).put("duration",duration).put("updatedAt",System.currentTimeMillis()).put("closed",closed).put("requestedVideoId",requestedVideoId).put("actionId",actionId).put("autoPlay",autoPlay)
   if(duration>0&&position.isFinite())try{PrimioStore.write(this,"playerProgress",payload.toString())}catch(e:Exception){android.util.Log.e("PrimioPlayer","Progress persistence failed",e)}
@@ -253,9 +297,16 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
       val bounds=android.graphics.BitmapFactory.Options().apply{inJustDecodeBounds=true}
       android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,bounds)
       val decoding=android.graphics.BitmapFactory.Options().apply{inSampleSize=1};while(max(bounds.outWidth,bounds.outHeight)/decoding.inSampleSize>1024)decoding.inSampleSize*=2
-      val bitmap=android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,decoding);if(bitmap!=null)runOnUiThread{if(!isFinishing&&!isDestroyed){view.setImageBitmap(bitmap);loadingLabel.visibility=View.GONE}}}}}finally{connection.disconnect()}
+      val bitmap=android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,decoding);val trimmed=bitmap?.let{trimLogo(it)};if(trimmed!=null)runOnUiThread{if(!isFinishing&&!isDestroyed){view.setImageBitmap(trimmed);view.layoutParams=LinearLayout.LayoutParams(-1,min(dp(190),(resources.displayMetrics.heightPixels*.4f).toInt()));loadingLabel.visibility=View.GONE}}}}}finally{connection.disconnect()}
    }catch(e:Exception){if(BuildConfig.DEBUG)android.util.Log.d("PrimioPlayer","Content logo unavailable: "+e.javaClass.simpleName)}
   }.start()
+ }
+ private fun trimLogo(bitmap:android.graphics.Bitmap):android.graphics.Bitmap{
+  if(!bitmap.hasAlpha())return bitmap
+  var left=bitmap.width;var top=bitmap.height;var right=-1;var bottom=-1
+  val pixels=IntArray(bitmap.width*bitmap.height);bitmap.getPixels(pixels,0,bitmap.width,0,0,bitmap.width,bitmap.height)
+  for(y in 0 until bitmap.height)for(x in 0 until bitmap.width)if(Color.alpha(pixels[y*bitmap.width+x])>16){left=min(left,x);top=min(top,y);right=max(right,x);bottom=max(bottom,y)}
+  return if(right>=left&&bottom>=top)android.graphics.Bitmap.createBitmap(bitmap,left,top,right-left+1,bottom-top+1)else bitmap
  }
  private fun requestEpisode(id:String,automatic:Boolean){
   if(requestedVideoId.isNotBlank()||id.isBlank())return
@@ -396,7 +447,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
  private var lifecycleStopped=false
  override fun onStart(){super.onStart();lifecycleStopped=false}
  override fun onStop(){super.onStop();lifecycleStopped=true;if(isInPictureInPictureMode){command("set","pause","yes");emit(false)}}
- override fun onPause(){if(isInPictureInPictureMode){emit(false);super.onPause();return};resumeAfterPause=handle!=0L&&!last.optBoolean("paused");command("set","pause","yes");emit(false);super.onPause()}
+ override fun onPause(){endScrub(false);if(isInPictureInPictureMode){emit(false);super.onPause();return};resumeAfterPause=handle!=0L&&!last.optBoolean("paused");command("set","pause","yes");emit(false);super.onPause()}
  override fun onResume(){super.onResume();if(resumeAfterPause){command("set","pause","no");resumeAfterPause=false}}
  private fun showSeekPreview(fraction:Float){
   previewTime.text=format(duration*fraction)

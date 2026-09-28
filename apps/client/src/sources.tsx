@@ -1,7 +1,7 @@
 import { LanguageFlag } from './language-flag'
 import { languageName } from './i18n'
 import { useState } from 'react'
-import { Cast, Download, Play } from './icons'
+import { Cast, Download, Play, LoaderCircle } from './icons'
 import { Choice } from './components'
 import { t } from './i18n'
 import type { Stream, Settings } from './types'
@@ -123,6 +123,8 @@ function SourceLanguages({ stream }: { stream: Stream }) {
 }
 export function Sources({
   items,
+  groups,
+  loading = false,
   busy,
   filters,
   onFiltersChange,
@@ -131,6 +133,8 @@ export function Sources({
   onCast,
 }: {
   items: Stream[]
+  groups?: import('./addons').StreamResults['groups']
+  loading?: boolean
   busy: boolean
   filters?: Settings['sourceFilters']
   onFiltersChange?: (filters: NonNullable<Settings['sourceFilters']>) => void
@@ -138,7 +142,7 @@ export function Sources({
   onDownload: (s: Stream) => void
   onCast?: (s: Stream) => void
 }) {
-  const providers = [
+  const providers = groups?.map(g => [g.key, g.name] as [string,string]) ?? [
     ...new Map(
       items.map((s) => [s.addonKey ?? s.addonName ?? 'unknown', s.addonName ?? t('Source')]),
     ).entries(),
@@ -201,6 +205,7 @@ export function Sources({
             }}
           >
             {name}
+            {loading && groups?.find(g => g.key === id)?.pending && <LoaderCircle size={14} className="spin" />}
             <span className="source-count">
               {id === 'all'
                 ? items.length
@@ -248,7 +253,7 @@ export function Sources({
       </div>
       <div className="source-results" aria-live="polite">
         {visible.map(({ stream: s, quality, format, bytes }, i) => (
-          <article key={i} className="compact-source glass">
+          <article key={s.sourceKey ?? [s.addonKey, s.url, s.infoHash, s.title, i].join('|')} className="compact-source glass">
             <button className="source-play" disabled={busy} onClick={() => onPlay(s)}>
               <span className="source-copy">
                 <strong>{s.name || t('Source')}</strong>
@@ -284,7 +289,7 @@ export function Sources({
             )}
           </article>
         ))}
-        {!visible.length && (
+        {!visible.length && !loading && (
           <div>
             <p className="muted">{t('Aucune source pour ces filtres.')}</p>
             <button

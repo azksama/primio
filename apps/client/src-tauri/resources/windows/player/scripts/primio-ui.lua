@@ -15,9 +15,10 @@ overlay.z = 1000
 local width, height, scale = 1280, 720, 1
 local hits, panel, scroll, last_move, loaded, logo_visible = {}, nil, 0, mp.get_time(), false, false
 local preview_visible=false
+local press,scrub=nil,nil
 local preview_target,preview_x=0,0
 local next_offer=false
-local countdown_key,countdown_elapsed,countdown_tick="",0,mp.get_time()
+local countdown_key,countdown_elapsed="",0
 local skipped_segments={}
 local season, forced = nil, config.forceSubtitleStyle == true
 local function escape(s) return tostring(s or ''):gsub('\\','\\e'):gsub('{','\\{'):gsub('}','\\}'):gsub('[\r\n]+',' ') end
@@ -46,10 +47,32 @@ local function button(a,x,y,w,h,text,action,active)
     hits[#hits+1]={x=x,y=y,w=w,h=h,action=action}
 end
 local function icon(a,x,y,kind)
-    local half=kind=='back' and 16 or 20
+    local half=(kind=='play' or kind=='pause') and 20 or 14
     for _,path in ipairs(icons[kind] or icons.play) do
         a:new_event();a:append(string.format('{\\an7\\pos(%f,%f)\\1c&HF3F2E9&\\bord0\\shad0\\p1}%s{\\p0}',x-half,y-half,path))
     end
+end
+local function icon_button(a,x,y,size,kind,action)
+    rect(a,x,y,size,size,size/2,'343832','80',1)
+    rect(a,x+2,y+2,size-4,size-4,(size-4)/2,'D7DBD1','F5',0.5)
+    icon(a,x+size/2,y+size/2,kind)
+    hits[#hits+1]={x=x,y=y,w=size,h=size,action=action}
+end
+local function title(a,x,y,text,available,maxsize)
+    local chars={};for c in tostring(text):gmatch('[%z\1-\127\194-\244][\128-\191]*')do chars[#chars+1]=c end
+    -- Conservative glyph width also accommodates Japanese and Chinese names.
+    local units=0;for _,c in ipairs(chars)do units=units+(#c>1 and 1 or .55)end
+    local size=math.max(16,math.min(maxsize,math.floor(available/math.max(1,units))))
+    local lines=math.max(1,math.ceil(units*size/available))
+    local count=math.ceil(#chars/lines)
+    for i=1,lines do label(a,x,y+(i-(lines+1)/2)*size*1.12,table.concat(chars,'',(i-1)*count+1,math.min(#chars,i*count)),size,4,nil,'Cormorant Garamond Light')end
+end
+local function end_scrub(commit)
+    if scrub then
+        if commit then mp.commandv('seek',scrub.target,'absolute+exact')end
+        mp.set_property_native('pause',scrub.paused);scrub=nil
+    end
+    press=nil;last_move=mp.get_time()
 end
 local function open(name) panel=name;scroll=0;last_move=mp.get_time() end
 local function hide_logo() if logo_visible then mp.commandv('overlay-remove',42);logo_visible=false end end
@@ -59,11 +82,11 @@ local function loading(a)
     local frame=math.floor(pulse*11)
     local path=(config.logoPath or '')..'/'..frame..'.bgra'
     local info=utils.file_info(path)
-    if info and info.size==320*128*4 then
-        mp.commandv('overlay-add',42,math.floor(width*scale/2-160),math.floor(height*scale/2-64),path,0,'bgra',320,128,1280)
+    if info and info.size==640*256*4 then
+        mp.commandv('overlay-add',42,math.floor(width*scale/2-320),math.floor(height*scale/2-128),path,0,'bgra',640,256,2560)
         logo_visible=true
     else
-        hide_logo();label(a,width/2,height/2,shorten(config.title or 'Primio',60),36,5,string.format('%02X%02X%02X',160+80*pulse,160+80*pulse,160+80*pulse),'Cormorant Garamond Light')
+        hide_logo();title(a,width*.2,height/2,config.title or 'Primio',width*.6,48)
     end
 end
 local function set_style(name,value)
@@ -162,16 +185,16 @@ local function enter_pip()
     mp.set_property('geometry','480x270-24-24');last_move=mp.get_time();return true
 end
 local function leave_player() if pip or not enter_pip() then mp.commandv('quit') end end
-mp.observe_property('focused','bool',function(_,focused)if focused==false then enter_pip()end end)
+mp.observe_property('focused','bool',function(_,focused)if focused==false then end_scrub(false);enter_pip()end end)
 mp.observe_property('window-minimized','bool',function(_,minimized)if minimized then enter_pip()end end)
 mp.add_forced_key_binding('MBTN_LEFT_DBL','primio-restore',restore_player)
 local function render()
     local rw,rh=mp.get_osd_size();if rw<=0 or rh<=0 then return end
     scale=pip and 1 or rh/720;width=rw/scale;height=pip and rh or 720;hits={}
     local a=assdraw.ass_new()
-    local buffering=not loaded or mp.get_property_native('paused-for-cache',false)
-    if preview_visible and (buffering or panel or pip or (mp.get_time()-last_move>=3 and not mp.get_property_native('pause'))) then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
-    mp.set_property_native('user-data/primio/ui',{loading=buffering,panel=panel or '',nextOffered=next_offer,fullscreen=mp.get_property_native('fullscreen'),pip=pip})
+    local buffering=not loaded or (not scrub and mp.get_property_native('paused-for-cache',false))
+    if preview_visible and (buffering or panel or pip or scrub or (mp.get_time()-last_move>=3 and not mp.get_property_native('pause'))) then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
+    mp.set_property_native('user-data/primio/ui',{loading=buffering,panel=panel or '',nextOffered=next_offer,fullscreen=mp.get_property_native('fullscreen'),pip=pip,scrubbing=scrub~=nil,seekTarget=scrub and scrub.target or nil})
     if pip then
         hide_logo()
         if mp.get_time()-last_move<3 then
@@ -184,17 +207,21 @@ local function render()
     else
         hide_logo()
         if panel then render_panel(a)
-        elseif mp.get_time()-last_move<3 or mp.get_property_native('pause') then
-            button(a,24,24,48,48,'',leave_player);icon(a,48,48,'back')
-            label(a,92,48,shorten(config.title or mp.get_property('media-title','Primio'),math.floor((width-285)/17)),30,4,nil,'Cormorant Garamond Light')
-            if #(config.episodes or {})>0 then button(a,width-168,24,144,48,tr('Episodes','Épisodes'),function()open('episodes')end)end
-            button(a,width/2-160,height/2-30,90,60,'− '..(config.seekBackward or 15),function()mp.commandv('seek',-(config.seekBackward or 15),'relative')end)
-            button(a,width/2-36,height/2-36,72,72,'',function()mp.commandv('cycle','pause')end);icon(a,width/2,height/2,mp.get_property_native('pause') and 'play' or 'pause')
-            button(a,width/2+70,height/2-30,90,60,'+ '..(config.seekForward or 30),function()mp.commandv('seek',config.seekForward or 30,'relative')end)
+        elseif scrub or mp.get_time()-last_move<3 or mp.get_property_native('pause') then
+            if not scrub then
+                icon_button(a,24,24,48,'back',leave_player)
+                icon_button(a,84,24,48,'close',function()mp.commandv('quit')end)
+                title(a,152,48,config.title or mp.get_property('media-title','Primio'),width-340,34)
+                if #(config.episodes or {})>0 then button(a,width-168,24,144,48,tr('Episodes','Épisodes'),function()open('episodes')end)end
+                icon_button(a,width/2-148,height/2-30,60,'rewind',function()mp.commandv('seek',-(config.seekBackward or 15),'relative')end)
+                icon_button(a,width/2-36,height/2-36,72,mp.get_property_native('pause') and 'play' or 'pause',function()mp.commandv('cycle','pause')end)
+                icon_button(a,width/2+88,height/2-30,60,'forward',function()mp.commandv('seek',config.seekForward or 30,'relative')end)
+            end
             local pos,duration=mp.get_property_number('time-pos',0),mp.get_property_number('duration',0)
-            label(a,28,height-88,time(pos)..' / '..time(duration),17,1)
-            label(a,width-28,height-88,'−'..time(duration-pos),17,3)
-            local y,w=height-80,width-56;local fill=duration>0 and math.min(1,pos/duration)*w or 0
+            if scrub then pos=scrub.target end
+            label(a,28,height-108,time(pos)..' / '..time(duration),17,1)
+            if not scrub then label(a,width-28,height-108,'−'..time(duration-pos),17,3)end
+            local y,w=height-100,width-56;local fill=duration>0 and math.min(1,pos/duration)*w or 0
             rect(a,28,y,w,7,3,'9EA18F','A0');if fill>1 then rect(a,28,y-2,fill,11,5,'D4DDC2','C0',2);rect(a,28,y,fill,7,3,'DBDFC7','15')end
             rect(a,15+fill,y-9.5,26,26,13,'EAE8D1','C0')
             rect(a,19+fill,y-5.5,18,18,9,'FFFFFF','00',1)
@@ -204,65 +231,88 @@ local function render()
                 local px=math.max(60,math.min(width-60,preview_x))
                 glass(a,px-44,y-45,88,30,false);label(a,px,y-30,time(preview_target),17,5)
             end
-            button(a,28,height-54,190,40,tr('Change source','Changer de source'),function()mp.commandv('script-message-to','primio','episode',config.currentVideoId)end)
-            button(a,width-318,height-54,104,40,tostring(mp.get_property_number('speed',1))..'×',function()open('speed')end)
-            button(a,width-200,height-54,172,40,tr('Audio · Subtitles','Audio · Sous-titres'),function()open('tracks')end)
+            if not scrub then
+                icon_button(a,28,height-64,48,'source',function()mp.commandv('script-message-to','primio','episode',config.currentVideoId)end)
+                icon_button(a,width-136,height-64,48,'speed',function()open('speed')end)
+                icon_button(a,width-76,height-64,48,'subtitles',function()open('tracks')end)
+            end
         end
     end
     local pos,duration=mp.get_property_number('time-pos',0),mp.get_property_number('duration',0)
-    local segment
+    local segment,upcoming
     for _,s in ipairs(config.skipSegments or {}) do
-        if s.start>=0 and s['end']>s.start and s['end']<=duration and pos>=s.start and pos<s['end'] and not skipped_segments[s.start] and
-            (not s.episodeLength or s.episodeLength==0 or math.abs(duration-s.episodeLength)<math.max(10,duration*.03)) then segment=s;break end
-    end
-    local next_available=next_offer and (duration-pos<=30 or (segment and segment.kind=='outro'))
-    local key=next_available and 'next' or segment and (segment.kind..':'..segment.start) or ''
-    local now=mp.get_time()
-    if key~=countdown_key then countdown_key=key;countdown_elapsed=0;countdown_tick=now end
-    if not buffering and not panel and not pip and key~='' then
-        countdown_elapsed=countdown_elapsed+math.min(.25,now-countdown_tick)
-        local x,y=width-76,height-180
-        if countdown_elapsed<5 then
-            glass(a,x,y,48,48,false)
-            a:new_event();a:append('{\\an7\\pos(0,0)\\bord0\\shad0\\1c&HF3F2E9&}');a:draw_start()
-            local sweep=math.max(1,math.ceil(90*(1-countdown_elapsed/5)))
-            for i=1,sweep do
-                local from=-math.pi/2+(i-1)/90*2*math.pi;local to=-math.pi/2+i/90*2*math.pi
-                a:move_to(x+24+20*math.cos(from),y+24+20*math.sin(from))
-                a:line_to(x+24+22*math.cos(from),y+24+22*math.sin(from))
-                a:line_to(x+24+22*math.cos(to),y+24+22*math.sin(to))
-                a:line_to(x+24+20*math.cos(to),y+24+20*math.sin(to))
-            end
-            a:draw_stop();label(a,x+24,y+24,tostring(math.ceil(5-countdown_elapsed)),18,5)
-        elseif next_available then
-            button(a,width-248,y,220,48,tr('Next episode','Épisode suivant'),function()next_offer=false;mp.commandv('script-message-to','primio','next')end)
-        elseif segment then
-            button(a,width-248,y,220,48,segment.kind=='outro' and tr('Skip credits','Passer le générique') or tr('Skip intro','Passer l’intro'),function()skipped_segments[segment.start]=true;mp.commandv('seek',segment['end'],'absolute+exact')end)
+        if s.start>=0 and s['end']>s.start and s['end']<=duration and not skipped_segments[s.start] and
+            (not s.episodeLength or s.episodeLength==0 or math.abs(duration-s.episodeLength)<math.max(10,duration*.03)) then
+            if pos>=s.start and pos<s['end'] then segment=segment or s
+            elseif pos<s.start and s.start-pos<=5 and (not upcoming or s.start<upcoming.start) then upcoming=s end
         end
     end
-    countdown_tick=now
-    mp.set_property_native('user-data/primio/countdown',{key=key,elapsed=countdown_elapsed,visible=key~='' and countdown_elapsed<5 and not buffering and not panel and not pip})
+    local has_next=config.nextVideoId and config.nextVideoId~=''
+    local next_available=has_next and (duration-pos<=30 or (segment and segment.kind=='outro'))
+    local fallback=has_next and duration>35 and duration-pos>30 and duration-pos<=35 and not segment
+    countdown_key=upcoming and (upcoming.kind..':'..upcoming.start) or fallback and 'next' or ''
+    countdown_elapsed=upcoming and 5-(upcoming.start-pos) or fallback and 35-(duration-pos) or 5
+    local can_show=not buffering and not panel and not pip and not scrub
+    local warning=can_show and countdown_key~='' and not segment and not next_available
+    local x,y=width-76,height-180
+    if warning then
+        glass(a,x,y,48,48,false)
+        a:new_event();a:append('{\\an7\\pos(0,0)\\bord0\\shad0\\1c&HF3F2E9&}');a:draw_start()
+        local sweep=math.max(1,math.ceil(90*(1-countdown_elapsed/5)))
+        for i=1,sweep do
+            local from=-math.pi/2+(i-1)/90*2*math.pi;local to=-math.pi/2+i/90*2*math.pi
+            a:move_to(x+24+20*math.cos(from),y+24+20*math.sin(from));a:line_to(x+24+22*math.cos(from),y+24+22*math.sin(from))
+            a:line_to(x+24+22*math.cos(to),y+24+22*math.sin(to));a:line_to(x+24+20*math.cos(to),y+24+20*math.sin(to))
+        end
+        a:draw_stop();label(a,x+24,y+24,tostring(math.max(1,math.ceil(5-countdown_elapsed))),18,5)
+    elseif can_show and next_available then
+        button(a,width-248,y,220,48,tr('Next episode','Épisode suivant'),function()next_offer=false;mp.commandv('script-message-to','primio','next')end)
+    elseif can_show and segment then
+        button(a,width-248,y,220,48,segment.label or (segment.kind=='outro' and tr('Skip credits','Passer le générique') or segment.kind=='recap' and tr('Skip recap','Passer le récap') or tr('Skip intro','Passer l’intro')),function()skipped_segments[segment.start]=true;mp.commandv('seek',segment['end'],'absolute+exact')end)
+    end
+    mp.set_property_native('user-data/primio/countdown',{key=countdown_key,elapsed=countdown_elapsed,visible=warning,segment=segment and segment.kind or '',position=pos})
     overlay.res_x=width;overlay.res_y=height;overlay.data=a.text;overlay:update()
 end
 mp.add_forced_key_binding('mouse_move','primio-move',function()
  last_move=mp.get_time()
  local mx,my=mp.get_mouse_pos();local vx,vy=mx/scale,my/scale
- if not panel and loaded and vy>=height-96 and vy<=height-52 and vx>=28 and vx<=width-28 then
+ if press and not press.hit and loaded and not panel and not pip then
+  local dx,dy=vx-press.x,vy-press.y
+  if not scrub and mp.get_time()-press.at>=.35 and math.abs(dx)>12 and math.abs(dx)>math.abs(dy)*1.5 then
+   scrub={start=press.position,target=press.position,paused=mp.get_property_native('pause')};mp.set_property_native('pause',true)
+  end
+  if scrub then
+   scrub.target=math.max(0,math.min(math.max(0,mp.get_property_number('duration',0)-.1),math.floor(scrub.start+dx/8+.5)))
+   if preview_visible then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
+   render();return
+  end
+ end
+ if not panel and loaded and vy>=height-116 and vy<=height-84 and vx>=28 and vx<=width-28 then
   local duration=mp.get_property_number('duration',0)
   if duration>0 then
    local target=math.max(0,math.min(1,(vx-28)/(width-56)))*duration
-   mp.commandv('script-message-to','primio_preview','preview',target,math.max(0,math.min(width*scale-240,mx-120)),math.max(0,(height-136)*scale-135))
+   mp.commandv('script-message-to','primio_preview','preview',target,math.max(0,math.min(width*scale-240,mx-120)),math.max(0,(height-156)*scale-135))
    preview_target=target;preview_x=vx;preview_visible=true
   end
  elseif preview_visible then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
 end)
 mp.add_key_binding('z','primio-fit',function()local fill=mp.get_property_number('panscan',0)==0;mp.set_property_number('panscan',fill and 1 or 0);mp.osd_message(fill and tr('Fill screen','Remplir l’écran') or tr('Fit screen','Ajuster à l’écran'))end)
-mp.add_forced_key_binding('MBTN_LEFT','primio-click',function()
+mp.add_forced_key_binding('MBTN_LEFT','primio-click',function(event)
     local mx,my=mp.get_mouse_pos();mx=mx/scale;my=my/scale
-    for _,hit in ipairs(hits)do if mx>=hit.x and mx<=hit.x+hit.w and my>=hit.y and my<=hit.y+hit.h then hit.action(mx,my);last_move=mp.get_time();render();return end end
-    if not panel then last_move=mp.get_time()end
-end)
-mp.add_forced_key_binding('ESC','primio-close',function()if panel then panel=nil else leave_player()end end)
+    local function hit_at()
+        for _,hit in ipairs(hits)do if mx>=hit.x and mx<=hit.x+hit.w and my>=hit.y and my<=hit.y+hit.h then return hit end end
+    end
+    if event.event=='down' then
+        press={x=mx,y=my,at=mp.get_time(),position=mp.get_property_number('time-pos',0),hit=hit_at()}
+    elseif event.event=='up' then
+        if scrub then end_scrub(true)
+        elseif press then local hit=hit_at();if hit and press.hit and math.abs(mx-press.x)<12 and math.abs(my-press.y)<12 then hit.action(mx,my)end;press=nil end
+        last_move=mp.get_time();render()
+    elseif event.event=='press' then
+        local hit=hit_at();if hit then hit.action(mx,my)end;last_move=mp.get_time();render()
+    end
+end,{complex=true})
+mp.add_forced_key_binding('ESC','primio-close',function()if scrub then end_scrub(false)elseif panel then panel=nil else leave_player()end end)
 mp.add_forced_key_binding('WHEEL_UP','primio-wheel-up',function()if panel then scroll=math.max(0,scroll-1)else mp.commandv('add','volume',5)end end)
 mp.add_forced_key_binding('WHEEL_DOWN','primio-wheel-down',function()if panel then scroll=scroll+1 else mp.commandv('add','volume',-5)end end)
 mp.add_key_binding('a','primio-tracks',function()open('tracks')end)

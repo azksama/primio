@@ -20,11 +20,12 @@ import { DiagnosticsPanel } from './diagnostics-panel'
 import { recordDiagnostic } from './diagnostics'
 import { useTvMode } from './tv'
 import { IntegrationsPanel } from './integrations-panel'
+import { MetadataSettings } from './metadata-settings'
 import { CastPanel, type CastTarget } from './cast-panel'
 import { useAnimeClassification } from './anime-classification'
 import { equivalentSources, rememberSource, previouslyUsedSource } from './source-preferences'
 import { PasswordField } from './password-field'
-import { CopyTitle } from './copy-title'
+import { CopyTitle, ContentLogo } from './copy-title'
 import { DialogShell } from './dialog-shell'
 import { trailerUrl } from './content'
 import { TrailerPlayer } from './trailer-player'
@@ -34,7 +35,7 @@ import { Sources } from './sources'
 import { t } from './i18n'
 import { ReleaseCalendar, NotificationCenter, useReleases, titleWatched } from './releases'
 import {
-  DiscoveryControls,
+  AdvancedFilters,
   RandomPick,
   SearchSuggestions,
   UniversalSearch,
@@ -117,7 +118,7 @@ import {
   type NativeProgress,
 } from './progress'
 import { CatalogFeed, ProgressiveList, Deferred, useDebounced } from './progressive'
-import { catalog, inspectAddon, metadata, streams, subtitles, playbackUrl } from './addons'
+import { catalog, inspectAddon, metadata, streams, subtitles, playbackUrl, type StreamResults } from './addons'
 import { api, openLink, readSecure, writeSecure, isAndroid, scrollToTop } from './platform'
 import type { Addon, Meta, Stream, UserState, Subtitle } from './types'
 
@@ -251,6 +252,7 @@ export default function App() {
     [sourceTarget, setSourceTarget] = useState<{ meta: Meta; id: string } | null>(null)
   const [sourceList, setSourceList] = useState<Stream[]>([]),
     [sourceLoading, setSourceLoading] = useState(false),
+    [sourceGroups, setSourceGroups] = useState<StreamResults['groups']>([]),
     [sourceError, setSourceError] = useState('')
   const [launching, setLaunching] = useState(false)
   const launchLock = useRef(false)
@@ -719,19 +721,26 @@ export default function App() {
   ) {
     setSourceTarget({ meta, id })
     setSourceList([])
+    setSourceGroups([])
     setSourceError('')
     setSourceLoading(true)
     const seq = ++sourceSequence.current
     try {
       const [r, fullMeta] = await Promise.all([
-        streams(catalogAddons, meta.type, id),
+        streams(catalogAddons, meta.type, id, (result) => {
+          if (seq !== sourceSequence.current) return
+          setSourceGroups(result.groups)
+          const ordered = result.groups.flatMap(group => equivalentSources(rankSources(result.items.filter(s => s.addonKey === group.key), plugins), state.settings, meta).items)
+          setSourceList(ordered)
+          setSourceLoading(result.pending > 0)
+        }),
         meta.logo ? Promise.resolve(meta) : metadata(catalogAddons, meta),
       ])
       if (seq !== sourceSequence.current) return
       meta = fullMeta
       setSourceTarget({ meta, id })
       const matching = equivalentSources(rankSources(r.items, plugins), state.settings, meta)
-      const ranked = matching.items
+      const ranked = r.groups.flatMap(group => matching.items.filter(s => s.addonKey === group.key))
       setSourceList(ranked)
       const nextStream = forcePicker
         ? undefined
@@ -750,7 +759,7 @@ export default function App() {
             : t('Ajoutez un addon de sources pour ce contenu.'),
       )
     } catch (e) {
-      setSourceError(message(e))
+      if (seq === sourceSequence.current) setSourceError(message(e))
     } finally {
       if (seq === sourceSequence.current) setSourceLoading(false)
     }
@@ -869,10 +878,14 @@ export default function App() {
         settings: { ...s.settings, sourcePreferences: remembered.sourcePreferences },
       }))
       sourceResume.current = null
+      ++sourceSequence.current
+      setSourceLoading(false)
       setSourceTarget(null)
     } catch (e) {
-      setPlayback(null)
-      setSourceError(message(e))
+      if (sequence === sourceSequence.current) {
+        setPlayback(null)
+        setSourceError(message(e))
+      }
     } finally {
       launchLock.current = false
       setLaunching(false)
@@ -1384,7 +1397,7 @@ export default function App() {
           </Empty>
         )}
       </section>
-      <RandomPick addons={catalogAddons} library={state.library} onOpen={details} />
+      <RandomPick key={token ? email : 'local'} accountId={token ? email : 'local'} onOpen={details} onConfigure={() => { setTab('integrations'); scrollToTop() }} />
       {(['movie', 'series', 'anime'] as const).map((category) => (
         <Recommendations
           key={state.activeProfileId + category}
@@ -1470,10 +1483,7 @@ export default function App() {
           />
         </div>
         <VoiceSearch onResult={setQuery} />
-        <details className="advanced-discover">
-          <summary>{t('Filtres avancés')}</summary>
-          <DiscoveryControls value={discoveryFilters} onChange={setDiscoveryFilters} />
-        </details>
+        <AdvancedFilters value={discoveryFilters} onChange={setDiscoveryFilters} />
         <div className="explorer-filters">
           <Choice
             separateLabel
@@ -1747,6 +1757,7 @@ export default function App() {
           <main className="detail">
             <div className="detail-art">
               <MediaImage src={selected.background ?? selected.poster} eager />
+              <ContentLogo src={selected.logo} title={selected.name} />
               <div className="detail-toolbar">
                 <button className="icon glass" aria-label={t('Retour')} onClick={goBack}>
                   <ArrowLeft />
@@ -2657,11 +2668,14 @@ export default function App() {
               )}
               {tab === 'diagnostics' && <DiagnosticsPanel token={token} />}
               {tab === 'integrations' && (
+                <>
+                <MetadataSettings key={token ? email : 'local'} accountId={token ? email : 'local'} />
                 <IntegrationsPanel
                   token={token}
                   profileId={state.activeProfileId}
                   prepareProfile={prepareIntegrationProfile}
                 />
+                </>
               )}
               {(tab === 'player' || tab === 'options') && (
                 <Preferences
@@ -2830,26 +2844,29 @@ export default function App() {
         >
           <p className="muted">{sourceTarget.meta.name}</p>
           {launching && (
-            <div className="loading" role="status">
+            <div className="loading source-loading" role="status">
               <LoaderCircle />
               {t('Préparation de la source…')}
             </div>
           )}
-          {sourceLoading ? (
-            <div className="loading">
+          {sourceLoading && (
+            <div className="loading source-loading" role="status">
               <LoaderCircle /> {t('Recherche des sources…')}
             </div>
-          ) : (
+          )}
+          {(
             <>
               {sourceError && (
                 <p role="status" className="muted">
                   {sourceError}
                 </p>
               )}
-              {sourceList.length ? (
+              {(sourceList.length > 0 || sourceLoading) ? (
                 <Sources
                   key={sourceTarget.id}
                   items={sourceList}
+                  groups={sourceGroups}
+                  loading={sourceLoading}
                   filters={state.settings.sourceFilters}
                   onFiltersChange={(sourceFilters) =>
                     setState((s) => ({ ...s, settings: { ...s.settings, sourceFilters } }))
@@ -2860,6 +2877,8 @@ export default function App() {
                   onCast={
                     isTauri()
                       ? (stream) => {
+                          ++sourceSequence.current
+                          setSourceLoading(false)
                           setCastTarget({
                             meta: sourceTarget.meta,
                             videoId: sourceTarget.id,

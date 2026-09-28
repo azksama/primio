@@ -46,6 +46,8 @@ import UserIcon from '@hugeicons/core-free-icons/UserIcon'
 import ViewIcon from '@hugeicons/core-free-icons/ViewIcon'
 import ViewOffSlashIcon from '@hugeicons/core-free-icons/ViewOffSlashIcon'
 import WifiDisconnected01Icon from '@hugeicons/core-free-icons/WifiDisconnected01Icon'
+import ThumbsDownIcon from '@hugeicons/core-free-icons/ThumbsDownIcon'
+import ShuffleIcon from '@hugeicons/core-free-icons/ShuffleIcon'
 
 function icon(data: IconSvgElement) {
   return forwardRef<SVGSVGElement, HugeiconsProps>((props, ref) => (
@@ -99,3 +101,5 @@ export const X = icon(Cancel01Icon)
 
 export const Heart = icon(FavouriteIcon)
 export const Star = icon(StarIcon)
+export const ThumbsDown = icon(ThumbsDownIcon)
+export const Shuffle = icon(ShuffleIcon)

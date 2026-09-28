@@ -204,11 +204,17 @@ mod tests {
         assert!(validate_media("https://user:pass@example.org").is_err());
         assert!(validate_media("https://example.org/film.m3u8").is_ok());
     }
+    #[test]
+    fn tmdb_only_accepts_read_only_metadata_paths() {
+        for path in ["authentication", "discover/movie", "discover/tv", "movie/42", "tv/2"] { assert!(tmdb_path(path)); }
+        for path in ["https://evil.example/", "//evil.example/", "movie/../account", "movie/1?api_key=x", "account/1", "movie/1/rating", "tv/"] { assert!(!tmdb_path(path)); }
+    }
 }
 
 pub async fn provider_request(operation: &str, body: Value) -> Result<Value, String> {
     let endpoint = match operation {
         "anilist" => "https://graphql.anilist.co",
+        "tmdb" => "https://api.themoviedb.org/3/",
         "stremioLogin" => "https://api.strem.io/api/login",
         "stremioAddons" => "https://api.strem.io/api/addonCollectionGet",
         "stremioLibrary" => "https://api.strem.io/api/datastoreGet",
@@ -226,11 +232,25 @@ pub async fn provider_request(operation: &str, body: Value) -> Result<Value, Str
     {
         return Err("Read-only queries required".into());
     }
-    let url = Url::parse(endpoint).map_err(|_| "Invalid provider")?;
+    let mut url = Url::parse(endpoint).map_err(|_| "Invalid provider")?;
+    if operation == "tmdb" {
+        let path = body["path"].as_str().unwrap_or("");
+        if !tmdb_path(path) { return Err("Invalid TMDB path".into()); }
+        url = url.join(path).map_err(|_| "Invalid TMDB path")?;
+        let params = body["params"].as_object().ok_or("Invalid TMDB parameters")?;
+        for (key, value) in params {
+            url.query_pairs_mut().append_pair(key, value.as_str().ok_or("Invalid TMDB value")?);
+        }
+    }
     let client = client_for(&url).await?;
-    let mut response = client
-        .post(url)
-        .json(&body)
+    let request = if operation == "tmdb" {
+        let token = body["token"].as_str().unwrap_or("");
+        if token.is_empty() || token.len() > 2048 || token.chars().any(char::is_whitespace) {
+            return Err("TMDB HTTP 401".into());
+        }
+        client.get(url).bearer_auth(token)
+    } else { client.post(url).json(&body) };
+    let mut response = request
         .send()
         .await
         .map_err(|_| "Import provider unavailable")?;
@@ -248,4 +268,9 @@ pub async fn provider_request(operation: &str, body: Value) -> Result<Value, Str
         bytes.extend_from_slice(&chunk);
     }
     serde_json::from_slice(&bytes).map_err(|_| "Invalid import response".into())
+}
+
+fn tmdb_path(path: &str) -> bool {
+    matches!(path, "authentication" | "discover/movie" | "discover/tv") ||
+        path.split_once('/').map(|(kind, id)| matches!(kind, "movie" | "tv") && !id.is_empty() && id.bytes().all(|c| c.is_ascii_digit())).unwrap_or(false)
 }

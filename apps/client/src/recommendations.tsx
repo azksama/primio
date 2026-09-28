@@ -1,4 +1,5 @@
 import { t } from './i18n'
+import { ThumbsDown } from './icons'
 import { useEffect, useState, type ReactNode } from 'react'
 import { metadata } from './addons'
 import { matchesCategory } from './preferences'
@@ -131,9 +132,11 @@ function RecommendationShelf({
             <div className="recommendation-item" key={meta.type + meta.id}>
               {renderItem(meta)}
               {reasons.length > 0 && <small>{reasons.map((r) => t(r)).join(' · ')}</small>}
-              <button className="recommendation-dismiss" onClick={() => onDismiss(meta)}>
-                {t('Je ne suis pas intéressé')}
-              </button>
+              <div className="recommendation-poster-actions">
+                <button className="recommendation-dismiss glass" aria-label={t('Je ne suis pas intéressé') + ' · ' + meta.name} title={t('Je ne suis pas intéressé')} onClick={() => onDismiss(meta)}>
+                  <ThumbsDown size={19} />
+                </button>
+              </div>
             </div>
           ))}
         </div>

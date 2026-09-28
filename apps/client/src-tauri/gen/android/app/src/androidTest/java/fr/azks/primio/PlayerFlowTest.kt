@@ -43,7 +43,7 @@ class PlayerFlowTest {
         context.getSharedPreferences("primio-settings",0).edit().putString("language",previousLanguage).commit()
     }
 
-    private fun start(position: Double = 0.0, automatic: Boolean = false, outro: Boolean = false, next: Boolean = true, multiTrack: Boolean = false, externalUrl: String = "", forceStyle: Boolean = false, previewFrame: Boolean = false, intro: Boolean = false, customFont: Boolean = false) {
+    private fun start(position: Double = 0.0, automatic: Boolean = false, outro: Boolean = false, next: Boolean = true, multiTrack: Boolean = false, externalUrl: String = "", forceStyle: Boolean = false, previewFrame: Boolean = false, intro: Boolean = false, customFont: Boolean = false, segmentKind: String = "intro") {
         val file = File(context.getExternalFilesDir(null), if(previewFrame) "validation-preview.mp4" else if(multiTrack) "validation.mkv" else "validation.mp4")
         assertTrue("Run scripts/test-android-player.ps1 to install the video fixture", file.isFile)
         val episodes = JSONArray().put(JSONObject().put("id", "qa:1").put("title", "Premier épisode").put("season", 1).put("episode", 1))
@@ -55,7 +55,7 @@ class PlayerFlowTest {
             .put("autoNextEpisode", automatic).put("forceSubtitleStyle", forceStyle)
             .put("context", JSONObject().put("videoId", "qa:1").put("profileId", "qa"))
         if(externalUrl.isNotBlank()) options.put("subtitles",JSONArray().put(JSONObject().put("url",externalUrl).put("lang","jpn")))
-        if(intro) options.put("skipSegments",JSONArray().put(JSONObject().put("start",0).put("end",20).put("kind","intro")))
+        if(intro) options.put("skipSegments",JSONArray().put(JSONObject().put("start",10).put("end",20).put("kind",segmentKind)))
         if(customFont){
             val directory=File(context.cacheDir,"qa-fonts").apply{mkdirs()}
             val font=File(directory,"cormorant.ttf")
@@ -153,18 +153,53 @@ class PlayerFlowTest {
         assertFalse("Manual episode selection must open sources", journal().getBoolean("autoPlay"))
     }
 
-    @Test fun introShowsFiveSecondCountdownBeforeSkipButton() {
-        start(next=false,intro=true)
-        waitUntil("Missing intro countdown"){views().filterIsInstance<PrimioCountdown>().any{it.isShown}}
-        val observed=SystemClock.elapsedRealtime()
-        capture("native-intro-countdown")
-        assertNull(find("Passer l’intro"))
-        SystemClock.sleep(3500)
-        assertNull("Skip button appeared before the countdown finished",find("Passer l’intro"))
-        waitUntil("Missing skip button after five seconds"){find("Passer l’intro")!=null}
-        assertTrue(SystemClock.elapsedRealtime()-observed>=4400)
-        click("Passer l’intro")
-        waitUntil("Intro was not skipped"){playerState().optDouble("position")>=19.5}
+    private fun seekTo(seconds:Double){
+        val timeline=views().filterIsInstance<PrimioTimeline>().single()
+        val duration=playerState().optDouble("duration")
+        instrumentation.runOnMainSync{timeline.onSeek((seconds/duration).toFloat(),true)}
+        waitUntil("Seek did not settle"){kotlin.math.abs(playerState().optDouble("position")-seconds)<.2}
+    }
+    @Test fun segmentWarningsPrecedeStartAndFollowPausedVideo() {
+        for((kind,label) in listOf("intro" to "Passer l’intro","recap" to "Passer le récap","outro" to "Passer le générique")){
+            start(position=6.0,next=false,intro=true,segmentKind=kind)
+            waitUntil("Missing player controls"){find("Lecture ou pause")!=null}
+            click("Lecture ou pause")
+            waitUntil("Player must pause"){playerState().optBoolean("paused")}
+            waitUntil("Missing pre-segment warning"){views().filterIsInstance<PrimioCountdown>().any{it.isShown}}
+            assertTrue(playerState().optDouble("position")<10)
+            assertNull(find(label))
+            val timer=views().filterIsInstance<PrimioCountdown>().single();val elapsed=timer.elapsed
+            SystemClock.sleep(550)
+            assertEquals("Paused playback must freeze the countdown",elapsed,timer.elapsed,.01f)
+            capture("native-"+kind+"-warning")
+            seekTo(12.0)
+            waitUntil("Skip must be available immediately inside the segment"){find(label)!=null}
+            assertFalse(timer.isShown)
+            click(label)
+            waitUntil("Segment was not skipped"){playerState().optDouble("position")>=19.5}
+        }
+    }
+    @Test fun horizontalHoldSeeksPreciselyWithoutOtherControls() {
+        start(position=8.0,next=false)
+        waitUntil("Player did not load"){find("Lecture ou pause")!=null}
+        click("Lecture ou pause");waitUntil("Player must pause"){playerState().optBoolean("paused")}
+        val before=playerState().optDouble("position")
+        val root=views().filterIsInstance<android.widget.FrameLayout>().first{it.childCount>1&&it.getChildAt(0) is android.view.SurfaceView}
+        val layer=root.getChildAt(1);val down=SystemClock.uptimeMillis();val d=context.resources.displayMetrics.density
+        fun touch(action:Int,delta:Float){instrumentation.runOnMainSync{
+            val e=MotionEvent.obtain(down,SystemClock.uptimeMillis(),action,layer.width*.4f+delta*d,layer.height*.32f,0)
+            layer.dispatchTouchEvent(e);e.recycle()
+        };instrumentation.waitForIdleSync()}
+        touch(MotionEvent.ACTION_DOWN,0f);SystemClock.sleep(400);touch(MotionEvent.ACTION_MOVE,24f)
+        assertNull("Hide transport controls while dragging",find("Lecture ou pause"))
+        assertNull("Hide source action while dragging",find("Source"))
+        assertNotNull(find("Position de lecture"));capture("native-horizontal-seek")
+        touch(MotionEvent.ACTION_UP,24f)
+        waitUntil("Release must seek exactly three seconds forward"){kotlin.math.abs(playerState().optDouble("position")-kotlin.math.round(before+3))<.2}
+        assertTrue(playerState().optBoolean("paused"))
+        waitUntil("Restore controls"){find("Lecture ou pause")!=null}
+        click("Fermer")
+        waitUntil("Close must finish rather than enter PiP"){activity!!.isFinishing}
     }
 
     @Test fun customFontReachesTheNativeSubtitleRenderer() {

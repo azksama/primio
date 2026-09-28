@@ -26,7 +26,7 @@ async function run(outro) {
     JSON.stringify({
       title: 'Primio preview test', previewExecutable: path.resolve('apps/client/src-tauri/resources/windows/mpv/primio-player.exe'), previewPath: path.join(output, 'preview.bgra'),
       locale: 'en',
-      skipSegments: outro ? [{ kind: 'outro', start: 10, end: 120 }] : [{kind:'intro',start:0,end:20}],
+      skipSegments: outro ? [{ kind: 'outro', start: 10, end: 120 }] : [{kind:'intro',start:10,end:20}],
       autoSkipIntro:false, autoNextEpisode:false,
     }),
   )
@@ -94,12 +94,16 @@ async function run(outro) {
     )
 
     await command('set_property','pause',true)
-    await until(()=>get('user-data/primio/countdown'),v=>v?.visible&&v.key==='intro:0')
-    const countdownStarted=Date.now()
+    await command('seek',6,'absolute+exact')
+    await until(()=>get('user-data/primio/countdown'),v=>v?.visible&&v.key==='intro:10'&&v.position>=6)
+    const warning=await get('user-data/primio/countdown')
+    assert.ok(warning.position<10,'Warn before the segment starts')
+    await delay(400)
+    assert.equal((await get('user-data/primio/countdown')).elapsed,warning.elapsed,'Paused video must pause the countdown')
     const before=await get('time-pos')
     const size=await get('osd-dimensions')
     const scale=size.h/720
-    const mx=Math.round(size.w*.6), my=Math.round((720-80)*scale)
+    const mx=Math.round(size.w*.6), my=Math.round((720-100)*scale)
     await command('mouse',mx,my)
     await command('keypress','mouse_move')
     const target=(mx/scale-28)/(size.w/scale-56)*(await get('duration'))
@@ -108,7 +112,7 @@ async function run(outro) {
     await until(async()=>{await command('mouse',mx,my);await command('keypress','mouse_move');return get('user-data/primio/preview')},preview=>preview?.visible&&preview.seconds===seconds&&Math.abs(preview.x-(mx-120))<2,20000)
     const preview=await get('user-data/primio/preview')
     assert.ok(Math.abs(preview.x-(mx-120))<2,'Thumbnail follows the seek cursor horizontally')
-    assert.ok(preview.y+135<(720-110)*scale,'Thumbnail sits above the timestamp and cursor')
+    assert.ok(preview.y+135<(720-130)*scale,'Thumbnail sits above the timestamp and cursor')
     assert.ok(Math.abs((await get('time-pos'))-before)<0.1,'Preview must not seek the playing media')
     await command('screenshot-to-file',path.join(output,'windows-preview.png'),'window')
     // The preview remains inside the video at either end and hiding cancels pending display.
@@ -125,12 +129,25 @@ async function run(outro) {
     await until(()=>get('panscan'),value=>value===1)
     await command('keypress','z')
     await until(()=>get('panscan'),value=>value===0)
-    await until(()=>get('user-data/primio/countdown'),v=>v?.key==='intro:0'&&v.elapsed>=5&&!v.visible)
-    assert.ok(Date.now()-countdownStarted>=4400,'Manual skip is delayed by the five-second countdown')
+    await command('seek',10,'absolute+exact')
+    await until(()=>get('user-data/primio/countdown'),v=>v?.segment==='intro'&&!v.visible)
+    // Seeking into the middle of an intro exposes Skip immediately, without a new timer.
     await command('mouse',Math.round(size.w-138*scale),Math.round((720-156)*scale));await delay(100)
     await command('keypress','MBTN_LEFT')
     await until(()=>get('time-pos'),v=>v>=19.9)
-    console.log('PASS: Five-second intro countdown and manual skip.')
+    console.log('PASS: Segment warning precedes the intro, follows the media clock, and the skip button appears at its start.')
+    await command('seek',8,'absolute+exact')
+    await until(()=>get('time-pos'),v=>Math.abs(v-8)<.15)
+    const gx=Math.round(size.w*.4),gy=Math.round(size.h*.32)
+    await command('mouse',gx,gy);await command('keypress','mouse_move');await command('keydown','MBTN_LEFT')
+    await delay(400)
+    await command('mouse',gx+Math.round(24*scale),gy);await command('keypress','mouse_move')
+    await until(()=>get('user-data/primio/ui'),v=>v?.scrubbing&&Math.abs(v.seekTarget-11)<.2)
+    await command('screenshot-to-file',path.join(output,'windows-gesture.png'),'window')
+    await command('keyup','MBTN_LEFT')
+    await until(()=>get('time-pos'),v=>Math.abs(v-11)<.15)
+    assert.equal(await get('pause'),true,'Seeking retains the original pause state')
+    console.log('PASS: Hold and horizontal drag seeks second by second and keeps pause state.')
     console.log('PASS: Windows seek preview decoded a 240x135 frame without seeking playback; fit/fill shortcut works.')
   } finally {socket?.destroy();if(child.exitCode===null)child.kill()}
 }

@@ -52,7 +52,7 @@ components:
 
 Neo Graphite est un thème installable de Primio. Sa matière sombre partage le même fond et la même surface ; des ombres opposées distinguent les commandes surélevées, les champs creusés et les sélections. L’ivoire signale les actions et les états actifs. Les affiches et les images des contenus conservent leur place dans l’interface.
 
-Cette référence décrit le code de la version cible **Primio 0.2.16 / SDK 0.3.0**, avec le plugin `primio.neo-graphite` en version `1.0.0`. Elle complète la documentation des [plugins](PLUGINS.md) et du [SDK](../packages/sdk/README.md#materials-sdk-030--primio-0216). Le [DESIGN.md historique](../DESIGN.md) décrit la maquette Prisme ; il est conservé et ne constitue pas la spécification de ce thème.
+Cette référence décrit le code de la version cible **Primio 0.2.16 / SDK 0.3.0**, avec le plugin `primio.neo-graphite` en version `1.0.0`. Elle complète la documentation des [plugins](PLUGINS.md) et du [SDK](../packages/sdk/README.md#materials-sdk-030--primio-0216). Le DESIGN.md historique (document historique de la maquette) décrit la maquette Prisme ; il est conservé et ne constitue pas la spécification de ce thème.
 
 ### Activer le thème
 

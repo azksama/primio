@@ -6,7 +6,7 @@ Primio est une application de découverte, de bibliothèque et de lecture de fil
 
 L’utilisateur installe des addons Stremio, explore leurs catalogues, recherche un titre, consulte ses informations puis choisit une source pour lancer la lecture. Il organise sa liste, retrouve sa progression et gère ses profils. Les réglages couvrent notamment les addons, les services connectés, le lecteur, les sous-titres, les téléchargements et les extensions. Les données et préférences peuvent rester locales ; les comptes ajoutent une synchronisation avec gestion des conflits.
 
-Les catalogues, métadonnées, sources et sous-titres proviennent des addons ou services configurés. Leur disponibilité et leur compatibilité sont distinctes de celles de l’interface. Voir [la compatibilité Stremio](docs/STREMIO-COMPATIBILITY.md) et les [limites de validation](docs/VALIDATION.md).
+Les catalogues, métadonnées, sources et sous-titres proviennent des addons ou services configurés. Leur disponibilité et leur compatibilité sont distinctes de celles de l’interface. Voir [la compatibilité Stremio](docs/STREMIO-COMPATIBILITY.md) et les [limites de validation](docs/RELEASE-0.2.16.md).
 
 ## Contrat de personnalisation
 
@@ -21,7 +21,7 @@ L’activation suit **Paramètres → Plugins → Thèmes → Neo Graphite → I
 - Préserver la lecture, la navigation, les profils, les préférences et la compatibilité des plugins lors d’une évolution visuelle.
 - Conserver des libellés et états de sélection lisibles, un focus explicite, les descriptions accessibles, des commandes tactiles adaptées et la réduction des animations.
 - Maintenir la distinction entre vérification de l’interface sur données simulées, essais des lecteurs natifs, essai Android sur appareil et publication publique.
-- Traiter cette intervention comme une extension visuelle locale guidée par le code. Le [DESIGN.md](DESIGN.md) et les livrables Prisme restent l’archive de la maquette initiale ; les modifier ou remplacer l’identité globale constitue un travail distinct.
+- Traiter cette intervention comme une extension visuelle locale guidée par le code. Le `DESIGN.md` et les livrables Prisme restent l’archive de la maquette initiale ; les modifier ou remplacer l’identité globale constitue un travail distinct.
 
 ## Sources
 

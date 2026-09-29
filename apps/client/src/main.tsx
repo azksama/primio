@@ -9,6 +9,7 @@ import '@fontsource/inter/latin-500.css'
 import '@fontsource/inter/latin-600.css'
 import '@fontsource/cormorant-garamond/latin-400.css'
 import './style.css'
+import './neumorphic.css'
 import { isAndroid } from './platform'
 if (isAndroid()) {
   document.documentElement.classList.add('native-android')

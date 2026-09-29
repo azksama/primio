@@ -6,7 +6,15 @@ import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-class MainActivity:TauriActivity(){
+class MainActivity:TauriActivity(),PrimioThemeOwner {
+ override var primioTheme:org.json.JSONObject?=null
+ fun applyTheme(value:org.json.JSONObject){
+  primioTheme=value
+  val palette=PrimioPalette.from(this)
+  window.decorView.setBackgroundColor(palette.background)
+  WindowInsetsControllerCompat(window,window.decorView).apply{isAppearanceLightStatusBars=palette.light;isAppearanceLightNavigationBars=palette.light}
+  getSharedPreferences("primio-appearance",0).edit().putString("theme",value.toString()).apply()
+ }
  private var speech:app.tauri.plugin.Invoke?=null
  private val speechHandler=android.os.Handler(android.os.Looper.getMainLooper())
  private val speechTimeout=Runnable{speech?.reject("Voice recognition timed out");speech=null}
@@ -34,6 +42,7 @@ class MainActivity:TauriActivity(){
   enableEdgeToEdge();super.onCreate(savedInstanceState)
   PrimioUpdate.cleanup(this)
   WindowInsetsControllerCompat(window,window.decorView).isAppearanceLightStatusBars=false
+  runCatching{org.json.JSONObject(getSharedPreferences("primio-appearance",0).getString("theme","{}")?:"{}")}.getOrNull()?.let{applyTheme(it)}
   val content=findViewById<View>(android.R.id.content)
   ViewCompat.setOnApplyWindowInsetsListener(content){view,insets->val bars=insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout());view.setPadding(bars.left,bars.top,bars.right,bars.bottom);WindowInsetsCompat.CONSUMED}
  }

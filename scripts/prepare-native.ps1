@@ -8,7 +8,10 @@ if (!(Test-Path $archive)) {
 }
 if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected) { throw 'libmpv artifact checksum mismatch' }
 $extract = Join-Path $root 'tmp/native/aar'
-Expand-Archive -Path $archive -DestinationPath $extract -Force
+# Windows PowerShell 5 only accepts .zip extensions, although an AAR is a ZIP archive.
+$zip = Join-Path $root 'tmp/native/libmpv.zip'
+Copy-Item -LiteralPath $archive -Destination $zip -Force
+Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
 $native = Join-Path $root 'apps/client/src-tauri/native'
 $jni = Join-Path $root 'apps/client/src-tauri/gen/android/app/src/main/jniLibs'
 New-Item -ItemType Directory -Force $native,$jni | Out-Null
@@ -20,4 +23,3 @@ foreach ($abi in @('arm64-v8a','armeabi-v7a','x86','x86_64')) {
  }
 }
 Write-Output 'Pinned libmpv native libraries verified and prepared.'
-

@@ -1,0 +1,198 @@
+/* A material, not an executable plugin stylesheet. Tokens are validated by the SDK. */
+:root[data-material='neumorphic'] {
+  --neo-raised: 7px 7px 16px var(--shadow-dark), -7px -7px 16px var(--shadow-light);
+  --neo-control: 4px 4px 9px var(--shadow-dark), -4px -4px 9px var(--shadow-light);
+  --neo-inset: inset 3px 3px 6px var(--shadow-dark), inset -3px -3px 6px var(--shadow-light);
+  --neo-face: linear-gradient(145deg, color-mix(in srgb, var(--surface) 96%, white), color-mix(in srgb, var(--surface) 97%, black));
+  --neo-on-accent: #22252a;
+  caret-color: var(--accent);
+  scrollbar-color: var(--muted) var(--background);
+}
+:root[data-material='neumorphic'][data-color-scheme='light'] { --neo-on-accent: #fff; }
+:root[data-material='neumorphic'] ::selection { background: var(--accent); color: var(--neo-on-accent); }
+:root[data-material='neumorphic'] :is(.boot-screen, .onboarding, .profile-picker, .window-bar) {
+  background: var(--background);
+  color: var(--text);
+}
+:root[data-material='neumorphic'] :is(.glass, .random-pick, .metadata-settings, .search-suggestions, dialog) {
+  background: var(--surface);
+  border-color: transparent;
+  box-shadow: var(--neo-raised);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root[data-material='neumorphic'] :is(.addon-card, .profile-card, .integration-card, .account-card, .onboarding-card, .random-pick, .metadata-settings) {
+  border-radius: var(--plugin-radius);
+}
+:root[data-material='neumorphic'] :is(.primary, .secondary, .icon, .chips button, .plugin-filters button, .collection-icon-picker button, .recommendation-moods button, .advanced-discover summary, .discovery-toggle, .random-draw, .onboarding-symbol) {
+  background: var(--neo-face);
+  border-color: transparent;
+  box-shadow: var(--neo-control);
+  color: var(--text);
+  transition: box-shadow 140ms ease, color 140ms ease, transform 140ms ease;
+}
+:root[data-material='neumorphic'] :is(.primary, .random-draw) {
+  color: var(--accent);
+  font-weight: 600;
+}
+:root[data-material='neumorphic'] :is(.primary, .secondary, .advanced-discover summary, .random-draw, .choice-options, .search-suggestions, dialog) {
+  border-radius: var(--plugin-radius);
+}
+:root[data-material='neumorphic'] :is(.primary, .secondary, .icon, .chips button, .plugin-filters button, .collection-icon-picker button, .recommendation-moods button, .random-draw):active:not(:disabled),
+:root[data-material='neumorphic'] :is(.chips .selected, .chips [aria-pressed='true'], .plugin-filters [aria-pressed='true'], .collection-icon-picker [aria-pressed='true'], .recommendation-moods [aria-pressed='true'], .store-actions [aria-pressed='true']) {
+  background: var(--surface);
+  box-shadow: var(--neo-inset);
+  color: var(--accent);
+  border-color: transparent;
+  transform: translateY(1px);
+}
+:root[data-material='neumorphic'] :is(button, input, select, textarea, summary, a):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+:root[data-material='neumorphic'] button:disabled {
+  box-shadow: none;
+  opacity: .5;
+  transform: none;
+}
+:root[data-material='neumorphic'] .bottom-nav {
+  background: var(--surface);
+  border-color: transparent;
+  border-radius: 26px;
+  padding: 7px;
+  gap: 8px;
+  box-shadow: 9px 12px 22px var(--shadow-dark), -5px -5px 13px var(--shadow-light);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root[data-material='neumorphic'] .bottom-nav button { border-radius: 19px; }
+:root[data-material='neumorphic'] .bottom-nav button.active {
+  background: var(--surface);
+  box-shadow: var(--neo-inset);
+  color: var(--accent);
+}
+:root[data-material='neumorphic'] .bottom-nav button:not(.active) { background: transparent; }
+:root[data-material='neumorphic'] :is(.chips, .plugin-filters, .recommendation-moods) {
+  padding: 8px;
+  margin-inline: -8px;
+  gap: 12px;
+}
+:root[data-material='neumorphic'] .collection-icon-picker { gap: 14px; }
+:root[data-material='neumorphic'] :is(.search-box, .field input, .metadata-settings .password-field input, .manifest-link, .discovery-controls input, .discovery-controls select, .diagnostics-panel textarea, .row select, .status-choice select, .watch-order select) {
+  background: var(--surface);
+  border-color: transparent;
+  color: var(--text);
+  box-shadow: var(--neo-inset);
+  border-radius: 14px;
+}
+:root[data-material='neumorphic'] input::placeholder,
+:root[data-material='neumorphic'] textarea::placeholder { color: var(--muted); opacity: 1; }
+:root[data-material='neumorphic'] .search-box:focus-within { outline: 2px solid var(--accent); outline-offset: 4px; }
+:root[data-material='neumorphic'] .search-box input { background: transparent; box-shadow: none; outline: 0; }
+:root[data-material='neumorphic'] .password-eye { background: transparent; box-shadow: none; color: var(--muted); }
+:root[data-material='neumorphic'] .choice > .row {
+  padding: 14px 16px;
+  border-color: transparent;
+  background: var(--neo-face);
+  box-shadow: var(--neo-control);
+  color: var(--text);
+  border-radius: 14px;
+}
+:root[data-material='neumorphic'] .choice > .row[aria-expanded='true'] { box-shadow: var(--neo-inset); color: var(--accent); }
+:root[data-material='neumorphic'] .choice-options {
+  background: var(--surface);
+  padding: 8px;
+  box-shadow: var(--neo-raised);
+  border: 1px solid var(--line);
+}
+:root[data-material='neumorphic'] .choice-options button { margin-block: 4px; border-radius: 10px; color: var(--text); }
+:root[data-material='neumorphic'] .choice-options button.selected { background: var(--surface); box-shadow: var(--neo-inset); color: var(--accent); }
+:root[data-material='neumorphic'] .switch {
+  background: var(--surface);
+  box-shadow: var(--neo-inset);
+  border: 1px solid var(--line);
+}
+:root[data-material='neumorphic'] .switch span {
+  background: var(--muted);
+  box-shadow: 2px 2px 4px var(--shadow-dark);
+}
+:root[data-material='neumorphic'] .switch.on { border-color: var(--accent); }
+:root[data-material='neumorphic'] .switch.on span { background: var(--accent); }
+:root[data-material='neumorphic'] .range-field input {
+  background: var(--surface);
+  box-shadow: var(--neo-inset);
+  border-radius: 8px;
+}
+:root[data-material='neumorphic'] .range-field input::-webkit-slider-thumb { background: var(--accent); box-shadow: var(--neo-control); }
+:root[data-material='neumorphic'] .range-field input::-moz-range-thumb { background: var(--accent); box-shadow: var(--neo-control); border: 0; }
+:root[data-material='neumorphic'] :is(.terms-check input, input[type='checkbox']) { accent-color: var(--accent); }
+:root[data-material='neumorphic'] .terms-check input { box-shadow: var(--neo-inset); background: var(--surface); border-color: var(--line); }
+:root[data-material='neumorphic'] .terms-check input:checked { background: var(--accent); box-shadow: none; }
+:root[data-material='neumorphic'] :is(.settings-link, .settings-hub > button.row) {
+  padding: 16px;
+  margin-block: 14px;
+  background: var(--neo-face);
+  box-shadow: var(--neo-control);
+  border: 0;
+  border-radius: var(--plugin-radius);
+}
+:root[data-material='neumorphic'] :is(.settings-link, .settings-hub > button.row):active { background: var(--surface); box-shadow: var(--neo-inset); }
+:root[data-material='neumorphic'] .settings-link > svg { color: var(--accent); }
+:root[data-material='neumorphic'] .profile-card.selected { border-color: transparent; box-shadow: var(--neo-inset); outline: 2px solid var(--accent); outline-offset: 2px; }
+:root[data-material='neumorphic'] .profile-actions { gap: 14px; }
+:root[data-material='neumorphic'] .profile-actions .icon { min-width: 44px; }
+:root[data-material='neumorphic'] .compact-source { margin-inline: 2px; border-radius: var(--plugin-radius); }
+:root[data-material='neumorphic'] .compact-source .icon { background: transparent; box-shadow: none; color: var(--accent); }
+:root[data-material='neumorphic'] .source-results { gap: 18px; padding: 4px 4px 12px; }
+:root[data-material='neumorphic'] .source-filters .choice-options { background: var(--surface); }
+:root[data-material='neumorphic'] :is(.poster > .media-image, .continue-card > .media-image, .episode-image, .random-result > .media-image) { box-shadow: var(--neo-control); }
+:root[data-material='neumorphic'] .poster-rail { padding-block: 10px; }
+:root[data-material='neumorphic'] .continue-card progress { background: var(--surface); box-shadow: var(--neo-inset); border: 0; border-radius: 8px; }
+:root[data-material='neumorphic'] .continue-card progress::-webkit-progress-bar { background: var(--surface); box-shadow: var(--neo-inset); border-radius: 8px; }
+:root[data-material='neumorphic'] .continue-card progress::-webkit-progress-value { background: var(--accent); border-radius: 8px; }
+:root[data-material='neumorphic'] .continue-card progress::-moz-progress-bar { background: var(--accent); border-radius: 8px; }
+:root[data-material='neumorphic'] .recommendation-dismiss { background: var(--surface); color: var(--muted); box-shadow: var(--neo-control); }
+:root[data-material='neumorphic'] .poster-selection { background: var(--surface); color: var(--text); box-shadow: var(--neo-inset); backdrop-filter: none; }
+:root[data-material='neumorphic'] .is-selected .poster-selection { background: var(--accent); color: var(--neo-on-accent); box-shadow: none; }
+:root[data-material='neumorphic'] .calendar-grid button { border-radius: 14px; }
+:root[data-material='neumorphic'] .calendar-grid button.selected { background: var(--surface); color: var(--accent); box-shadow: var(--neo-inset); }
+:root[data-material='neumorphic'] :is(.release-count, .filter-count) { background: var(--accent); color: var(--neo-on-accent); }
+:root[data-material='neumorphic'] :is(.badges span, .badge) { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--text); }
+:root[data-material='neumorphic'] dialog { box-shadow: 14px 20px 48px #0007; }
+:root[data-material='neumorphic'] dialog::backdrop { background: #080b10a6; backdrop-filter: none; }
+:root[data-material='neumorphic'] .toast { background: var(--surface); color: var(--text); border-color: var(--line); box-shadow: var(--neo-raised); }
+:root[data-material='neumorphic'] :is(.notice, .offline) { background: var(--surface); color: var(--text); border: 1px solid var(--line); }
+:root[data-material='neumorphic'] .notice svg { color: #ffb6a9; }
+:root[data-material='neumorphic'] .skeleton { background: var(--surface); box-shadow: var(--neo-inset); animation: none; }
+:root[data-material='neumorphic'] :is(.onboarding-top, .onboarding-body p, .onboarding-card p) { color: var(--muted); }
+:root[data-material='neumorphic'] .welcome-features svg { color: var(--accent); }
+:root[data-material='neumorphic'] .window-bar { border-bottom-color: var(--line); }
+:root[data-material='neumorphic'] .window-actions button { border-radius: 9px; }
+:root[data-material='neumorphic'] .window-actions button:active { background: var(--surface); box-shadow: var(--neo-inset); }
+:root[data-material='neumorphic'] * { scrollbar-color: var(--muted) var(--background); }
+:root[data-material='neumorphic'] ::-webkit-scrollbar-track { background: var(--background); }
+:root[data-material='neumorphic'] ::-webkit-scrollbar-thumb { background: var(--muted); border-color: var(--background); }
+:root[data-material='neumorphic'] .boot-screen img { box-shadow: var(--neo-raised); }
+:root[data-material='neumorphic'] .hero:after { background: linear-gradient(180deg, #080a0d18 12%, #080a0d05 28%, color-mix(in srgb, var(--background) 64%, transparent) 60%, var(--background) 100%); }
+:root[data-material='neumorphic'] .hero-head { background: transparent; }
+@media (hover: hover) {
+  :root[data-material='neumorphic'] :is(.primary, .secondary, .icon, .chips button, .plugin-filters button, .random-draw, .advanced-discover summary):hover:not(:disabled):not([aria-pressed='true']) { color: var(--accent); transform: translateY(-1px); }
+  :root[data-material='neumorphic'] .bottom-nav button:not(.active):hover { color: var(--text); box-shadow: var(--neo-control); }
+  :root[data-material='neumorphic'] .window-actions button:hover { background: var(--surface); box-shadow: var(--neo-control); }
+  :root[data-material='neumorphic'] .window-actions .window-close:hover { background: #b14643; color: #fff; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-material='neumorphic'] :is(button, summary) { transition: none; transform: none !important; }
+}
+:root[data-material='neumorphic'][data-motion='reduced'] :is(button, summary) { transition: none; transform: none !important; }
+@media (forced-colors: active) {
+  :root[data-material='neumorphic'] :is(button, input, select, textarea, summary, dialog) { border: 1px solid ButtonText; box-shadow: none; }
+  :root[data-material='neumorphic'] :is([aria-pressed='true'], .active, .selected) { outline: 2px solid Highlight; }
+}
+
+/* The store preview shows the material before the theme is installed. */
+.theme-swatch.theme-swatch-neo { flex-direction: column; gap: 12px; border: 0; height: 90px; }
+.theme-swatch-neo .theme-swatch-play { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; }
+.theme-swatch-play svg { width: 19px; height: 19px; }
+.theme-swatch-neo .theme-swatch-track { width: 54px; height: 6px; border-radius: 4px; padding: 1px; }
+.theme-swatch-track i { display: block; height: 4px; width: 60%; border-radius: 3px; }

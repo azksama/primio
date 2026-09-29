@@ -300,6 +300,16 @@ async fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
     Ok(())
 }
 #[tauri::command]
+fn set_theme(app: tauri::AppHandle, theme: String) -> Result<(), String> {
+    if theme.len() > 4096 { return Err("Theme too large".into()); }
+    let _: Value = serde_json::from_str(&theme).map_err(|_| "Invalid theme")?;
+    #[cfg(target_os = "android")]
+    mobile_call(&app, "setTheme", json!({"value":theme}))?;
+    #[cfg(not(target_os = "android"))]
+    let _ = (app, theme);
+    Ok(())
+}
+#[tauri::command]
 async fn download_start(
     app: tauri::AppHandle,
     url: String,
@@ -435,6 +445,7 @@ pub fn run() {
             secure_write,
             play_media,
             open_link,
+            set_theme,
             download_start,
             download_list,
             download_remove,

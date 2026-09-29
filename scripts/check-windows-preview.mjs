@@ -4,7 +4,8 @@ import fs from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
 
-const output = path.resolve('tmp/validation-v0212')
+const theme = process.env.PRIMIO_PLAYER_THEME ? JSON.parse(await fs.readFile(process.env.PRIMIO_PLAYER_THEME,'utf8')).theme : undefined
+const output = path.resolve(theme ? 'tmp/validation-neo-graphite/native' : 'tmp/validation-v0212')
 await fs.mkdir(output, { recursive: true })
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 async function until(read, test, timeout = 15000) {
@@ -25,7 +26,7 @@ async function run(outro) {
     config,
     JSON.stringify({
       title: 'Primio preview test', previewExecutable: path.resolve('apps/client/src-tauri/resources/windows/mpv/primio-player.exe'), previewPath: path.join(output, 'preview.bgra'),
-      locale: 'en',
+      locale: 'en', theme,
       skipSegments: outro ? [{ kind: 'outro', start: 10, end: 120 }] : [{kind:'intro',start:10,end:20}],
       autoSkipIntro:false, autoNextEpisode:false,
     }),
@@ -92,6 +93,7 @@ async function run(outro) {
       () => get('user-data/primio/ui'),
       (ui) => ui && !ui.loading,
     )
+    if(theme) assert.equal((await get('user-data/primio/ui')).material, theme.material)
 
     await command('set_property','pause',true)
     await command('seek',6,'absolute+exact')

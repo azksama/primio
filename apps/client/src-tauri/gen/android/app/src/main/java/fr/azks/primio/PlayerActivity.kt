@@ -16,7 +16,8 @@ import java.security.KeyStore
 import java.util.Locale
 import kotlin.math.*
 
-class PlayerActivity:Activity(),SurfaceHolder.Callback {
+class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
+ override val primioTheme:JSONObject? get()=if(::options.isInitialized)options.optJSONObject("theme") else null
  companion object {private var active:java.lang.ref.WeakReference<PlayerActivity>?=null}
  private external fun nativeCreate(surface:Surface,context:Context,options:String):Long
  private external fun nativeCommand(handle:Long,command:String)
@@ -376,7 +377,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback {
   val dialog=PrimioSheet(this,tr("Audio et sous-titres"))
   val all=last.optJSONArray("tracks")?:JSONArray();val entries=(0 until all.length()).map{all.getJSONObject(it)}
   val columns=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL}
-  fun option(column:LinearLayout,label:String,selected:Boolean=false,action:()->Unit){column.addView(PrimioStyle.button(this,(if(selected)"✓  " else "")+label,label){action()}.apply{gravity=Gravity.START or Gravity.CENTER_VERTICAL;textSize=13f},LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(8)})}
+  fun option(column:LinearLayout,label:String,selected:Boolean=false,action:()->Unit){column.addView(PrimioStyle.button(this,(if(selected)"✓  " else "")+label,label){action()}.apply{gravity=Gravity.START or Gravity.CENTER_VERTICAL;textSize=13f;isSelected=selected;if(selected)setTextColor(PrimioStyle.palette(this@PlayerActivity).accent)},LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(8)})}
   for(type in listOf("audio","sub")){
    val column=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL}
    columns.addView(column,LinearLayout.LayoutParams(0,-2,1f).apply{if(type=="audio")rightMargin=dp(12)})

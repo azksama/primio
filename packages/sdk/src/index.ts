@@ -62,6 +62,10 @@ export const pluginSchema = z
         radius: z.number().int().min(8).max(28).optional(),
         glassOpacity: z.number().min(0.4).max(1).optional(),
         font: z.enum(['Inter', 'serif', 'monospace']).optional(),
+        material: z.enum(['glass', 'neumorphic']).optional(),
+        colorScheme: z.enum(['dark', 'light']).optional(),
+        shadowLight: hex.optional(),
+        shadowDark: hex.optional(),
       })
       .strict()
       .optional(),
@@ -144,6 +148,7 @@ export const pluginSchema = z
         })
   })
 export type PrimioPlugin = z.infer<typeof pluginSchema>
+export type PrimioTheme = NonNullable<PrimioPlugin['theme']>
 export type WatchOrder = z.infer<typeof watchOrderSchema>
 export const definePlugin = (plugin: PrimioPlugin): PrimioPlugin => pluginSchema.parse(plugin)
 export function activatePlugin(input: unknown, grants: Permission[]): PrimioPlugin {

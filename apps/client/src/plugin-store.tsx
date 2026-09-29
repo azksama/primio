@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { definePlugin, type PrimioPlugin } from '@primio/sdk'
-import { Check, Download, Search, Trash2 } from './icons'
+import { Check, Download, Search, Trash2, Play } from './icons'
 import { t } from './i18n'
 
 const plugin = (id: string, name: string, description: string, features: Partial<PrimioPlugin>) =>
@@ -31,6 +31,16 @@ const theme = (
     theme: { background, surface, accent, text, muted, radius },
   })
 export const storePlugins: PrimioPlugin[] = [
+  plugin('neo-graphite', 'Neo Graphite', 'Un graphite doux, des commandes sculptées et des creux délicats. Un thème néomorphique complet.', {
+    category: 'theme', permissions: ['theme'],
+    theme: {
+      material: 'neumorphic', colorScheme: 'dark',
+      background: '#282B30', surface: '#282B30', accent: '#E6D3AC',
+      text: '#F3F0E8', muted: '#BCC0C8', border: '#646A73',
+      shadowLight: '#383D45', shadowDark: '#191C20',
+      radius: 18, glassOpacity: 1,
+    },
+  }),
   theme(
     'graphite',
     'Graphite',
@@ -279,7 +289,7 @@ export function PluginStore({
             <article key={p.id} className="store-entry">
               {p.theme && (
                 <div
-                  className="theme-swatch"
+                  className={'theme-swatch' + (p.theme.material === 'neumorphic' ? ' theme-swatch-neo' : '')}
                   aria-hidden="true"
                   style={{
                     background: p.theme.background,
@@ -287,9 +297,14 @@ export function PluginStore({
                     borderColor: p.theme.accent,
                   }}
                 >
-                  <span style={{ background: p.theme.surface }} />
-                  <span style={{ background: p.theme.accent }} />
-                  <span style={{ background: p.theme.muted }} />
+                  {p.theme.material === 'neumorphic' ? <>
+                    <span className="theme-swatch-play" style={{color:p.theme.accent, background:p.theme.surface, boxShadow:`4px 4px 8px ${p.theme.shadowDark}, -4px -4px 8px ${p.theme.shadowLight}`}}><Play /></span>
+                    <span className="theme-swatch-track" style={{boxShadow:`inset 2px 2px 3px ${p.theme.shadowDark}, inset -2px -2px 3px ${p.theme.shadowLight}`}}><i style={{background:p.theme.accent}} /></span>
+                  </> : <>
+                    <span style={{ background: p.theme.surface }} />
+                    <span style={{ background: p.theme.accent }} />
+                    <span style={{ background: p.theme.muted }} />
+                  </>}
                 </div>
               )}
               <div className="store-copy">

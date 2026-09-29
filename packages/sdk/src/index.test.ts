@@ -10,6 +10,12 @@ const base = {
   permissions: [],
 }
 describe('permissions', () => {
+  it('supports bounded material tokens while preserving existing theme manifests', () => {
+    const theme = { ...base, permissions:['theme'], theme:{material:'neumorphic',colorScheme:'dark',shadowLight:'#383D45',shadowDark:'#191C20'} }
+    expect(pluginSchema.safeParse(theme).success).toBe(true)
+    expect(pluginSchema.safeParse({...theme,theme:{material:'url(https://example.org)'}}).success).toBe(false)
+    expect(pluginSchema.safeParse({...theme,theme:{accent:'#DAD4C5'}}).success).toBe(true)
+  })
   it('rejects undeclared or unapproved capabilities', () => {
     expect(pluginSchema.safeParse({ ...base, theme: { accent: '#ffffff' } }).success).toBe(false)
     expect(() =>

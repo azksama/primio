@@ -10,7 +10,7 @@ packages/sdk expose definePlugin, pluginSchema, activatePlugin et rankSources. U
 
 | Permission | Fonctions |
 |---|---|
-| theme | Couleurs background, surface, accent, text, muted et border ; rayon, transparence et famille de police |
+| theme | Couleurs background, surface, accent, text, muted et border ; rayon, transparence, police, matière glass/neumorphic, ombres et mode sombre/clair |
 | pages | Pages composées de textes, liens HTTPS et catalogues Stremio |
 | addons | Addons proposés, installés individuellement après examen du manifeste |
 | sources | Mots-clés de préférence et d’exclusion pour classer ou filtrer les sources |
@@ -66,6 +66,8 @@ Les extensions Rust sont du code de confiance lié au binaire et disposent des p
 
 ## Magasin intégré
 
-Le magasin contient 16 extensions déclaratives : six thèmes (Graphite, Midnight, Sakura, Forest, Amber, OLED), trois préférences de sources, deux présentations de bibliothèque, deux options d’accessibilité, un mode anti-spoilers et deux parcours (Terre du Milieu, Star Wars). Les installations et permissions restent locales à l’appareil. Les thèmes peuvent être désactivés sans être supprimés.
+Le magasin contient 17 extensions déclaratives : sept thèmes (Neo Graphite, Graphite, Midnight, Sakura, Forest, Amber, OLED), trois préférences de sources, deux présentations de bibliothèque, deux options d’accessibilité, un mode anti-spoilers et deux parcours (Terre du Milieu, Star Wars). Les installations et permissions restent locales à l’appareil. Les thèmes peuvent être désactivés sans être supprimés.
+
+Depuis le SDK 0.3.0 et Primio 0.2.16, Neo Graphite applique le néomorphisme à la navigation, aux champs, aux filtres, aux réglages, aux profils, aux fenêtres de sources et aux lecteurs natifs Android et Windows. Les boutons sont surélevés, les champs et les états sélectionnés sont creusés. Le focus clavier et les indicateurs de sélection restent visibles. Les propriétés `material`, `colorScheme`, `shadowLight` et `shadowDark` sont facultatives et validées ; les thèmes existants gardent le rendu verre. Voir [le manifeste prêt à importer](../packages/sdk/examples/neo-graphite.primio.json) et [les propriétés du SDK](../packages/sdk/README.md#materials-sdk-030--primio-0216).
 
 Un constructeur permet aussi de créer un ordre personnalisé à partir de Ma liste. Le magasin est un catalogue intégré à la version de l’application ; il ne télécharge pas de code communautaire. Voir le README du SDK pour les limites et exemples de chaque permission.

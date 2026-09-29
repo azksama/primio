@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 2,
+  "id": "primio.neo-graphite",
+  "name": "Neo Graphite",
+  "version": "1.0.0",
+  "description": "Un graphite doux, des commandes sculptées et des creux délicats. Un thème néomorphique complet.",
+  "author": "Primio",
+  "category": "theme",
+  "permissions": ["theme"],
+  "theme": {
+    "material": "neumorphic",
+    "colorScheme": "dark",
+    "background": "#282B30",
+    "surface": "#282B30",
+    "accent": "#E6D3AC",
+    "text": "#F3F0E8",
+    "muted": "#BCC0C8",
+    "border": "#646A73",
+    "shadowLight": "#383D45",
+    "shadowDark": "#191C20",
+    "radius": 18,
+    "glassOpacity": 1
+  }
+}

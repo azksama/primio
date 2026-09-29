@@ -32,6 +32,7 @@ import app.tauri.plugin.Invoke
 @InvokeArg class CastArgs {var action:String="";var data:String="{}"}
 @TauriPlugin
 class PrimioPlugin(private val activity:Activity):Plugin(activity) {
+ @Command fun setTheme(invoke:Invoke){val args=invoke.parseArgs(StoreArgs::class.java);activity.runOnUiThread{try{require(args.value.length<=4096);(activity as? MainActivity)?.applyTheme(org.json.JSONObject(args.value));invoke.resolve()}catch(_:Exception){invoke.reject("Invalid theme")}}}
  @Command fun voiceSearch(invoke:Invoke){val a=invoke.parseArgs(TextArgs::class.java);(activity as? MainActivity)?.recognizeSpeech(invoke,a.text)?:invoke.reject("Voice recognition unavailable")}
  @Command fun googleCast(invoke:Invoke){val args=invoke.parseArgs(CastArgs::class.java);PrimioCast.execute(activity,args.action,org.json.JSONObject(args.data),invoke)}
  @Command fun tvDevice(invoke:Invoke){val tv=(activity.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK)==android.content.res.Configuration.UI_MODE_TYPE_TELEVISION;invoke.resolve(JSObject().put("tv",tv) as JSObject)}
@@ -75,7 +76,7 @@ class PrimioPlugin(private val activity:Activity):Plugin(activity) {
       .put("subtitleSize",args.subtitleSize).put("playbackSpeed",args.playbackSpeed).put("hardwareDecoding",args.hardwareDecoding).put("cacheSizeGb",args.cacheSizeGb)
       .put("headers",org.json.JSONObject(args.headers)).put("subtitles",org.json.JSONArray(args.subtitles))
     val extra=org.json.JSONObject(args.playerExtra)
-    for(key in listOf("episodes","currentVideoId","nextVideoId","logo","reduceMotion","autoNextEpisode","forceSubtitleStyle","autoSkipRecap","trackPreferences","subtitleFont","customFont","subtitleColor","subtitleOutline","subtitleBackground")){if(extra.has(key))options.put(key,extra.get(key))}
+    for(key in listOf("theme","episodes","currentVideoId","nextVideoId","logo","reduceMotion","autoNextEpisode","forceSubtitleStyle","autoSkipRecap","trackPreferences","subtitleFont","customFont","subtitleColor","subtitleOutline","subtitleBackground")){if(extra.has(key))options.put(key,extra.get(key))}
     activity.startActivity(Intent(activity,PlayerActivity::class.java).putExtra("options",options.toString()))
    }
    invoke.resolve()

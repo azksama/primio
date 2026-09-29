@@ -29,10 +29,10 @@ class PrimioAuth(private val activity:Activity,initialRegister:Boolean):Dialog(a
   content.addView(PrimioStyle.text(activity,label,13f).apply{setPadding(0,dp(18),0,dp(8))})
   return EditText(activity).apply {
    id=when(key){"email"->R.id.auth_email;"password"->R.id.auth_password;"username"->R.id.auth_username;else->R.id.auth_confirmation}
-   contentDescription=label;hint=if(key=="email")"vous@exemple.fr" else "";setTextColor(PrimioStyle.ivory);setHintTextColor(0xff999c92.toInt());textSize=16f;isSingleLine=true
+   contentDescription=label;hint=if(key=="email")"vous@exemple.fr" else "";setTextColor(PrimioStyle.palette(activity).text);setHintTextColor(PrimioStyle.palette(activity).muted);textSize=16f;isSingleLine=true
    inputType=if(password)InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD else if(key=="email")InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS else InputType.TYPE_CLASS_TEXT
    if(autofill!=null){setAutofillHints(autofill);importantForAutofill=View.IMPORTANT_FOR_AUTOFILL_YES}else importantForAutofill=View.IMPORTANT_FOR_AUTOFILL_NO
-   background=PrimioStyle.glass(activity,16);setPadding(dp(16),dp(12),dp(16),dp(12))
+   background=PrimioStyle.field(activity,16);setPadding(dp(16),dp(12),dp(16),dp(12))
    if(password){
     val input=this;var visible=false
     val holder=FrameLayout(activity)

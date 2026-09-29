@@ -1,4 +1,5 @@
 import { useProfilePin, PinSettings } from './profile-pin'
+import { applyTheme, resolveTheme } from './themes'
 import { useFeatured } from './featured'
 import {
   EmailVerification,
@@ -366,31 +367,8 @@ export default function App() {
   }, [token, email, syncVersion, ready])
   useEffect(() => {
     if (ready) writeSecure('plugins', JSON.stringify(installedPlugins)).catch(fail)
-    const theme = plugins.filter((p) => p.permissions.includes('theme')).at(-1)?.theme
-    const values = {
-      background: '#101110',
-      surface: '#1D1E1C',
-      accent: '#DAD4C5',
-      text: '#F3F1EB',
-      muted: '#B7B8B1',
-      ...theme,
-    }
-    for (const k of ['background', 'surface', 'accent', 'text', 'muted'] as const)
-      document.documentElement.style.setProperty('--' + k, values[k])
-    document.documentElement.style.setProperty('--line', theme?.border ?? '#ffffff24')
-    document.documentElement.style.setProperty('--plugin-radius', (theme?.radius ?? 16) + 'px')
-    document.documentElement.style.setProperty(
-      '--plugin-glass',
-      String(theme?.glassOpacity ?? 0.78),
-    )
-    document.documentElement.style.setProperty(
-      '--plugin-font',
-      theme?.font === 'serif'
-        ? 'Georgia, serif'
-        : theme?.font === 'monospace'
-          ? 'monospace'
-          : 'Inter, Arial, sans-serif',
-    )
+    const theme = applyTheme(plugins)
+    if (isTauri() && isAndroid()) void invoke('set_theme', { theme: JSON.stringify(theme) }).catch(() => {})
   }, [plugins, installedPlugins, ready])
   useEffect(() => {
     document.documentElement.dataset.motion =
@@ -826,6 +804,7 @@ export default function App() {
           external: state.settings.player === 'external' && isAndroid(),
           position,
           playerExtra: JSON.stringify({
+            theme: resolveTheme(plugins),
             ...episodeQueue(target.meta, target.id, Date.now(), hideSpoilers, state.progress),
             ...(await playerOptions(state.settings)),
             trackPreferences: state.settings.trackPreferences?.find(
@@ -941,6 +920,7 @@ export default function App() {
       await invoke('play_download', {
         id: item.id,
         options: {
+          theme: resolveTheme(plugins),
           ...(await playerOptions(state.settings)),
           trackPreferences: state.settings.trackPreferences?.find(
             (p) => p.contentId === item.meta.meta.id,

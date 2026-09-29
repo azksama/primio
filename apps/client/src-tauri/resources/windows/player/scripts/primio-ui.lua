@@ -5,6 +5,18 @@ local icons = dofile(mp.find_config_file('primio-icons.lua'))
 local config = {}
 local file = io.open(os.getenv('PRIMIO_PLAYER_CONFIG') or '', 'r')
 if file then config = utils.parse_json(file:read('*a')) or {}; file:close() end
+local theme=config.theme or {}
+local neo=theme.material=='neumorphic'
+local function theme_color(key,fallback)
+    local value=theme[key]
+    if type(value)~='string' or not value:match('^#%x%x%x%x%x%x$') then return fallback end
+    return value:sub(6,7)..value:sub(4,5)..value:sub(2,3)
+end
+local surface=theme_color('surface','302B28')
+local highlight=theme_color('shadowLight','453D38')
+local shadow=theme_color('shadowDark','201C19')
+local foreground=neo and theme_color('text','E8F0F3') or 'F3F2E9'
+local accent=theme_color('accent','ACD3E6')
 local fr = (config.locale or ''):sub(1, 2) == 'fr'
 local translations = {}
 local language_file = io.open(mp.find_config_file('locales/' .. (config.locale or 'en') .. '.json') or '', 'r')
@@ -31,32 +43,55 @@ local function time(seconds)
     seconds=math.floor(math.max(0,seconds or 0)); local h=math.floor(seconds/3600)
     return h>0 and string.format('%d:%02d:%02d',h,math.floor(seconds/60)%60,seconds%60) or string.format('%02d:%02d',math.floor(seconds/60),seconds%60)
 end
-local function rect(a,x,y,w,h,r,color,alpha,border)
-    a:new_event(); a:append(string.format('{\\an7\\pos(0,0)\\bord%s\\shad0\\1c&H%s&\\3c&H888B80&\\alpha&H%s&}',border or 0,color or '30332D',alpha or '20'))
+local function rect(a,x,y,w,h,r,color,alpha,border,blur)
+    a:new_event(); a:append(string.format('{\\an7\\pos(0,0)\\bord%s\\shad0\\blur%s\\1c&H%s&\\3c&H888B80&\\alpha&H%s&}',border or 0,blur or 0,color or '30332D',alpha or '20'))
     a:draw_start(); a:round_rect_cw(x,y,x+w,y+h,r,r); a:draw_stop()
 end
 local function label(a,x,y,s,size,align,color,font)
-    a:new_event(); a:append(string.format('{\\an%d\\pos(%.1f,%.1f)\\fn%s\\fs%d\\bord0\\shad1.2\\blur0.4\\4a&H40&\\1c&H%s&}%s',align or 4,x,y,font or 'Inter',size or 18,color or 'F3F2E9',escape(s)))
+    a:new_event(); a:append(string.format('{\\an%d\\pos(%.1f,%.1f)\\fn%s\\fs%d\\bord0\\shad1.2\\blur0.4\\4a&H40&\\1c&H%s&}%s',align or 4,x,y,font or 'Inter',size or 18,color or foreground,escape(s)))
+end
+local function relief(a,x,y,w,h,r,active)
+    if active then
+        rect(a,x,y,w,h,r,shadow,'00',0,1)
+        rect(a,x+2,y+2,w-2,h-2,r,highlight,'00',0,1)
+        rect(a,x+3,y+3,w-6,h-6,math.max(1,r-2),surface,'00',0,2)
+    else
+        rect(a,x+4,y+5,w,h,r,shadow,'20',0,5)
+        rect(a,x-3,y-3,w,h,r,highlight,'70',0,5)
+        rect(a,x,y,w,h,r,surface,'00')
+        rect(a,x+2,y+2,w-4,h-4,math.max(1,r-2),highlight,'DE',0,1)
+    end
 end
 local function glass(a,x,y,w,h,active)
+    if neo then relief(a,x,y,w,h,math.min(18,h/2),active);return end
     rect(a,x,y,w,h,math.min(22,h/2),active and '727269' or '2D2E2B','80',1)
     rect(a,x+2,y+2,w-4,h-4,math.min(20,h/2-2),'D7DBD1','F5',0.5)
 end
 local function button(a,x,y,w,h,text,action,active)
-    glass(a,x,y,w,h,active);label(a,x+w/2,y+h/2,shorten(text,math.floor(w/9)),18,5)
+    glass(a,x,y,w,h,active);label(a,x+w/2,y+h/2,shorten(text,math.floor(w/9)),18,5,neo and active and accent or nil)
     hits[#hits+1]={x=x,y=y,w=w,h=h,action=action}
 end
 local function icon(a,x,y,kind)
     local half=(kind=='play' or kind=='pause') and 20 or 14
     for _,path in ipairs(icons[kind] or icons.play) do
-        a:new_event();a:append(string.format('{\\an7\\pos(%f,%f)\\1c&HF3F2E9&\\bord0\\shad0\\p1}%s{\\p0}',x-half,y-half,path))
+        a:new_event();a:append(string.format('{\\an7\\pos(%f,%f)\\1c&H%s&\\bord0\\shad0\\p1}%s{\\p0}',x-half,y-half,foreground,path))
     end
 end
 local function icon_button(a,x,y,size,kind,action)
-    rect(a,x,y,size,size,size/2,'343832','80',1)
-    rect(a,x+2,y+2,size-4,size-4,(size-4)/2,'D7DBD1','F5',0.5)
+    if neo then relief(a,x,y,size,size,size/2,false)
+    else rect(a,x,y,size,size,size/2,'343832','80',1)
+    rect(a,x+2,y+2,size-4,size-4,(size-4)/2,'D7DBD1','F5',0.5) end
     icon(a,x+size/2,y+size/2,kind)
     hits[#hits+1]={x=x,y=y,w=size,h=size,action=action}
+end
+-- Keep text readable over bright footage without dimming the whole image.
+local function video_time(a,x,y,text,align)
+    if neo then
+        local w=#text*10+20
+        local left=align==3 and x-w or x
+        relief(a,left,y-30,w,30,9,true)
+        label(a,left+10,y-15,text,17,4)
+    else label(a,x,y,text,17,align) end
 end
 local function title(a,x,y,text,available,maxsize)
     local chars={};for c in tostring(text):gmatch('[%z\1-\127\194-\244][\128-\191]*')do chars[#chars+1]=c end
@@ -65,6 +100,10 @@ local function title(a,x,y,text,available,maxsize)
     local size=math.max(16,math.min(maxsize,math.floor(available/math.max(1,units))))
     local lines=math.max(1,math.ceil(units*size/available))
     local count=math.ceil(#chars/lines)
+    if neo then
+        local w=math.min(available,units*size)+20
+        relief(a,x-10,y-lines*size*1.12/2-8,w,lines*size*1.12+16,10,true)
+    end
     for i=1,lines do label(a,x,y+(i-(lines+1)/2)*size*1.12,table.concat(chars,'',(i-1)*count+1,math.min(#chars,i*count)),size,4,nil,'Cormorant Garamond Light')end
 end
 local function end_scrub(commit)
@@ -77,7 +116,7 @@ end
 local function open(name) panel=name;scroll=0;last_move=mp.get_time() end
 local function hide_logo() if logo_visible then mp.commandv('overlay-remove',42);logo_visible=false end end
 local function loading(a)
-    rect(a,0,0,width,height,0,'090B0C','00')
+    rect(a,0,0,width,height,0,neo and theme_color('background','302B28') or '090B0C','00')
     local pulse=(math.sin(mp.get_time()*2.1)+1)/2
     local frame=math.floor(pulse*11)
     local path=(config.logoPath or '')..'/'..frame..'.bgra'
@@ -103,7 +142,7 @@ local function render_panel(a)
         h=math.min(h,270+math.max(ac,sc)*52)
     elseif panel=='style' then h=math.min(h,610) end
     local y=(height-h)/2
-    rect(a,x,y,w,h,24,'20231F','14',1)
+    if neo then relief(a,x,y,w,h,24,false) else rect(a,x,y,w,h,24,'20231F','14',1) end
     local title=panel=='episodes' and tr('Episodes','Épisodes') or panel=='style' and tr('Subtitle style','Style des sous-titres') or panel=='speed' and tr('Playback speed','Vitesse de lecture') or tr('Audio and subtitles','Audio et sous-titres')
     label(a,x+24,y+35,title,26)
     button(a,x+w-66,y+14,44,44,'×',function()panel=nil end)
@@ -194,7 +233,7 @@ local function render()
     local a=assdraw.ass_new()
     local buffering=not loaded or (not scrub and mp.get_property_native('paused-for-cache',false))
     if preview_visible and (buffering or panel or pip or scrub or (mp.get_time()-last_move>=3 and not mp.get_property_native('pause'))) then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
-    mp.set_property_native('user-data/primio/ui',{loading=buffering,panel=panel or '',nextOffered=next_offer,fullscreen=mp.get_property_native('fullscreen'),pip=pip,scrubbing=scrub~=nil,seekTarget=scrub and scrub.target or nil})
+    mp.set_property_native('user-data/primio/ui',{loading=buffering,panel=panel or '',material=neo and 'neumorphic' or 'glass',nextOffered=next_offer,fullscreen=mp.get_property_native('fullscreen'),pip=pip,scrubbing=scrub~=nil,seekTarget=scrub and scrub.target or nil})
     if pip then
         hide_logo()
         if mp.get_time()-last_move<3 then
@@ -219,12 +258,19 @@ local function render()
             end
             local pos,duration=mp.get_property_number('time-pos',0),mp.get_property_number('duration',0)
             if scrub then pos=scrub.target end
-            label(a,28,height-108,time(pos)..' / '..time(duration),17,1)
-            if not scrub then label(a,width-28,height-108,'−'..time(duration-pos),17,3)end
+            video_time(a,28,height-108,time(pos)..' / '..time(duration),1)
+            if not scrub then video_time(a,width-28,height-108,'−'..time(duration-pos),3)end
             local y,w=height-100,width-56;local fill=duration>0 and math.min(1,pos/duration)*w or 0
-            rect(a,28,y,w,7,3,'9EA18F','A0');if fill>1 then rect(a,28,y-2,fill,11,5,'D4DDC2','C0',2);rect(a,28,y,fill,7,3,'DBDFC7','15')end
-            rect(a,15+fill,y-9.5,26,26,13,'EAE8D1','C0')
-            rect(a,19+fill,y-5.5,18,18,9,'FFFFFF','00',1)
+            if neo then
+                relief(a,28,y-1,w,9,4,true)
+                if fill>1 then rect(a,28,y,fill,7,3,accent,'00')end
+                relief(a,19+fill,y-5.5,18,18,9,false)
+                rect(a,22+fill,y-2.5,12,12,6,foreground,'00')
+            else
+                rect(a,28,y,w,7,3,'9EA18F','A0');if fill>1 then rect(a,28,y-2,fill,11,5,'D4DDC2','C0',2);rect(a,28,y,fill,7,3,'DBDFC7','15')end
+                rect(a,15+fill,y-9.5,26,26,13,'EAE8D1','C0')
+                rect(a,19+fill,y-5.5,18,18,9,'FFFFFF','00',1)
+            end
             hits[#hits+1]={x=22,y=y-12,w=w+12,h=30,action=function(mx)if duration>0 then mp.commandv('seek',math.max(0,math.min(1,(mx-28)/w))*duration,'absolute+exact')end end}
             if preview_visible then
                 rect(a,preview_x-4,y-2,8,11,4,'FFFFFF','50')

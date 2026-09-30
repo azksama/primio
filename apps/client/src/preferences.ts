@@ -152,18 +152,23 @@ export function durationLabel(seconds: number) {
     minutes = total % 60
   return hours ? `${hours}h${String(minutes).padStart(2, '0')}` : `${total} min`
 }
+const normalizeOrigin = (value: string) => value.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().replace(/[\s.'’_-]/g, '')
+const animeOrigins = new Set(['JP', 'JPN', 'Japan', 'Japon', '日本', 'KR', 'KOR', 'KP', 'PRK', 'Korea', 'South Korea', 'North Korea', 'Republic of Korea', 'Corée', 'Corée du Sud', 'Corée du Nord', '한국', '대한민국', 'CN', 'CHN', 'China', 'Chine', 'People’s Republic of China', 'PR China', 'Mainland China', '中国', '中國', '中华人民共和国', '中華人民共和國'].map(normalizeOrigin))
 export function isAnime(meta: Pick<Meta, 'id' | 'type' | 'category'> & Partial<Meta>) {
   const origins = [meta.country].flat().concat(meta.origin_country ?? [], (meta.production_countries ?? []).flatMap(c => [c.iso_3166_1, c.name])).flatMap(c => typeof c === 'string' ? c.split(/[,;|]/) : [])
-  const eastAsian = origins.some(c => typeof c === 'string' && /^(JP|JPN|Japan|Japon|KR|KOR|KP|Korea|South Korea|North Korea|Republic of Korea|Corée du Sud|CN|CHN|China|Chine|中国|日本|한국)$/i.test(c.trim()))
-  const animation = meta.genres?.some(g => /^(animation|animated|动画|動畫|애니메이션)$/i.test(g))
+  const eastAsian = origins.some(c => animeOrigins.has(normalizeOrigin(c)))
+  const animation = isAnimation(meta)
   const original = meta.originalLanguage ?? meta.original_language ?? ''
   return (
     meta.category === 'anime' ||
     meta.type === 'anime' ||
     /^(kitsu|anilist|mal):/.test(meta.id) ||
     meta.genres?.some((g) => /^(animes?|donghua|aeni)$/i.test(g)) === true ||
-    (meta.type === 'series' && animation === true && (eastAsian || (!origins.some(Boolean) && /^(ja|jpn|japanese|ko|kor|korean|zh|zho|chi|chinese|mandarin|cantonese)$/i.test(original))))
+    (['series', 'movie'].includes(meta.type) && animation && (eastAsian || (!origins.some(c => c.trim()) && /^(ja|jpn|japanese|ko|kor|korean|zh|zho|chi|chinese|mandarin|cantonese|cmn|yue)(?:[-_].*)?$/i.test(original))))
   )
+}
+export function isAnimation(meta: Partial<Meta>) {
+  return meta.genres?.some(g => /^(animation|animated|动画|動畫|动画片|動畫片|动漫|動漫|애니메이션|アニメーション)$/i.test(g.trim())) === true
 }
 export function matchesCategory(meta: Meta, category: string) {
   return (

@@ -1,6 +1,5 @@
 import { useProfilePin, PinSettings } from './profile-pin'
 import { applyTheme, resolveTheme } from './themes'
-import { OledAccentPicker } from './accent-picker'
 import { useSwipeNavigation } from './swipe-navigation'
 import { useFeatured } from './featured'
 import {
@@ -14,11 +13,15 @@ import { defaultSort } from './catalog-sort'
 import { UpdatePanel } from './update-panel'
 import { ImportPanel } from './import-panel'
 import { useAccountSync } from './account-sync'
-import { PluginStore, installPlugin } from './plugin-store'
+import { PluginStore, InstalledPlugins, installPlugin, enableInstalledPlugin, upgradeStorePlugin } from './plugin-store'
+import { PluginConfigurationDialog } from './plugin-configuration-dialog'
+import { defaultWatchOrder, importWatchCollection, watchCollectionId } from './watch-collections'
 import { viewingStatus, progressSignature, statusLabel, StatusChoice } from './library-status'
-import { WatchOrders, WatchOrderBuilder } from './watch-order'
 import { removeProgress } from './progress-deletions'
 import { Collections, collectionKey, SelectablePoster, AddToCollection } from './collections'
+import { collectionMembers, needsCollectionMetadata, sortCollection } from './collection-rules'
+import { useCollectionMetadata } from './collection-metadata'
+import { useInterfaceFont } from './interface-font'
 import { DiagnosticsPanel } from './diagnostics-panel'
 import { recordDiagnostic } from './diagnostics'
 import { useTvMode } from './tv'
@@ -90,10 +93,11 @@ import {
   Copy,
   ArrowUp,
   ArrowDown,
+  Store,
 } from './icons'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { activatePlugin, pluginSchema, rankSources, type PrimioPlugin } from '@primio/sdk'
+import { activatePlugin, pluginSchema, rankSources, type PrimioPlugin, type WatchOrder } from '@primio/sdk'
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import { parseDeepLink } from './deeplinks'
 import { skipSegments } from './skip'
@@ -226,6 +230,14 @@ export default function App() {
   const [librarySort, setLibrarySort] = useState('manual')
   const [libraryDescending, setLibraryDescending] = useState(false)
   const [collectionId, setCollectionId] = useState('')
+  useInterfaceFont(state.settings.interfaceFont)
+  useEffect(() => {
+    const c = state.collections?.find(c => c.id === collectionId)
+    if (!c) return
+    setLibrarySort(c.sortRules?.[0]?.key ?? c.sort ?? 'manual')
+    setLibraryDescending(c.sortRules?.[0] ? c.sortRules[0].direction === 'desc' : c.descending ?? false)
+    setLibraryStatus(c.statusFilter ?? 'all')
+  }, [collectionId, state.collections])
   const [selectedLibrary, setSelectedLibrary] = useState<string[]>([])
   const [selectingLibrary, setSelectingLibrary] = useState(false)
   const [collectionPicker, setCollectionPicker] = useState(false)
@@ -278,6 +290,12 @@ export default function App() {
   const [installedPlugins, setPlugins] = useState<PrimioPlugin[]>([]),
     [pluginCandidate, setPluginCandidate] = useState<PrimioPlugin | null>(null),
     [pluginPage, setPluginPage] = useState<{ plugin: PrimioPlugin; id: string } | null>(null)
+  const [pluginView, setPluginView] = useState<'installed' | 'store'>('installed')
+  const [pluginInstalling, setPluginInstalling] = useState(false)
+  const [pluginConfiguration, setPluginConfiguration] = useState<{ plugin: PrimioPlugin | null; profileId: string } | null>(null)
+  useEffect(() => { setPluginConfiguration(null) }, [state.activeProfileId])
+  const latestState = useRef(state)
+  latestState.current = state
   const plugins = useMemo(
     () => installedPlugins.filter((p) => p.enabled !== false),
     [installedPlugins],
@@ -345,7 +363,7 @@ export default function App() {
           setEmail(s.email ?? '')
           setSyncVersion(s.version ?? 0)
         }
-        if (installed) setPlugins(JSON.parse(installed).map((p: unknown) => pluginSchema.parse(p)))
+        if (installed) setPlugins(JSON.parse(installed).map((p: unknown) => upgradeStorePlugin(pluginSchema.parse(p))))
       } catch {
         setError(t('Impossible de restaurer les données locales.'))
       } finally {
@@ -626,6 +644,7 @@ export default function App() {
       setSelected(null)
       setDetailLoading(false)
     } else if (pluginPage) setPluginPage(null)
+    else if (tab === 'plugins' && pluginView === 'store') setPluginView('installed')
     else if (advancedSearchOpen && tab === 'explore') setAdvancedSearchOpen(false)
     else {
       const previous = navigationHistory.current.pop()
@@ -642,6 +661,7 @@ export default function App() {
     ++detailSequence.current
     setDetailLoading(false)
     setTab(next)
+    if (next === 'plugins') setPluginView('installed')
     setSelected(null)
     setPluginPage(null)
     setError('')
@@ -786,6 +806,45 @@ export default function App() {
       if (seq === sourceSequence.current) setSourceError(message(e))
     } finally {
       if (seq === sourceSequence.current) setSourceLoading(false)
+    }
+  }
+  async function createWatchCollection(plugin: PrimioPlugin, order = defaultWatchOrder(plugin), open = true) {
+    if (!order) return
+    const profileId = state.activeProfileId, id = await watchCollectionId(plugin)
+    if (latestState.current.activeProfileId !== profileId) throw Error(t('Le profil a changé. Réessayez depuis ce profil.'))
+    importWatchCollection(latestState.current, plugin, order, id)
+    setState(s => s.activeProfileId === profileId ? importWatchCollection(s, plugin, order, id) : s)
+    if (open) {
+      setCollectionId(id)
+      setLibrarySort('manual')
+      setLibraryDescending(false)
+      setLibraryStatus('all')
+      setLibraryFilter('all')
+      navigate('library')
+    }
+    notify(t('Collection prête dans Ma liste'))
+  }
+  async function savePluginConfiguration(plugin: PrimioPlugin | null, changes: Partial<UserState['settings']>, order?: WatchOrder) {
+    const profileId = pluginConfiguration?.profileId
+    if (!profileId || latestState.current.activeProfileId !== profileId) throw Error(t('Le profil a changé. Réessayez depuis ce profil.'))
+    const validated = plugin ? pluginSchema.parse(plugin) : null
+    if (validated && !installedPlugins.some(p => p.id === validated.id)) throw Error(t('Ce plugin n’est plus installé.'))
+    const id = validated && order ? await watchCollectionId(validated) : undefined
+    if (latestState.current.activeProfileId !== profileId) throw Error(t('Le profil a changé. Réessayez depuis ce profil.'))
+    const update = (s: UserState): UserState => {
+      if (s.activeProfileId !== profileId) return s
+      const next = { ...s, settings: { ...s.settings, ...changes } }
+      return validated && order && id ? importWatchCollection(next, validated, order, id) : next
+    }
+    update(latestState.current)
+    setState(update)
+    if (validated) setPlugins(list => {
+      const updated = list.map(p => p.id === validated.id ? { ...validated, enabled:p.enabled } : p)
+      return validated.id === 'primio.oled' ? enableInstalledPlugin(updated, validated) : updated
+    })
+    if (id) {
+      setCollectionId(id); setLibrarySort('manual'); setLibraryDescending(false); setLibraryStatus('all'); setLibraryFilter('all')
+      notify(t('Collection prête dans Ma liste'))
     }
   }
   recoverSource.current = () => {
@@ -1191,31 +1250,35 @@ export default function App() {
       <small>{m.releaseInfo ?? (m.type === 'series' ? t('Série') : t('Film'))}</small>
     </button>
   )
-  const visibleLibrary = state.library
+  const activeCollection = state.collections?.find(c => c.id === collectionId)
+  const collectionMetadata = useCollectionMetadata(state.library, catalogAddons, ready && tab === 'library' &&
+    (state.library.some(m => !m.poster) || ['rating', 'year', 'runtime'].includes(librarySort) || !!state.collections?.some(c => needsCollectionMetadata(c.rules) || c.sortRules?.some(s => ['rating', 'year', 'runtime'].includes(s.key)))))
+  const libraryMetas = [...releases.metas, ...collectionMetadata.metas]
+  useEffect(() => {
+    if (!collectionMetadata.metas.length) return
+    const full = new Map(collectionMetadata.metas.map(m => [collectionKey(m), m]))
+    setState(s => {
+      let changed = false
+      const library = s.library.map(m => {
+        const meta = full.get(collectionKey(m))
+        if (m.poster || !meta?.poster) return m
+        changed = true
+        return { ...m, poster: meta.poster, name: meta.name || m.name, category: meta.category ?? m.category }
+      })
+      return changed ? { ...s, library } : s
+    })
+  }, [collectionMetadata.metas])
+  const members = activeCollection ? collectionMembers(activeCollection, state.library, libraryMetas, state.progress, state.settings) : state.library
+  const visibleLibrary = sortCollection(members
     .filter(
       (m) =>
-        (!(state.collections ?? []).some((c) => c.id === collectionId) ||
-          (state.collections ?? [])
-            .find((c) => c.id === collectionId)!
-            .items.includes(collectionKey(m))) &&
         matchesCategory(m, libraryFilter) &&
         (libraryStatus === 'all' ||
-          viewingStatus(m, state.progress, state.settings, releases.metas) === libraryStatus) &&
+          viewingStatus(m, state.progress, state.settings, libraryMetas) === libraryStatus) &&
         (!state.settings.hideWatched || !titleWatched(m, state.progress, releases.metas)),
-    )
-    .sort((a, b) => {
-      const order =
-        librarySort === 'name'
-          ? a.name.localeCompare(b.name)
-          : librarySort === 'status'
-            ? statusLabel(
-                viewingStatus(a, state.progress, state.settings, releases.metas),
-              ).localeCompare(
-                statusLabel(viewingStatus(b, state.progress, state.settings, releases.metas)),
-              )
-            : state.library.indexOf(a) - state.library.indexOf(b)
-      return libraryDescending ? -order : order
-    })
+    ), activeCollection?.sortRules?.length ? activeCollection.sortRules :
+      [{ key: librarySort as import('./types').CollectionSortKey, direction: libraryDescending ? 'desc' : 'asc' }],
+    state.library, libraryMetas, state.progress, state.settings, activeCollection?.items)
   const heading = (
     title: string,
     back = !['home', 'explore', 'library', 'settings'].includes(tab),
@@ -1440,7 +1503,7 @@ export default function App() {
       <RandomPick key={token ? email : 'local'} accountId={token ? email : 'local'} onOpen={details} onConfigure={() => { setTab('integrations'); scrollToTop() }} />
       {(['movie', 'series', 'anime'] as const).map((category) => (
         <Recommendations
-          key={state.activeProfileId + category}
+          key={(token ? email : 'local') + ':' + state.activeProfileId + category}
           category={category}
           addons={catalogAddons}
           library={state.library}
@@ -1613,6 +1676,7 @@ export default function App() {
         </div>
         <div className="explorer-sort">
           <Choice
+            floating
             label={t('Trier par')}
             value={sort.key}
             options={[
@@ -1923,12 +1987,6 @@ export default function App() {
                   }))
                 }
               />
-              <WatchOrders
-                plugins={plugins}
-                progress={state.progress}
-                meta={selected}
-                onOpen={details}
-              />
               {selected.videos?.length ? (
                 <Episodes
                   key={'episodes:' + selected.id}
@@ -2025,6 +2083,7 @@ export default function App() {
                                 ? {
                                     ...c,
                                     items: c.items.filter((key) => !selectedLibrary.includes(key)),
+                                    excluded: c.rules ? [...new Set([...(c.excluded ?? []), ...selectedLibrary])].slice(0, 2000) : c.excluded,
                                   }
                                 : c,
                             ),
@@ -2063,14 +2122,17 @@ export default function App() {
                 state={state}
                 setState={setState}
                 selected={collectionId}
+                metas={libraryMetas}
+                addons={catalogAddons}
                 onSelect={(id) => {
                   setCollectionId(id)
                   const c = state.collections?.find((c) => c.id === id)
-                  setLibrarySort(c?.sort ?? 'manual')
-                  setLibraryDescending(c?.descending ?? false)
+                  setLibrarySort(c?.sortRules?.[0]?.key ?? c?.sort ?? 'manual')
+                  setLibraryDescending(c?.sortRules?.[0] ? c.sortRules[0].direction === 'desc' : c?.descending ?? false)
                   setLibraryStatus(c?.statusFilter ?? 'all')
                 }}
               />
+              {activeCollection?.rules && collectionMetadata.loading && <p className="muted" role="status">{t('Analyse des métadonnées…')}</p>}
               <div className="library-filters explorer-filters">
                 <Choice
                   separateLabel
@@ -2102,9 +2164,12 @@ export default function App() {
                   label={t('Trier par')}
                   value={librarySort}
                   options={[
-                    ['manual', t('Ajout')],
+                    ['manual', t(activeCollection ? 'Ordre de la collection' : 'Ajout')],
                     ['name', t('Nom')],
                     ['status', t('État')],
+                    ['rating', t('Note')],
+                    ['year', t('Année')],
+                    ['runtime', t('Durée')],
                   ]}
                   onChange={(v) => {
                     setLibrarySort(v)
@@ -2112,7 +2177,7 @@ export default function App() {
                       ...s,
                       collections: s.collections?.map((c) =>
                         c.id === collectionId
-                          ? { ...c, sort: v as 'manual' | 'name' | 'status' }
+                          ? { ...c, sort: v as import('./types').CollectionSortKey, sortRules: [{ key: v as import('./types').CollectionSortKey, direction: libraryDescending ? 'desc' : 'asc' }, ...(c.sortRules?.slice(1).filter(r => r.key !== v) ?? [])] }
                           : c,
                       ),
                     }))
@@ -2126,7 +2191,7 @@ export default function App() {
                     setState((s) => ({
                       ...s,
                       collections: s.collections?.map((c) =>
-                        c.id === collectionId ? { ...c, descending: !libraryDescending } : c,
+                        c.id === collectionId ? { ...c, descending: !libraryDescending, sortRules: [{ key: librarySort as import('./types').CollectionSortKey, direction: libraryDescending ? 'asc' : 'desc' }, ...(c.sortRules?.slice(1) ?? [])] } : c,
                       ),
                     }))
                   }}
@@ -2192,8 +2257,8 @@ export default function App() {
                   className="poster-grid"
                 />
               ) : (
-                <Empty title={t('Gardez une place pour vos envies')}>
-                  {t('Touchez le marque-page d’un film ou d’une série pour le retrouver ici.')}
+                <Empty title={t(activeCollection ? 'Aucun titre ne correspond pour le moment.' : 'Gardez une place pour vos envies')}>
+                  {!activeCollection && t('Touchez le marque-page d’un film ou d’une série pour le retrouver ici.')}
                 </Empty>
               )}
             </section>
@@ -2337,8 +2402,11 @@ export default function App() {
         ) : tab === 'plugins' ? (
           <main>
             <div className="management-heading">
-              {heading(t('Plugins Primio'))}
+              {heading(t(pluginView === 'store' ? 'Magasin de plugins' : 'Plugins Primio'))}
               <div className="management-action">
+                <button className="icon glass plugin-store-open" aria-label={t(pluginView === 'store' ? 'Plugins installés' : 'Ouvrir le magasin de plugins')} onClick={() => { setPluginView(pluginView === 'store' ? 'installed' : 'store'); scrollToTop() }}>
+                  {pluginView === 'store' ? <Puzzle /> : <Store />}
+                </button>
                 <label className="primary file-picker">
                   <Download /> {t('Installer un plugin')}
                   <input
@@ -2361,91 +2429,18 @@ export default function App() {
               </div>
             </div>
             <section className="page-content addon-content">
-              <p className="intro">{t('Faites de Primio le vôtre.')}</p>
-              <p className="muted">{t('Thèmes, espaces, catalogues et classement des sources.')}</p>
-              <article className="addon-card glass">
-                <div className="row unlined">
-                  <Sparkles />
-                  <div className="grow">
-                    <h3>Primio Intro Skipper</h3>
-                    <small>Plugin intégré · 0.2.0</small>
-                  </div>
-                  <Check />
-                </div>
-                <p className="muted">{t('Passer les intros et les génériques.')}</p>
-                <button className="secondary" onClick={() => setSkipOpen(true)}>
-                  {t('Configurer le saut des génériques')}
-                </button>
-              </article>
-
-              <PluginStore
+              {pluginView === 'store' ? <PluginStore
                 installed={installedPlugins}
                 onInstall={setPluginCandidate}
-                onToggle={(p) =>
-                  setPlugins((list) =>
-                    p.enabled === false
-                      ? installPlugin(list, p)
-                      : list.map((x) => (x.id === p.id ? { ...x, enabled: false } : x)),
-                  )
-                }
-                onRemove={(p) => setPlugins((list) => list.filter((x) => x.id !== p.id))}
-              />
-              {plugins.filter(p => p.permissions.includes('theme') && p.theme).at(-1)?.id === 'primio.oled' && (
-                <OledAccentPicker value={state.settings.oledAccent} onChange={oledAccent => setState(s => ({ ...s, settings: { ...s.settings, oledAccent } }))} />
-              )}
-              <WatchOrders plugins={plugins} progress={state.progress} onOpen={details} />
-              <WatchOrderBuilder library={state.library} onInstall={setPluginCandidate} />
-              {plugins
-                .filter((p) => p.pages?.length || p.addons?.length)
-                .map((p) => (
-                  <article className="addon-card glass" key={p.id}>
-                    <h3>
-                      {p.name} <small>{p.version}</small>
-                    </h3>
-                    <Description text={p.description ?? ''} />
-                    <small>
-                      {t('Par')} {p.author}
-                    </small>
-                    <div className="section-head">
-                      <div className="badges">
-                        {p.permissions.map((x) => (
-                          <span key={x}>{x}</span>
-                        ))}
-                      </div>
-                      <button
-                        className="icon"
-                        aria-label={t('Désinstaller ') + p.name}
-                        onClick={() => setPlugins((list) => list.filter((x) => x.id !== p.id))}
-                      >
-                        <Trash2 />
-                      </button>
-                    </div>
-                    {p.addons?.map((a) => (
-                      <button
-                        className="row"
-                        key={a.manifest}
-                        onClick={() => {
-                          setAddonInput(a.manifest)
-                          setAddOpen(true)
-                          setCandidate(null)
-                        }}
-                      >
-                        {a.name}
-                        <Plus />
-                      </button>
-                    ))}
-                    {p.pages?.map((page) => (
-                      <button
-                        className="row"
-                        key={page.id}
-                        onClick={() => setPluginPage({ plugin: p, id: page.id })}
-                      >
-                        {page.title}
-                        <ChevronRight />
-                      </button>
-                    ))}
-                  </article>
-                ))}
+                onToggle={p => setPlugins(list => p.enabled === false ? enableInstalledPlugin(list, p) : list.map(x => x.id === p.id ? { ...x, enabled: false } : x))}
+                onRemove={p => setPlugins(list => list.filter(x => x.id !== p.id))}
+              /> : <InstalledPlugins
+                installed={installedPlugins}
+                onStore={() => { setPluginView('store'); scrollToTop() }}
+                onToggle={p => setPlugins(list => p.enabled === false ? enableInstalledPlugin(list, p) : list.map(x => x.id === p.id ? { ...x, enabled: false } : x))}
+                onRemove={p => setPlugins(list => list.filter(x => x.id !== p.id))}
+                onConfigure={plugin => setPluginConfiguration({ plugin, profileId:state.activeProfileId })}
+              />}
             </section>
           </main>
         ) : (
@@ -2946,6 +2941,11 @@ export default function App() {
           )}
         </Dialog>
       )}
+      {pluginConfiguration && <PluginConfigurationDialog key={pluginConfiguration.profileId + ':' + (pluginConfiguration.plugin?.id ?? 'intro-skipper')}
+        plugin={pluginConfiguration.plugin} settings={state.settings} onSave={savePluginConfiguration} onClose={() => setPluginConfiguration(null)}
+        onOpenPage={id => { if (pluginConfiguration.plugin) setPluginPage({ plugin:pluginConfiguration.plugin, id }); setPluginConfiguration(null) }}
+        onAddon={manifest => { setPluginConfiguration(null); setAddonInput(manifest); setAddOpen(true); setCandidate(null) }}
+      />}
       {skipOpen && (
         <Dialog title={t('Configurer le saut des génériques')} onClose={() => setSkipOpen(false)}>
           <Preferences
@@ -3163,11 +3163,18 @@ export default function App() {
           </ul>
           <button
             className="primary"
-            onClick={() => {
-              const p = activatePlugin(pluginCandidate, pluginCandidate.permissions)
-              setPlugins((list) => installPlugin(list, p))
-              setPluginCandidate(null)
-              notify(t('Plugin installé'))
+            disabled={pluginInstalling}
+            onClick={async () => {
+              setPluginInstalling(true)
+              try {
+                const p = activatePlugin(pluginCandidate, pluginCandidate.permissions)
+                if (defaultWatchOrder(p)) await createWatchCollection(p, undefined, false)
+                setPlugins((list) => installPlugin(list, p))
+                setPluginCandidate(null)
+                setPluginView('installed')
+                notify(t('Plugin installé'))
+              } catch (error) { fail(error) }
+              finally { setPluginInstalling(false) }
             }}
           >
             <Check /> {t('Autoriser et installer')}

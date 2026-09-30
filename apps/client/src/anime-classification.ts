@@ -1,6 +1,6 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react'
 import { metadata } from './addons'
-import { isAnime } from './preferences'
+import { isAnime, isAnimation } from './preferences'
 import type { Addon, UserState } from './types'
 export function useAnimeClassification(
   state: UserState,
@@ -9,7 +9,7 @@ export function useAnimeClassification(
   ready: boolean,
 ) {
   const ids = state.library
-    .filter((m) => m.type === 'series' && !isAnime(m))
+    .filter((m) => (m.type === 'series' || m.type === 'movie' && isAnimation(m)) && !isAnime(m))
     .map((m) => m.id)
     .join('|')
   useEffect(() => {
@@ -17,7 +17,7 @@ export function useAnimeClassification(
     let cancelled = false
     const profileId = state.activeProfileId
     void (async () => {
-      for (const item of state.library.filter((m) => m.type === 'series' && !isAnime(m))) {
+      for (const item of state.library.filter((m) => (m.type === 'series' || m.type === 'movie' && isAnimation(m)) && !isAnime(m))) {
         if (cancelled) break
         try {
           const meta = await metadata(addons, item)

@@ -1,4 +1,5 @@
 import { metadataFetch } from './metadata-provider'
+import { isAnime } from './preferences'
 import type { Meta } from './types'
 
 export interface DiscoveryCriteria {
@@ -77,8 +78,8 @@ export function discoveryService(token: string, fetcher: typeof fetch = metadata
       const candidate = candidates.splice(pick(candidates.length), 1)[0]
       const m = await tmdb(`${kind}/${candidate.id}`, { language: f.language ?? 'en', append_to_response: 'external_ids,credits,videos,images', include_image_language: `${f.language ?? 'en'},en,null` })
       const id = m.imdb_id || m.external_ids?.imdb_id || `tmdb:${m.id}`
-      const anime = (m.genres ?? []).some((g: any) => g.id === 16) && (m.origin_country ?? [m.original_language?.toUpperCase()]).some((c: string) => ['JP','KR','CN','JA','KO','ZH'].includes(c))
-      if (m.adult || (type === 'series' && anime) || f.exclude?.includes(id)) continue
+      const anime = isAnime({ id, type, genres:(m.genres ?? []).map((g: any) => g.id === 16 ? 'Animation' : g.name), origin_country:m.origin_country, production_countries:m.production_countries, original_language:m.original_language })
+      if (m.adult || anime || f.exclude?.includes(id)) continue
       const runtime = m.runtime || m.episode_run_time?.[0] || m.last_episode_to_air?.runtime
       if (f.minutes && (!runtime || runtime > f.minutes)) continue
       return {

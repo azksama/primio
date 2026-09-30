@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { pluginSchema, rankSources } from '@primio/sdk'
-import { storePlugins, installPlugin } from './plugin-store'
+import { storePlugins, installPlugin, enableInstalledPlugin } from './plugin-store'
 import { viewingStatus } from './library-status'
 import { defaults } from './preferences'
 describe('plugin store and tracking', () => {
@@ -14,6 +14,15 @@ describe('plugin store and tracking', () => {
   it('disabled source filters do not hide streams', () => {
     const p = storePlugins.find((p) => p.sources)!
     expect(rankSources([{ title: 'CAM' }], [{ ...p, enabled: false }])).toHaveLength(1)
+  })
+  it('enabling or saving an installed theme keeps the row in place and disables other themes', () => {
+    const oled=storePlugins.find(p=>p.id==='primio.oled')!, graphite=storePlugins.find(p=>p.id==='primio.graphite')!
+    const source=storePlugins.find(p=>p.sources)!, list=[{...oled,enabled:false},graphite,source]
+    const enabled=enableInstalledPlugin(list,oled)
+    expect(enabled.map(p=>p.id)).toEqual(list.map(p=>p.id))
+    expect(enabled[0].enabled).toBe(true)
+    expect(enabled[1].enabled).toBe(false)
+    expect(enabled[2]).toBe(source)
   })
   it('does not complete a series with unwatched or future episodes', () => {
     const m = {

@@ -31,7 +31,6 @@ export function useFeatured(
     [interacting, setInteracting] = useState(false)
   useEffect(() => {
     let cancelled = false
-    setOthers([])
     const targets = [
       ...catalogTargets(addons, 'series', 'all', '').slice(0, 2),
       ...catalogTargets(addons, 'series', 'all', '', true).slice(0, 2),
@@ -42,7 +41,7 @@ export function useFeatured(
         return target.anime ? items.map((m) => ({ ...m, category: 'anime' as const })) : items
       }),
     ).then((results) => {
-      if (!cancelled) setOthers(results.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])))
+      if (!cancelled && results.some(r => r.status === 'fulfilled')) setOthers(results.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])))
     })
     return () => {
       cancelled = true

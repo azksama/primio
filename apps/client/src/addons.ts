@@ -1,5 +1,5 @@
 import { correctAnimeDates } from './anime-dates'
-import { isAnime } from './preferences'
+import { isAnime, isAnimation } from './preferences'
 const animeIds = new Set<string>()
 const classify = (meta: Meta): Meta => {
   const key = JSON.stringify([meta.type, meta.id])
@@ -98,9 +98,9 @@ export async function catalog(a: Addon, type: string, id: string, extra?: Record
   const candidates = metas
     .filter(
       (m) =>
-        m.type === 'series' &&
+        ['series', 'movie'].includes(m.type) &&
         !isAnime(m) &&
-        m.genres?.some((g) => /^animation$/i.test(g)) &&
+        isAnimation(m) &&
         !m.country &&
         !m.origin_country?.length &&
         supports(a, 'meta', m.type, m.id),

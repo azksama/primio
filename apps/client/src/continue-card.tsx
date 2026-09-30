@@ -47,7 +47,7 @@ export function ContinueCard({
   return (
     <button className="continue-card" onClick={onPlay}>
       <MediaImage src={hideSpoilers ? item.poster : episode.episodeThumbnail} fallback={item.poster} />
-      <strong>{item.name}</strong>
+      <strong title={item.name}>{item.name}</strong>
       {episode.episode != null && (
         <small className="continue-episode">
           {t('Épisode {n}', { n: episode.episode })}

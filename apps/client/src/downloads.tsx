@@ -33,7 +33,7 @@ export async function playerOptions(s: Settings) {
     hardwareDecoding: s.hardwareDecoding,
     cacheSizeGb: s.cacheSizeGb,
     deleteWatched: s.deleteWatchedDownloads,
-    ...await customFontOptions(),
+    ...await customFontOptions(s.subtitleFont),
   }
 }
 export function Downloads({

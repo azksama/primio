@@ -29,9 +29,13 @@ describe('External random discovery', () => {
     const r=await discoveryService('',fetcher,()=>0)({type:'anime',genre:'Science Fiction',rating:7.5,minutes:24})
     expect(r.item?.id).toBe('mal:20'); expect(r.item?.type).toBe('series'); expect(r.provider).toBe('AniList')
   })
-  it('rejects exclusions and Asian animation in the series category', async () => {
-    const fetcher:typeof fetch=async(url)=>Response.json(String(url).includes('/discover/')?{total_pages:1,results:[{id:1},{id:2}]}:String(url).includes('/tv/1?')?{id:1,external_ids:{imdb_id:'tt1'},genres:[{id:16}],origin_country:['JP']}:{id:2,external_ids:{imdb_id:'tt2'}})
+  it.each(['JP','KR','CN'])('rejects exclusions and %s animation in the series category', async country => {
+    const fetcher:typeof fetch=async(url)=>Response.json(String(url).includes('/discover/')?{total_pages:1,results:[{id:1},{id:2}]}:String(url).includes('/tv/1?')?{id:1,external_ids:{imdb_id:'tt1'},genres:[{id:16}],origin_country:[country]}:{id:2,external_ids:{imdb_id:'tt2'}})
     expect((await discoveryService('test',fetcher,()=>0)({type:'series',exclude:['tt2']})).item).toBeNull()
+  })
+  it('uses original-language variants when the animation origin is missing', async () => {
+    const fetcher:typeof fetch=async(url)=>Response.json(String(url).includes('/discover/')?{total_pages:1,results:[{id:1}]}:{id:1,external_ids:{imdb_id:'tt1'},genres:[{id:16}],origin_country:[],original_language:'zh-Hans'})
+    expect((await discoveryService('test',fetcher,()=>0)({type:'series'})).item).toBeNull()
   })
   it('explains missing/invalid credentials and upstream failures', async () => {
     await expect(discoveryService('')({type:'movie'})).rejects.toThrow('TMDB_NOT_CONFIGURED')

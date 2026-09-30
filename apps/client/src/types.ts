@@ -96,6 +96,7 @@ export interface Progress extends Pick<Meta, 'id' | 'type' | 'name' | 'poster' |
   updatedAt: number
 }
 export interface Settings {
+  interfaceFont?: 'inter' | 'manrope' | 'nunito' | 'lora' | 'jetbrains'
   oledAccent?: string
   dismissedRecommendations?: string[]
   tvMode?: 'auto' | 'on' | 'off'
@@ -118,7 +119,7 @@ export interface Settings {
   seekBackward: number
   seekForward: number
   autoNextEpisode: boolean
-  subtitleFont: 'sans-serif' | 'serif' | 'monospace'
+  subtitleFont: 'sans-serif' | 'serif' | 'monospace' | 'inter' | 'manrope' | 'nunito' | 'lora' | 'jetbrains'
   subtitleColor: string
   subtitleOutline: number
   subtitleBackground: boolean
@@ -188,7 +189,31 @@ export interface Collection {
   name: string
   items: string[]
   icon?: 'folder' | 'star' | 'heart' | 'film' | 'anime' | 'bookmark'
-  sort?: 'manual' | 'name' | 'status'
+  sort?: CollectionSortKey
   descending?: boolean
   statusFilter?: 'all' | 'planned' | 'watching' | 'completed'
+  rules?: CollectionRules
+  excluded?: string[]
+  sortRules?: CollectionSort[]
 }
+export type CollectionField = 'type' | 'status' | 'genre' | 'year' | 'rating' | 'runtime' | 'country' | 'language' | 'name' | 'cast' | 'director'
+export type CollectionOperator = 'is' | 'not' | 'contains' | 'not_contains' | 'gte' | 'lte' | 'between'
+export interface CollectionCondition {
+  id: string
+  field: CollectionField
+  operator: CollectionOperator
+  value: string
+  to?: string
+}
+export interface CollectionGroup {
+  id: string
+  match: 'all' | 'any'
+  conditions: CollectionCondition[]
+}
+export interface CollectionRules {
+  version: 1
+  match: 'all' | 'any'
+  groups: CollectionGroup[]
+}
+export type CollectionSortKey = 'manual' | 'name' | 'status' | 'rating' | 'year' | 'runtime'
+export interface CollectionSort { key: CollectionSortKey; direction: 'asc' | 'desc' }

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { definePlugin, type PrimioPlugin } from '@primio/sdk'
-import { Check, Download, Search, Trash2, Play } from './icons'
+import { Check, Download, Search, Trash2, Play, Settings, Puzzle, Sparkles } from './icons'
+import { configurablePlugin } from './plugin-configuration'
 import { t } from './i18n'
 
 const plugin = (id: string, name: string, description: string, features: Partial<PrimioPlugin>) =>
@@ -197,10 +198,29 @@ export const storePlugins: PrimioPlugin[] = [
       ],
     },
   ),
-  plugin('star-wars', 'Star Wars', 'Les neuf films de la saga Skywalker dans l’ordre de sortie.', {
+  plugin('star-wars', 'Star Wars', 'Les films Star Wars dans une collection, en ordre chronologique ou de sortie.', {
+    version: '1.1.0',
     category: 'library',
     permissions: ['watchOrder'],
     watchOrder: [
+      {
+        id: 'chronology', title: 'Star Wars · Chronologie', order: 'chronological',
+        entries: [
+          ['tt0120915', 'The Phantom Menace'],
+          ['tt0121765', 'Attack of the Clones'],
+          ['tt1185834', 'Star Wars: The Clone Wars'],
+          ['tt0121766', 'Revenge of the Sith'],
+          ['tt3778644', 'Solo: A Star Wars Story'],
+          ['tt3748528', 'Rogue One: A Star Wars Story'],
+          ['tt0076759', 'A New Hope'],
+          ['tt0080684', 'The Empire Strikes Back'],
+          ['tt0086190', 'Return of the Jedi'],
+          ['tt30825738', 'The Mandalorian and Grogu'],
+          ['tt2488496', 'The Force Awakens'],
+          ['tt2527336', 'The Last Jedi'],
+          ['tt2527338', 'The Rise of Skywalker'],
+        ].map(([id, name]) => ({ id, name, type: 'movie' as const })),
+      },
       {
         id: 'release',
         title: 'Star Wars · Sortie',
@@ -212,14 +232,48 @@ export const storePlugins: PrimioPlugin[] = [
           ['tt0120915', 'The Phantom Menace'],
           ['tt0121765', 'Attack of the Clones'],
           ['tt0121766', 'Revenge of the Sith'],
+          ['tt1185834', 'Star Wars: The Clone Wars'],
           ['tt2488496', 'The Force Awakens'],
+          ['tt3748528', 'Rogue One: A Star Wars Story'],
           ['tt2527336', 'The Last Jedi'],
+          ['tt3778644', 'Solo: A Star Wars Story'],
           ['tt2527338', 'The Rise of Skywalker'],
+          ['tt30825738', 'The Mandalorian and Grogu'],
         ].map(([id, name]) => ({ id, name, type: 'movie' as const })),
       },
     ],
   }),
 ]
+
+export function upgradeStorePlugin(p: PrimioPlugin) {
+  return p.id === 'primio.star-wars' && p.author === 'Primio' && p.version === '1.0.0'
+    ? { ...storePlugins.find(s => s.id === p.id)!, enabled: p.enabled }
+    : p
+}
+
+export function InstalledPlugins({ installed, onConfigure, onToggle, onRemove, onStore }: {
+  installed: PrimioPlugin[]; onConfigure: (p: PrimioPlugin | null) => void;
+  onToggle: (p: PrimioPlugin) => void; onRemove: (p: PrimioPlugin) => void; onStore: () => void;
+}) {
+  const configurationButton = (p: PrimioPlugin | null) => <button className="secondary plugin-configure" aria-haspopup="dialog" onClick={() => onConfigure(p)}>
+    <Settings size={17} />{t('Configurer')}
+  </button>
+  return <section className="installed-plugins" aria-label={t('Plugins installés')}>
+    <article className="installed-plugin">
+      <div className="installed-plugin-heading"><Sparkles /><div className="store-copy"><h2>Primio Intro Skipper</h2><p>{t('Passer les intros et les génériques.')}</p><small>{t('Plugin intégré')} · 0.2.0</small></div><span className="plugin-enabled"><Check size={16} />{t('Activé')}</span></div>
+      <div className="store-actions">{configurationButton(null)}</div>
+    </article>
+    {installed.map(p => <article className="installed-plugin" key={p.id}>
+      <div className="installed-plugin-heading"><Puzzle /><div className="store-copy"><h2>{t(p.name)}</h2><p>{t(p.description)}</p><small>{p.author} · {p.version}</small></div></div>
+      <div className="store-actions">
+        <button className="secondary" aria-pressed={p.enabled !== false} onClick={() => onToggle(p)}>{p.enabled !== false && <Check size={16} />}{t(p.enabled !== false ? 'Activé' : 'Activer')}</button>
+        {configurablePlugin(p) && configurationButton(p)}
+        <button className="icon plugin-uninstall" aria-label={t('Désinstaller ') + t(p.name)} onClick={() => onRemove(p)}><Trash2 size={18} /></button>
+      </div>
+    </article>)}
+    {!installed.length && <div className="plugins-empty"><p>{t('Aucun plugin supplémentaire installé.')}</p><button className="secondary" onClick={onStore}>{t('Découvrir les plugins')}</button></div>}
+  </section>
+}
 
 export function installPlugin(list: PrimioPlugin[], candidate: PrimioPlugin) {
   return [
@@ -228,6 +282,9 @@ export function installPlugin(list: PrimioPlugin[], candidate: PrimioPlugin) {
       .map((p) => (candidate.theme && p.theme ? { ...p, enabled: false } : p)),
     { ...candidate, enabled: true },
   ]
+}
+export function enableInstalledPlugin(list: PrimioPlugin[], candidate: PrimioPlugin) {
+  return list.map(p => p.id === candidate.id ? { ...p, enabled:true } : candidate.theme && p.theme ? { ...p, enabled:false } : p)
 }
 export function PluginStore({
   installed,
@@ -254,7 +311,6 @@ export function PluginStore({
   )
   return (
     <section className="plugin-store" aria-label={t('Magasin de plugins')}>
-      <h2>{t('Magasin de plugins')}</h2>
       <p className="muted">
         {t('Des extensions Primio prêtes à installer. Vous gardez le contrôle des permissions.')}
       </p>

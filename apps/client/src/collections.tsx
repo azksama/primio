@@ -16,10 +16,17 @@ import {
   Clapperboard,
   Sparkles,
   Bookmark,
+  X,
 } from './icons'
 import { DialogShell } from './dialog-shell'
+import { Choice } from './components'
+import { CollectionRulesEditor, CollectionSorting, newRules } from './collection-rule-editor'
+import { collectionMembers, needsCollectionMetadata, validRules } from './collection-rules'
+import { useCollectionMetadata } from './collection-metadata'
+import { collectionKey } from './library-key'
 import { t } from './i18n'
-import type { UserState, Meta, Collection } from './types'
+import type { UserState, Addon, Collection, CollectionRules, CollectionSort } from './types'
+export { collectionKey } from './library-key'
 const collectionIcons = {
   folder: FolderPlus,
   star: Star,
@@ -32,9 +39,6 @@ export function CollectionIcon({ name }: { name?: string }) {
   const Icon = collectionIcons[name as keyof typeof collectionIcons]
   return Icon ? <Icon size={18} /> : null
 }
-export const collectionKey = (item: Pick<Meta, 'type' | 'id'>) =>
-  JSON.stringify([item.type, item.id])
-
 export function SelectablePoster({
   children,
   label,
@@ -124,7 +128,13 @@ export function AddToCollection({
       collections: name
         ? [...(s.collections ?? []), { id, name, items: [...new Set(items)] }]
         : (s.collections ?? []).map((c) =>
-            c.id === id ? { ...c, items: [...new Set([...c.items, ...items])].slice(0, 2000) } : c,
+            c.id === id
+              ? {
+                  ...c,
+                  items: [...new Set([...c.items, ...items])].slice(0, 2000),
+                  excluded: c.excluded?.filter((key) => !items.includes(key)),
+                }
+              : c,
           ),
     }))
     onClose()
@@ -135,7 +145,7 @@ export function AddToCollection({
         {(state.collections ?? []).map((c) => (
           <button key={c.id} onClick={() => add(c.id)}>
             {c.name}
-            <small>{c.items.length}</small>
+            <small>{c.rules ? t('Automatique') : c.items.length}</small>
           </button>
         ))}
       </div>
@@ -163,52 +173,117 @@ export function Collections({
   setState,
   selected,
   onSelect,
+  metas,
+  addons,
 }: {
   state: UserState
   setState: Dispatch<SetStateAction<UserState>>
   selected: string
   onSelect: (id: string) => void
+  metas: import('./types').Meta[]
+  addons: Addon[]
 }) {
   const [editing, setEditing] = useState<string | null>(null),
     [name, setName] = useState(''),
     [items, setItems] = useState<string[]>([])
   const [icon, setIcon] = useState('')
+  const [automatic, setAutomatic] = useState(false)
+  const [rules, setRules] = useState<CollectionRules>(newRules)
+  const [sorts, setSorts] = useState<CollectionSort[]>([{ key: 'manual', direction: 'asc' }])
   const collections = state.collections ?? []
+  const enrichment = useCollectionMetadata(
+    state.library,
+    addons,
+    editing !== null && automatic && needsCollectionMetadata(rules),
+  )
+  const enriched = [...metas, ...enrichment.metas]
+  const current = collections.find((c) => c.id === editing)
+  const preview = collectionMembers(
+    {
+      id: editing ?? '',
+      name,
+      items,
+      excluded: current?.excluded,
+      rules: automatic ? rules : undefined,
+    },
+    state.library,
+    enriched,
+    state.progress,
+    state.settings,
+  )
   const edit = (id: string) => {
     const c = collections.find((c) => c.id === id)
     setEditing(id)
     setName(c?.name ?? '')
     setIcon(c?.icon ?? '')
     setItems(c?.items ?? [])
+    setAutomatic(!!c?.rules)
+    setRules(c?.rules ?? newRules())
+    setSorts(
+      c?.sortRules?.length
+        ? c.sortRules
+        : [{ key: c?.sort ?? 'manual', direction: c?.descending ? 'desc' : 'asc' }],
+    )
   }
   return (
     <section className="collections">
-      <div className="chips" aria-label={t('Collections')}>
-        <button aria-pressed={!selected} onClick={() => onSelect('')}>
-          {t('Tous')}
-        </button>
-        {collections.map((c) => (
-          <button key={c.id} aria-pressed={selected === c.id} onClick={() => onSelect(c.id)}>
-            <CollectionIcon name={c.icon} />
-            {c.name} <small>{c.items.length}</small>
-          </button>
-        ))}
-        <button disabled={collections.length >= 50} onClick={() => edit('new')}>
-          <FolderPlus size={18} />
-          {t('Créer une collection')}
+      <div className="collection-toolbar explorer-filters">
+        <Choice
+          separateLabel
+          label={t('Collection')}
+          value={collections.some((c) => c.id === selected) ? selected : ''}
+          options={[
+            ['', t('Tous') + ' · ' + state.library.length],
+            ...collections.map(
+              (c) =>
+                [
+                  c.id,
+                  c.name +
+                    ' · ' +
+                    collectionMembers(c, state.library, metas, state.progress, state.settings)
+                      .length,
+                ] as [string, string],
+            ),
+          ]}
+          onChange={onSelect}
+        />
+        <button
+          className="icon glass"
+          disabled={collections.length >= 50}
+          aria-label={t('Créer une collection')}
+          title={t('Créer une collection')}
+          onClick={() => edit('new')}
+        >
+          <FolderPlus size={20} />
         </button>
         {selected && collections.some((c) => c.id === selected) && (
-          <button aria-label={t('Modifier la collection')} onClick={() => edit(selected)}>
+          <button
+            className="icon glass"
+            aria-label={t('Modifier la collection')}
+            title={t('Modifier la collection')}
+            onClick={() => edit(selected)}
+          >
             <Pencil size={18} />
           </button>
         )}
       </div>
       {editing !== null && (
-        <DialogShell title={t('Collection')} onClose={() => setEditing(null)}>
+        <DialogShell title={t('Collection')} className="collection-dialog" onClose={() => setEditing(null)}>
+          <div className="dialog-head">
+            <h2>{t(editing === 'new' ? 'Créer une collection' : 'Modifier la collection')}</h2>
+            <button
+              type="button"
+              className="icon glass"
+              aria-label={t('Fermer')}
+              onClick={() => setEditing(null)}
+            >
+              <X size={20} />
+            </button>
+          </div>
           <form
             onSubmit={(e) => {
               e.preventDefault()
-              if (!name.trim()) return
+              if (!name.trim() || (automatic && !validRules(rules))) return
               const id = editing === 'new' ? crypto.randomUUID() : editing
               setState((s) => ({
                 ...s,
@@ -220,6 +295,10 @@ export function Collections({
                     name: name.trim(),
                     items,
                     icon: (icon || undefined) as Collection['icon'],
+                    rules: automatic ? rules : undefined,
+                    sortRules: sorts,
+                    sort: sorts[0].key,
+                    descending: sorts[0].direction === 'desc',
                   },
                 ],
               }))
@@ -237,39 +316,103 @@ export function Collections({
                 required
               />
             </label>
-            <fieldset className="collection-icon-picker">
-              <legend>{t('Icône (facultatif)')}</legend>
-              <button type="button" aria-pressed={!icon} onClick={() => setIcon('')}>
-                {t('Aucune')}
+            <div
+              className="collection-mode"
+              role="group"
+              aria-label={t('Remplissage de la collection')}
+            >
+              <button type="button" aria-pressed={!automatic} onClick={() => setAutomatic(false)}>
+                {t('Manuel')}
               </button>
-              {Object.keys(collectionIcons).map((key) => (
-                <button
-                  type="button"
-                  key={key}
-                  aria-label={t(
-                    {
-                      folder: 'Dossier',
-                      star: 'Étoile',
-                      heart: 'Cœur',
-                      film: 'Film',
-                      anime: 'Anime',
-                      bookmark: 'Marque-page',
-                    }[key] ?? key,
+              <button type="button" aria-pressed={automatic} onClick={() => setAutomatic(true)}>
+                {t('Automatique')}
+              </button>
+            </div>
+            {!automatic && (
+              <p className="muted">
+                {t('Ajoutez des titres avec un appui prolongé dans Ma liste.')}
+              </p>
+            )}
+            {automatic && (
+              <CollectionRulesEditor rules={rules} onChange={setRules} metas={enriched} />
+            )}
+            <div className="collection-preview" aria-live="polite" aria-busy={enrichment.loading}>
+              <strong>
+                {t('Aperçu')} ·{' '}
+                {t(preview.length === 1 ? '{n} titre' : '{n} titres', { n: preview.length })}
+              </strong>
+              {enrichment.loading && <small>{t('Analyse des métadonnées…')}</small>}
+              {preview.length > 0 && (
+                <ul>
+                  {preview.slice(0, 5).map((m) => (
+                    <li key={collectionKey(m)}>{m.name}</li>
+                  ))}
+                </ul>
+              )}
+              {!preview.length && <p>{t('Aucun titre ne correspond pour le moment.')}</p>}
+              {automatic && items.length > 0 && (
+                <small>{t('Les titres ajoutés manuellement restent inclus.')}</small>
+              )}
+              {!!enrichment.failed && (
+                <small>
+                  {t(
+                    'Certaines métadonnées sont indisponibles. Les critères concernés attendront leur chargement.',
                   )}
-                  aria-pressed={icon === key}
-                  onClick={() => setIcon(key)}
-                >
-                  <CollectionIcon name={key} />
+                </small>
+              )}
+              {automatic && !validRules(rules) && (
+                <small role="status">
+                  {t('Complétez les conditions pour enregistrer la collection.')}
+                </small>
+              )}
+            </div>
+            <details className="collection-extra">
+              <summary>{t('Ordre d’affichage')}</summary>
+              <CollectionSorting sorts={sorts} onChange={setSorts} />
+            </details>
+            <details className="collection-extra">
+              <summary>
+                {t('Icône (facultatif)')} <CollectionIcon name={icon} />
+              </summary>
+              <fieldset className="collection-icon-picker">
+                <legend>{t('Icône (facultatif)')}</legend>
+                <button type="button" aria-pressed={!icon} onClick={() => setIcon('')}>
+                  {t('Aucune')}
                 </button>
-              ))}
-            </fieldset>
+                {Object.keys(collectionIcons).map((key) => (
+                  <button
+                    type="button"
+                    key={key}
+                    aria-label={t(
+                      {
+                        folder: 'Dossier',
+                        star: 'Étoile',
+                        heart: 'Cœur',
+                        film: 'Film',
+                        anime: 'Anime',
+                        bookmark: 'Marque-page',
+                      }[key] ?? key,
+                    )}
+                    aria-pressed={icon === key}
+                    onClick={() => setIcon(key)}
+                  >
+                    <CollectionIcon name={key} />
+                  </button>
+                ))}
+              </fieldset>
+            </details>
             <div className="collection-actions">
-              <button className="primary" type="submit">
+              <button
+                className="primary"
+                type="submit"
+                disabled={!name.trim() || (automatic && !validRules(rules))}
+              >
                 {t('Enregistrer')}
               </button>
               {editing !== 'new' && (
                 <button
                   type="button"
+                  className="danger"
                   onClick={() => {
                     setState((s) => ({
                       ...s,
@@ -280,7 +423,7 @@ export function Collections({
                   }}
                 >
                   <Trash2 size={18} />
-                  {t('Supprimer la collection')}
+                  {t('Supprimer')}
                 </button>
               )}
             </div>

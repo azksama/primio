@@ -180,6 +180,7 @@ export async function discoveryPool(
   seeds: Meta[] = [],
   type?: string,
   choice = 'all',
+  requireSuccess = false,
 ): Promise<Meta[]> {
   const types = type ? [type] : ['movie', 'series', 'anime']
   const targets = types.flatMap((kind) =>
@@ -200,6 +201,8 @@ export async function discoveryPool(
     ),
   )
   const map = new Map(seeds.map((m) => [`${m.type}:${m.id}`, m]))
+  if (requireSuccess && targets.length && results.every(r => r.status === 'rejected'))
+    throw Error('Catalog providers unavailable')
   results.forEach((result) => {
     if (result.status === 'fulfilled')
       result.value.forEach((m) =>

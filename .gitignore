@@ -29,3 +29,4 @@ apps/client/src-tauri/resources/windows/player/fonts/*
 !apps/client/src-tauri/resources/windows/player/fonts/inter.ttf
 
 releases/
+.impeccable/review/

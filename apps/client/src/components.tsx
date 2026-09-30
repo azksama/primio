@@ -1,4 +1,6 @@
 import { SubtitleFontImport, useSubtitleFonts, selectFont } from './subtitle-font-picker'
+import { InterfaceFonts } from './font-settings'
+import { bundledFonts, bundledFontFamily, bundledFontId } from './bundled-fonts'
 import { LanguageFlag } from './language-flag'
 import { cleanDescription } from './content'
 import { DialogShell } from './dialog-shell'
@@ -45,6 +47,7 @@ export function AddonIcon({ logo }: { logo?: string }) {
 export function Choice({
   label,
   separateLabel = false,
+  floating = false,
   flags = false,
   value,
   options,
@@ -52,12 +55,14 @@ export function Choice({
 }: {
   label: string
   separateLabel?: boolean
+  floating?: boolean
   flags?: boolean
   value: string
   options: readonly (readonly [string, string])[]
   onChange: (value: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [above, setAbove] = useState(false)
   const container = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     if (!open) return
@@ -65,7 +70,12 @@ export function Choice({
       if (!container.current?.contains(event.target as Node)) setOpen(false)
     }
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false)
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        setOpen(false)
+        container.current?.querySelector<HTMLButtonElement>(':scope > button')?.focus()
+      }
     }
     const back = (event: Event) => {
       event.stopImmediatePropagation()
@@ -73,21 +83,26 @@ export function Choice({
     }
     window.addEventListener('primio:back', back, true)
     document.addEventListener('pointerdown', dismiss)
-    document.addEventListener('keydown', escape)
+    document.addEventListener('keydown', escape, true)
     return () => {
       document.removeEventListener('pointerdown', dismiss)
-      document.removeEventListener('keydown', escape)
+      document.removeEventListener('keydown', escape, true)
       window.removeEventListener('primio:back', back, true)
     }
   }, [open])
   return (
-    <div className={'choice' + (separateLabel ? ' separate-label' : '')} ref={container}>
+    <div className={'choice' + (separateLabel ? ' separate-label' : '') + (separateLabel || floating ? ' floating' : '') + (open ? ' is-open' : '') + (above ? ' opens-up' : '')} ref={container}>
       {separateLabel && <span className="filter-label">{label}</span>}
       <button
+        type="button"
         className="row"
         aria-label={label}
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          const rect = container.current?.getBoundingClientRect()
+          if (rect) setAbove(window.innerHeight - rect.bottom < Math.min(280, options.length * 52 + 20) && rect.top > 280)
+          setOpen(!open)
+        }}
       >
         {!separateLabel && <span>{label}</span>}
         <span className="choice-value">
@@ -104,6 +119,7 @@ export function Choice({
         <div className="choice-options glass" role="group" aria-label={label}>
           {options.map(([id, name]) => (
             <button
+              type="button"
               key={id}
               aria-pressed={value === id}
               className={value === id ? 'selected' : ''}
@@ -174,11 +190,7 @@ export function Preferences({
               style={{
                 fontFamily:
                   customFonts.family ??
-                  (settings.subtitleFont === 'serif'
-                    ? '"Noto Serif", serif'
-                    : settings.subtitleFont === 'monospace'
-                      ? '"Droid Sans Mono", monospace'
-                      : 'Roboto, sans-serif'),
+                  bundledFontFamily(settings.subtitleFont),
                 fontSize: settings.subtitleSize / 2,
                 color: settings.subtitleColor,
                 background: settings.subtitleBackground ? '#000B' : 'transparent',
@@ -264,11 +276,9 @@ export function Preferences({
           />
           <Choice
             label={t('Police')}
-            value={customFonts.selected || settings.subtitleFont}
+            value={customFonts.selected || bundledFontId(settings.subtitleFont)}
             options={[
-              ['sans-serif', t('Sans empattement')],
-              ['serif', t('Avec empattement')],
-              ['monospace', t('Monospace')],
+              ...bundledFonts.map(f => [f.id, f.name] as [string, string]),
               ...customFonts.fonts.map((f): [string, string] => [f.id, f.family]),
             ]}
             onChange={(v) => {
@@ -433,6 +443,7 @@ export function Preferences({
       {section === 'options' && (
         <>
           <h2>{t('Apparence et navigation')}</h2>
+          <InterfaceFonts settings={settings} onChange={font => update('interfaceFont', font)} />
           <Choice
             label={t('Mode TV')}
             value={settings.tvMode ?? 'auto'}

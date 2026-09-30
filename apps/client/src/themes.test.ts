@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { pluginSchema } from '@primio/sdk'
-import { resolveTheme } from './themes'
+import { resolveTheme, readableAccent } from './themes'
 import { installPlugin, storePlugins } from './plugin-store'
 import manifest from '../../../packages/sdk/examples/neo-graphite.primio.json'
 
@@ -31,5 +31,13 @@ describe('theme material', () => {
       const foreground=luminance(ink)
       expect((Math.max(base,foreground)+.05)/(Math.min(base,foreground)+.05)).toBeGreaterThanOrEqual(4.5)
     }
+  })
+  it('applies a saved OLED accent to native theme borders without leaking to other themes', () => {
+    const oled = storePlugins.find(p => p.id === 'primio.oled')!
+    expect(resolveTheme([oled], '#22CCAA')).toMatchObject({ accent:'#22CCAA', border:'#22CCAA', background:'#000000' })
+    expect(resolveTheme([glass], '#22CCAA')).toEqual(resolveTheme([glass]))
+    expect(resolveTheme([oled], 'invalid')).toEqual(resolveTheme([oled]))
+    expect(readableAccent('#000000', '#121212')).not.toBe('#000000')
+    expect(readableAccent('#FFFFFF', '#121212')).toBe('#FFFFFF')
   })
 })

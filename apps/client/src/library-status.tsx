@@ -1,5 +1,5 @@
 import type { Meta, Progress, Settings } from './types'
-import { collectionKey } from './collections'
+import { collectionKey } from './library-key'
 import { isWatched } from './progress'
 import { t } from './i18n'
 

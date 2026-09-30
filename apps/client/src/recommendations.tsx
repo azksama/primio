@@ -39,6 +39,8 @@ function RecommendationShelf({
     [mood, setMood] = useState('similar'),
     [watched, setWatched] = useState(false)
   const historyKey = JSON.stringify(progress.map((p) => [p.id, p.type, p.position > 0, p.watched]))
+  const libraryKey = JSON.stringify(library.map(m => [m.type, m.id, m.name, m.category]))
+  const addonKey = JSON.stringify(addons.map(a => [a.url, a.enabled, a.manifest.version]))
   useEffect(() => {
     let active = true
     setBusy(true)
@@ -57,7 +59,7 @@ function RecommendationShelf({
       const full = await Promise.all(selected.map((m) => metadata(addons, m).catch(() => m)))
       const candidates = await enrichDiscovery(
         addons,
-        await discoveryPool(addons, '', [], category),
+        await discoveryPool(addons, '', [], category, 'all', true),
         24,
       )
       if (active) {
@@ -73,16 +75,14 @@ function RecommendationShelf({
         )
       }
     })()
-      .catch(() => {
-        if (active) setItems([])
-      })
+      .catch(() => {})
       .finally(() => {
         if (active) setBusy(false)
       })
     return () => {
       active = false
     }
-  }, [category, addons, library, historyKey])
+  }, [category, addonKey, libraryKey, historyKey])
   const ranked = items
     .filter((m) => !dismissed.includes(m.type + ':' + m.id))
     .map((m) => ({ meta: m, ...affinity(m, seeds, mood) }))
@@ -107,7 +107,7 @@ function RecommendationShelf({
         <p className="recommendation-hint">
           {t(watched ? 'Parce que vous avez regardé' : 'Parce que vous avez ajouté')}
           {' : '}
-          {seeds.map((m) => m.name).join(', ')}
+          {seeds.slice(0, 2).map((m) => m.name).join(', ')}
         </p>
       )}
       <div className="recommendation-moods" role="group" aria-label={t('Votre envie')}>
@@ -124,10 +124,10 @@ function RecommendationShelf({
           </button>
         ))}
       </div>
-      {busy ? (
+      {busy && !items.length ? (
         <p role="status">{t('Recherche…')}</p>
       ) : ranked.length ? (
-        <div className="poster-rail">
+        <div className="poster-rail" aria-busy={busy}>
           {ranked.map(({ meta, reasons }) => (
             <div className="recommendation-item" key={meta.type + meta.id}>
               {renderItem(meta)}

@@ -22,6 +22,7 @@ import Edit02Icon from '@hugeicons/core-free-icons/Edit02Icon'
 import Film02Icon from '@hugeicons/core-free-icons/Film02Icon'
 import FavouriteIcon from '@hugeicons/core-free-icons/FavouriteIcon'
 import StarIcon from '@hugeicons/core-free-icons/StarIcon'
+import Store01Icon from '@hugeicons/core-free-icons/Store01Icon'
 import FolderAddIcon from '@hugeicons/core-free-icons/FolderAddIcon'
 import Home01Icon from '@hugeicons/core-free-icons/Home01Icon'
 import ImageNotFound01Icon from '@hugeicons/core-free-icons/ImageNotFound01Icon'
@@ -102,6 +103,7 @@ export const X = icon(Cancel01Icon)
 
 export const Heart = icon(FavouriteIcon)
 export const Star = icon(StarIcon)
+export const Store = icon(Store01Icon)
 export const ThumbsDown = icon(ThumbsDownIcon)
 export const Shuffle = icon(ShuffleIcon)
 export const Mic = icon(Mic02Icon)

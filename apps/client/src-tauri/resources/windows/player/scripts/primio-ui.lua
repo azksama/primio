@@ -32,6 +32,11 @@ local preview_target,preview_x=0,0
 local next_offer=false
 local countdown_key,countdown_elapsed="",0
 local skipped_segments={}
+local cancelled_segments,cancelled_next={},false
+local scroll_to_current=false
+local episode_images={}
+local image_request=''
+for i,ep in ipairs(config.episodes or {})do ep.imageIndex=i-1 end
 local seek_feedback,seek_feedback_at=0,0
 local season, forced = nil, config.forceSubtitleStyle == true
 local season_picker=false
@@ -129,7 +134,11 @@ local function end_scrub(commit)
     end
     press=nil;last_move=mp.get_time()
 end
-local function open(name) panel=name;season_picker=false;scroll=0;last_move=mp.get_time() end
+local function hide_episode_images()
+    for id in pairs(episode_images)do mp.commandv('overlay-remove',id)end
+    episode_images={}
+end
+local function open(name) panel=name;season_picker=false;scroll=0;scroll_to_current=name=='episodes';if scroll_to_current then season=nil end;last_move=mp.get_time() end
 local function jump(forward)
     local pos=mp.get_property_number('time-pos',0)
     local duration=mp.get_property_number('duration',0)
@@ -158,7 +167,7 @@ local function set_style(name,value)
 end
 local function render_panel(a)
     rect(a,0,0,width,height,0,'000000','80')
-    local w=panel=='episodes' and math.min(480,width-48) or math.min(860,width-48)
+    local w=panel=='episodes' and math.min(560,width-48) or math.min(860,width-48)
     local x=panel=='episodes' and width-w-24 or (width-w)/2
     local h=height-48
     if panel=='tracks' then
@@ -228,45 +237,80 @@ local function render_panel(a)
         if season_picker then
             local count=math.max(1,math.floor((y+h-top-24)/52));scroll=math.max(0,math.min(scroll,#seasons-count))
             for i=1,count do local choice=seasons[i+scroll];if choice then
-                button(a,x+24,top+(i-1)*52,w-48,44,choice==0 and tr('Specials','Hors-série') or tr('Season ','Saison ')..choice,function()season=choice;season_picker=false;scroll=0 end,choice==season)
+                button(a,x+24,top+(i-1)*52,w-48,44,choice==0 and tr('Specials','Hors-série') or tr('Season ','Saison ')..choice,function()season=choice;season_picker=false;scroll=0;scroll_to_current=true end,choice==season)
             end end
         else
         local list={};for _,ep in ipairs(config.episodes or {})do if #seasons<=1 or ep.season==season then list[#list+1]=ep end end
-        local count=math.max(1,math.floor((y+h-top-24)/74));scroll=math.max(0,math.min(scroll,#list-count))
+        local count=math.max(1,math.floor((y+h-top-24)/100))
+        if scroll_to_current then for i,ep in ipairs(list)do if ep.id==config.currentVideoId then scroll=i-1-math.floor(count/2);break end end;scroll_to_current=false end
+        scroll=math.max(0,math.min(scroll,math.max(0,#list-count)))
+        local visible_images,requests={},{}
+        local iw,ih=math.max(1,math.floor(104*scale)),math.max(1,math.floor(72*scale))
         for i=1,count do local ep=list[i+scroll];if ep then
-            local row_y=top+(i-1)*74
+            local row_y=top+(i-1)*100
             local current=ep.id==config.currentVideoId
             local row_w=w-48
-            glass(a,x+24,row_y,row_w,64,current)
-            label(a,x+40,row_y+(current and 22 or 32),shorten(tostring(ep.episode or '')..' · '..(ep.title or ''),math.floor((row_w-134)/9)),17,4,current and accent or nil)
-            if current then label(a,x+40,row_y+45,tr('Now playing','En cours de lecture'),12,4,accent)end
-            hits[#hits+1]={x=x+24,y=row_y,w=row_w-100,h=64,action=function()mp.commandv('script-message-to','primio','episode',ep.id)end}
-            button(a,x+w-112,row_y+10,76,44,ep.watched and tr('Watched','Vu') or tr('Not seen','Non vu'),function()
+            glass(a,x+24,row_y,row_w,88,current)
+            local image_loaded=false
+            if config.episodeImagePath and ep.thumbnail and ep.thumbnail~='' then
+                local path=config.episodeImagePath..'/episode-'..ep.imageIndex..'-'..iw..'-'..ih..'.bgra'
+                local info=utils.file_info(path)
+                if info and info.size==iw*ih*4 then
+                    local id=16+i;mp.commandv('overlay-add',id,math.floor((x+32)*scale),math.floor((row_y+8)*scale),path,0,'bgra',iw,ih,iw*4);visible_images[id]=true;image_loaded=true
+                else requests[#requests+1]=ep.imageIndex end
+            end
+            if not image_loaded then rect(a,x+32,row_y+8,104,72,8,surface,'00');icon(a,x+84,row_y+44,'play')end
+            local tx,available=x+148,row_w-208
+            local function line(value,offset,size,color)
+                a:new_event();a:append(string.format('{\\an4\\pos(%.1f,%.1f)\\clip(%.1f,%.1f,%.1f,%.1f)\\q2\\fnInter\\fs%d\\bord0\\shad0\\1c&H%s&}%s',tx,row_y+offset,tx,row_y+8,tx+available,row_y+80,size,color or foreground,escape(shorten(value,math.max(1,math.floor(available/(size*.6)))))))
+            end
+            line(tostring(ep.episode or '')..' · '..(ep.title or ''),19,15,current and accent or nil)
+            if current then line(tr('Now playing','En cours de lecture'),38,11,accent)end
+            local description=tostring(ep.description or ''):gsub('[\r\n]+',' ')
+            local chars={};for c in description:gmatch('[%z\1-\127\194-\244][\128-\191]*')do chars[#chars+1]=c end
+            local per_line=math.max(1,math.floor(available/(12*.6)))
+            local start=current and 55 or 42
+            for n=1,2 do if #chars>(n-1)*per_line then line(table.concat(chars,'',(n-1)*per_line+1,math.min(#chars,n*per_line))..(n==2 and #chars>2*per_line and '…' or ''),start+(n-1)*16,12)end end
+            hits[#hits+1]={x=x+24,y=row_y,w=row_w-68,h=88,action=function()mp.commandv('script-message-to','primio','episode',ep.id)end}
+            button(a,x+w-88,row_y+22,52,44,'',function()
                 ep.watched=not ep.watched
+                mp.commandv('script-message-to','primio','watched-state',ep.id)
                 mp.set_property_native('user-data/primio/watched',{videoId=ep.id,watched=ep.watched,season=ep.season,episode=ep.episode})
             end,ep.watched)
+            label(a,x+w-62,row_y+44,ep.watched and tr('Watched','Vu') or tr('Not seen','Non vu'),11,5,ep.watched and accent or nil)
         end end
+        for id in pairs(episode_images)do if not visible_images[id]then mp.commandv('overlay-remove',id)end end
+        episode_images=visible_images
+        local request=utils.format_json({indices=requests,width=iw,height=ih})
+        if #requests>0 and request~=image_request then image_request=request;mp.set_property_native('user-data/primio/episode-images',utils.parse_json(request))end
         end
     end
 end
 local pip=false
+local pip_panscan=0
 local function unfinished()
     local pos,duration=mp.get_property_number('time-pos',0),mp.get_property_number('duration',0)
     if not loaded or duration<=0 or pos/duration>=0.99 or mp.get_property_native('eof-reached') then return false end
     for _,s in ipairs(config.skipSegments or {}) do
-        if s.kind=='outro' and s.start>=0 and s['end']>s.start and s['end']<=duration and pos>=s.start and
+        if s.kind=='outro' and not cancelled_segments[s.start] and s.start>=0 and s['end']>s.start and s['end']<=duration and pos>=s.start and
             (not s.episodeLength or s.episodeLength==0 or math.abs(duration-s.episodeLength)<math.max(10,duration*.03)) then return false end
     end
     return true
 end
 local function restore_player()
-    pip=false;mp.set_property_native('ontop',false);mp.set_property_native('fullscreen',true);last_move=mp.get_time()
+    pip=false;mp.set_property_number('panscan',pip_panscan);mp.set_property_native('ontop',false);mp.set_property_native('fullscreen',true);last_move=mp.get_time()
 end
 local function enter_pip()
     if pip or not unfinished() then return false end
     pip=true;panel=nil;hide_logo();mp.set_property_native('fullscreen',false)
+    pip_panscan=mp.get_property_number('panscan',0);mp.set_property_number('panscan',0)
     mp.set_property_native('window-minimized',false);mp.set_property_native('ontop',true)
-    mp.set_property('geometry','480x270-24-24');last_move=mp.get_time();return true
+    local aspect=mp.get_property_number('video-out-params/aspect',mp.get_property_number('video-params/aspect',16/9))
+    if aspect<=0 then aspect=16/9 end
+    mp.set_property('geometry',string.format('480x%d-24-24',math.floor(480/aspect+.5)))
+    local video_width=mp.get_property_number('video-out-params/dw',mp.get_property_number('video-params/dw',0))
+    if video_width>0 then mp.set_property_number('window-scale',480/video_width)end
+    last_move=mp.get_time();return true
 end
 local function leave_player() if pip or not enter_pip() then mp.commandv('quit') end end
 mp.observe_property('focused','bool',function(_,focused)if focused==false then end_scrub(false);enter_pip()end end)
@@ -277,6 +321,7 @@ local function render()
     scale=pip and 1 or rh/720;width=rw/scale;height=pip and rh or 720;hits={}
     local a=assdraw.ass_new()
     local buffering=not loaded or (not scrub and mp.get_property_native('paused-for-cache',false))
+    if panel~='episodes' or season_picker or pip then hide_episode_images()end
     if preview_visible and (buffering or panel or pip or scrub or (mp.get_time()-last_move>=3 and not mp.get_property_native('pause'))) then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
     mp.set_property_native('user-data/primio/ui',{loading=buffering,panel=panel or '',material=neo and 'neumorphic' or 'glass',nextOffered=next_offer,fullscreen=mp.get_property_native('fullscreen'),pip=pip,scrubbing=scrub~=nil,seekTarget=scrub and scrub.target or nil})
     if pip then
@@ -344,27 +389,32 @@ local function render()
         if s.start>=0 and s['end']>s.start and s['end']<=duration and not skipped_segments[s.start] and
             (not s.episodeLength or s.episodeLength==0 or math.abs(duration-s.episodeLength)<math.max(10,duration*.03)) then
             if pos>=s.start and pos<s['end'] then segment=segment or s
-            elseif pos<s.start and s.start-pos<=5 and (not upcoming or s.start<upcoming.start) then upcoming=s end
+            elseif pos<s.start and s.start-pos<=3 and not cancelled_segments[s.start] and (not upcoming or s.start<upcoming.start) then upcoming=s end
         end
     end
     local has_next=config.nextVideoId and config.nextVideoId~=''
     local next_available=has_next and (duration-pos<=30 or (segment and segment.kind=='outro'))
-    local fallback=has_next and duration>35 and duration-pos>30 and duration-pos<=35 and not segment
+    local fallback=not cancelled_next and has_next and duration>33 and duration-pos>30 and duration-pos<=33 and not segment
     countdown_key=upcoming and (upcoming.kind..':'..upcoming.start) or fallback and 'next' or ''
-    countdown_elapsed=upcoming and 5-(upcoming.start-pos) or fallback and 35-(duration-pos) or 5
+    countdown_elapsed=upcoming and 3-(upcoming.start-pos) or fallback and 33-(duration-pos) or 3
     local can_show=not buffering and not panel and not pip and not scrub
-    local warning=can_show and countdown_key~='' and not segment and not next_available
+    local warning=can_show and countdown_key~='' and not segment
     local x,y=width-76,height-180
     if warning then
         glass(a,x,y,48,48,false)
         a:new_event();a:append('{\\an7\\pos(0,0)\\bord0\\shad0\\1c&HF3F2E9&}');a:draw_start()
-        local sweep=math.max(1,math.ceil(90*(1-countdown_elapsed/5)))
+        local sweep=math.max(1,math.ceil(90*(1-countdown_elapsed/3)))
         for i=1,sweep do
             local from=-math.pi/2+(i-1)/90*2*math.pi;local to=-math.pi/2+i/90*2*math.pi
             a:move_to(x+24+20*math.cos(from),y+24+20*math.sin(from));a:line_to(x+24+22*math.cos(from),y+24+22*math.sin(from))
             a:line_to(x+24+22*math.cos(to),y+24+22*math.sin(to));a:line_to(x+24+20*math.cos(to),y+24+20*math.sin(to))
         end
-        a:draw_stop();label(a,x+24,y+24,tostring(math.max(1,math.ceil(5-countdown_elapsed))),18,5)
+        a:draw_stop();label(a,x+24,y+24,tostring(math.max(1,math.ceil(3-countdown_elapsed))),18,5)
+        local key=countdown_key
+        hits[#hits+1]={x=x,y=y,w=48,h=48,action=function()
+            if key=='next' then cancelled_next=true else local start=tonumber(key:match(':(.+)$'));if start then cancelled_segments[start]=true end end
+            mp.commandv('script-message-to','primio','cancel-skip',key)
+        end}
     elseif can_show and next_available then
         button(a,width-248,y,220,48,tr('Next episode','Épisode suivant'),function()next_offer=false;mp.commandv('script-message-to','primio','next')end)
     elseif can_show and segment then
@@ -419,9 +469,10 @@ mp.add_key_binding('a','primio-tracks',function()open('tracks')end)
 mp.register_script_message('close',function()panel=nil end)
 mp.register_script_message('open',function(name)open(name=='episodes' and 'episodes' or name=='style' and 'style' or name=='speed' and 'speed' or 'tracks')end)
 mp.register_script_message('next-offer',function()next_offer=true end)
+mp.register_script_message('inferred-watched',function(raw)for _,change in ipairs(utils.parse_json(raw) or {})do for _,ep in ipairs(config.episodes or {})do if ep.id==change.videoId then ep.watched=true end end end end)
 mp.register_event('start-file',function()loaded=false end)
 mp.register_event('playback-restart',function()loaded=true;last_move=mp.get_time()end)
-mp.register_event('shutdown',hide_logo)
+mp.register_event('shutdown',function()hide_logo();hide_episode_images()end)
 local last_volume,last_brightness,last_mute
 mp.observe_property('volume','number',function(_,value)
     if value and last_volume~=nil and value~=last_volume and loaded then levels.volume={fraction=mp.get_property_native('mute') and 0 or value/100,at=mp.get_time()}end

@@ -1,5 +1,7 @@
 import { t } from './i18n'
 import { findProgress, isWatched } from './progress'
+import { compareEpisodes, isEpisodeAvailable } from './episode-order'
+import { cleanDescription } from './content'
 import type { Meta, Progress } from './types'
 export function episodeQueue(
   meta: Meta,
@@ -10,21 +12,14 @@ export function episodeQueue(
 ) {
   const episodes = (meta.type === 'movie' ? [] : (meta.videos ?? []))
     .slice()
-    .sort((a, b) => (a.season ?? 1) - (b.season ?? 1) || (a.episode ?? 0) - (b.episode ?? 0))
+    .sort(compareEpisodes)
   const index = episodes.findIndex((v) => v.id === currentId)
   const current = episodes[index]
   const next =
     index >= 0
       ? episodes
           .slice(index + 1)
-          .find(
-            (v) =>
-              (v.season ?? 1) > 0 &&
-              !v.releaseUnconfirmed &&
-              (!v.released ||
-                !Number.isFinite(Date.parse(v.released)) ||
-                Date.parse(v.released) <= now),
-          )
+          .find((v) => isEpisodeAvailable(v, now))
       : undefined
   return {
     episodes: episodes.map((v) => ({
@@ -33,6 +28,10 @@ export function episodeQueue(
         hideSpoilers && !isWatched(findProgress(progress, meta.type, v.id))
           ? t('Épisode {n}', { n: v.episode ?? 0 })
           : v.title || v.name || t('Épisode'),
+      thumbnail: hideSpoilers && !isWatched(findProgress(progress, meta.type, v.id))
+        ? meta.poster ?? '' : v.thumbnail ?? meta.poster ?? '',
+      description: hideSpoilers && !isWatched(findProgress(progress, meta.type, v.id))
+        ? '' : cleanDescription(v.overview || v.description || ''),
       season: v.season ?? 1,
       episode: v.episode ?? 0,
       watched: isWatched(findProgress(progress, meta.type, v.id)),
@@ -56,11 +55,9 @@ export function playbackTitle(meta: Meta, id: string) {
   )
 }
 
-export function watchVideoId(meta: Meta, progress: Progress[]) {
+export function watchVideoId(meta: Meta, progress: Progress[], now = Date.now()) {
   if (meta.type === 'movie' || (meta.type !== 'series' && meta.type !== 'anime' && !meta.videos?.length)) return meta.id
-  const videos = [...(meta.videos ?? [])].sort((a, b) =>
-    (a.season ?? 1) - (b.season ?? 1) || (a.episode ?? 0) - (b.episode ?? 0),
-  )
+  const videos = [...(meta.videos ?? [])].sort(compareEpisodes)
   const latest = progress.filter(p => p.id === meta.id && p.type === meta.type &&
     p.videoId !== meta.id && (p.position > 0 || isWatched(p)),
   ).sort((a, b) => b.updatedAt - a.updatedAt)[0]
@@ -71,10 +68,10 @@ export function watchVideoId(meta: Meta, progress: Progress[]) {
       latest.season !== undefined && latest.episode !== undefined &&
       ((v.season ?? 1) > latest.season || ((v.season ?? 1) === latest.season && (v.episode ?? 0) > latest.episode)),
     )
-    const next = following.find(v => (v.season ?? 1) > 0 && !isWatched(findProgress(progress, meta.type, v.id)))
+    const next = following.find(v => isEpisodeAvailable(v, now) && !isWatched(findProgress(progress, meta.type, v.id)))
     if (next) return next.id
     return latest.videoId
   }
   if (!videos.length) return undefined
-  return videos.find(v => (v.season ?? 1) > 0 && !isWatched(findProgress(progress, meta.type, v.id)))?.id ?? videos[0].id
+  return videos.find(v => isEpisodeAvailable(v, now) && !isWatched(findProgress(progress, meta.type, v.id)))?.id
 }

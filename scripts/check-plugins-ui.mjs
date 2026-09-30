@@ -19,7 +19,7 @@ try {
       const plugins=[
         {schemaVersion:2,id:'primio.oled',name:'OLED',version:'1.0.0',author:'Primio',description:'Noir pur et contraste renforcé.',category:'theme',enabled:true,permissions:['theme'],theme:{background:'#000000',surface:'#121212',accent:'#FFFFFF',text:'#FFFFFF',muted:'#C4C4C4',radius:12}},
         {schemaVersion:2,id:'primio.star-wars',name:'Star Wars',version:'1.0.0',author:'Primio',description:'Les neuf films de la saga Skywalker dans l’ordre de sortie.',enabled:true,permissions:['watchOrder'],watchOrder:[{id:'release',title:'Star Wars',order:'release',entries:[{id:'tt0076759',type:'movie',name:'A New Hope'}]}]},
-        {schemaVersion:2,id:'personal.sources',name:'QA source preferences',version:'1.0.0',author:'QA',description:'Synthetic source configuration for UI checks.',permissions:['sources'],sources:{prefer:['1080p'],hide:['CAM']},enabled:true},
+        {schemaVersion:2,id:'personal.sources',name:'QA source preferences',version:'1.0.0',author:'QA',description:'Synthetic source configuration for UI checks.',icon:'https://qa.example/plugin-icon.svg',permissions:['sources'],sources:{prefer:['1080p'],hide:['CAM']},enabled:true},
       ]
       window.__TAURI_INTERNALS__.invoke=async(command,args={})=>{
         if(command==='secure_read'&&args.key==='plugins') return sessionStorage.getItem('qa-plugins')??JSON.stringify(plugins)
@@ -38,7 +38,8 @@ try {
       }
     })
     await page.route('**/qa-logo.svg',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="500" height="170"><text x="250" y="115" text-anchor="middle" fill="white" font-size="76">QA Story</text></svg>'}))
-    await page.goto(process.env.PRIMIO_UI_URL??'http://127.0.0.1:9477')
+    await page.route('https://qa.example/plugin-icon.svg',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52"><rect width="52" height="52" rx="12" fill="#26CBA8"/><path d="M20 15 38 26 20 37Z" fill="white"/></svg>'}))
+    await page.goto(process.env.PRIMIO_UI_URL??'http://127.0.0.1:9477',{waitUntil:'domcontentloaded'})
     const openPlugins=async()=>{
       await page.getByRole('navigation').getByRole('button',{name:'Settings',exact:true}).click()
       await page.getByRole('button',{name:/^Plugins\s/}).click()
@@ -51,6 +52,8 @@ try {
     }
     await openPlugins()
     await expect(page.locator('.installed-plugin')).toHaveCount(4)
+    await expect(page.locator('.installed-plugin .plugin-art')).toHaveCount(4)
+    await expect.poll(()=>page.locator('.installed-plugin .plugin-art img').evaluate(n=>n.complete&&n.naturalWidth>0)).toBe(true)
     await expect(page.locator('.plugin-store')).toHaveCount(0)
     expect(await page.locator('.installed-plugin').nth(2).locator('small').textContent()).toContain('1.1.0')
     await capture('installed')

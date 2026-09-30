@@ -3,6 +3,15 @@ import { mergeAccount, mergeValue, synchronizeAccount } from './account-sync'
 import { createState, snapshotState } from './preferences'
 
 describe('automatic account synchronization', () => {
+  it('keeps the OLED accent when first connecting to a legacy state without it', () => {
+    const local = createState(), remote = createState()
+    local.settings.oledAccent = '#26CBA8'
+    const result = mergeAccount(null, local, snapshotState(remote))
+    expect(result.settings.oledAccent).toBe('#26CBA8')
+    expect(result.profiles[0].settings.oledAccent).toBe('#26CBA8')
+    remote.settings.oledAccent = '#EE6600'
+    expect(mergeAccount(null, local, snapshotState(remote)).settings.oledAccent).toBe('#EE6600')
+  })
   it('merges independent edits and keeps library deletions across devices', () => {
     const base = createState()
     base.library = [

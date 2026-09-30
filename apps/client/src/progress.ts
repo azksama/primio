@@ -1,5 +1,6 @@
 import { withoutDeleted } from './progress-deletions'
 import { failSavedSource } from './source-preferences'
+import { compareEpisodes } from './episode-order'
 import type { Meta, Progress, UserState } from './types'
 
 export function episodeProgress(meta: Meta, videoId: string) {
@@ -70,10 +71,31 @@ export function recordProgress(
       (position / duration >= 0.95 && (!previous || previous.duration <= 0 ||
         previous.position / previous.duration < 0.95))),
   }
-  return [
+  let next = [
     item,
     ...items.filter((p) => progressKey(p.type, p.videoId) !== progressKey(meta.type, videoId)),
-  ].slice(0, 500)
+  ]
+  // Infer earlier episodes once when this episode passes halfway. Later manual
+  // "not watched" choices must survive subsequent progress polls.
+  if (meta.type !== 'movie' && watched === undefined && position / duration > 0.5 &&
+      (!previous || previous.duration <= 0 || previous.position / previous.duration <= 0.5)) {
+    const current = meta.videos?.find(v => v.id === videoId) ?? item
+    if (current.episode !== undefined && (current.season ?? 1) > 0) {
+      for (const video of meta.videos ?? []) {
+        if ((video.season ?? 1) <= 0 || video.episode === undefined || compareEpisodes(video, current) >= 0) continue
+        const before = findProgress(next, meta.type, video.id)
+        if (isWatched(before) || (before?.updatedAt ?? 0) >= updatedAt) continue
+        const inferred: Progress = {
+          id: meta.id, type: meta.type, name: meta.name, poster: meta.poster,
+          category: meta.category, ...episodeProgress(meta, video.id), ...before,
+          videoId: video.id, position: before?.position ?? 0, duration: before?.duration || 1,
+          watched: true, updatedAt,
+        }
+        next = [...next.filter(p => progressKey(p.type, p.videoId) !== progressKey(meta.type, video.id)), inferred]
+      }
+    }
+  }
+  return next.slice(0, 500)
 }
 export interface NativeProgress {
   sourceFailed?: boolean

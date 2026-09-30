@@ -9,6 +9,7 @@ import {
 } from './email-verification'
 import { usePlaybackSync, mergePlaybackState } from './playback-sync'
 import { ContinueCard } from './continue-card'
+import { useContinueWatching } from './continue-watching'
 import { defaultSort } from './catalog-sort'
 import { UpdatePanel } from './update-panel'
 import { ImportPanel } from './import-panel'
@@ -342,6 +343,7 @@ export default function App() {
     setSyncVersion,
   )
   const importSync = { syncing: accountSync.syncing, pending: !!state.pendingImports?.length }
+  const continuing = useContinueWatching(state.progress, catalogAddons, (token ? email : 'local') + ':' + state.activeProfileId, ready)
   currentPlayback.current = playback
   const notify = (text: string) => {
     setToast(text)
@@ -777,11 +779,12 @@ export default function App() {
           setSourceList(ordered)
           setSourceLoading(result.pending > 0)
         }),
-        meta.logo ? Promise.resolve(meta) : metadata(catalogAddons, meta),
+        meta.logo && (meta.type === 'movie' || meta.videos?.length) ? Promise.resolve(meta) : metadata(catalogAddons, meta),
       ])
       if (seq !== sourceSequence.current) return
       meta = fullMeta
       setSourceTarget({ meta, id })
+      void skipSegments(meta, id, state.settings).catch(() => {})
       const matching = equivalentSources(rankSources(r.items, plugins), state.settings, meta)
       const ranked = r.groups.flatMap(group => matching.items.filter(s => s.addonKey === group.key))
       setSourceList(ranked)
@@ -881,8 +884,14 @@ export default function App() {
     launchLock.current = true
     setLaunching(true)
     const sequence = sourceSequence.current
-    const target = override ?? sourceTarget!
+    const target = { ...(override ?? sourceTarget!) }
     try {
+      // Sources may arrive before the metadata request finishes. Always hydrate
+      // episodic playback here too, including launches from Continue Watching.
+      if (target.meta.type !== 'movie' && !target.meta.videos?.length) {
+        target.meta = await metadata(catalogAddons, target.meta)
+        if (sequence !== sourceSequence.current) return
+      }
       const url = playbackUrl(stream)
       if (stream.externalUrl && !stream.url) {
         await openLink(url)
@@ -894,7 +903,7 @@ export default function App() {
       ]
       const segments = await Promise.race([
         skipSegments(target.meta, target.id, state.settings),
-        new Promise<never[]>((resolve) => setTimeout(() => resolve([]), 4000)),
+        new Promise<never[]>((resolve) => setTimeout(() => resolve([]), 8000)),
       ])
       if (sequence !== sourceSequence.current) return
       const remembered = await rememberSource(state.settings, target.meta, target.id, stream)
@@ -942,7 +951,7 @@ export default function App() {
                         .map((v) => v.season ?? 1),
                     ).size
                   : undefined),
-              videos: target.meta.videos?.filter((v) => v.id === target.id),
+              videos: target.meta.videos?.map(v => ({ id: v.id, title: '', season: v.season, episode: v.episode, thumbnail: v.thumbnail })),
             },
             videoId: target.id,
             sourceFingerprint: fingerprint,
@@ -1451,16 +1460,14 @@ export default function App() {
         )}
       </section>
       {state.settings.showContinue &&
-        state.progress.some((p) => !isWatched(p) && p.position > 0) && (
+        continuing.length > 0 && (
           <section className="shelf">
             <div className="section-head">
               <h2>{t('Reprendre')}</h2>
               <button onClick={() => navigate('library')}>{t('Tout voir')}</button>
             </div>
             <div className="continue-grid">
-              {state.progress
-                .filter((p) => !isWatched(p) && p.position > 0)
-                .sort((a, b) => b.updatedAt - a.updatedAt)
+              {continuing
                 .slice(0, 10)
                 .map((p) => (
                   <ContinueCard
@@ -1468,7 +1475,7 @@ export default function App() {
                     item={p}
                     addons={catalogAddons}
                     hideSpoilers={hideSpoilers}
-                    onPlay={() => chooseSources(p, p.videoId)}
+                    onPlay={() => chooseSources(p.meta ?? p, p.videoId)}
                   />
                 ))}
             </div>

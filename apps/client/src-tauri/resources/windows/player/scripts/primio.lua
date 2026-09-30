@@ -10,6 +10,13 @@ if language_file then translations = utils.parse_json(language_file:read('*a')) 
 local function text(en, french) return fr and french or translations[french] or en end
 local requested, offered = false, false
 local handled = {}
+local cancelled_segments, watched_edits = {}, {}
+local cancelled_next, inferred_previous = false, false
+mp.register_script_message('cancel-skip', function(key)
+    if key=='next' then cancelled_next=true
+    else local start=tonumber((key or ''):match(':(.+)$'));if start then cancelled_segments[start]=true end end
+end)
+mp.register_script_message('watched-state', function(id) watched_edits[id]=true end)
 local cache_guard
 cache_guard = mp.add_periodic_timer(0.1, function()
     local used = mp.get_property_number('demuxer-cache-state/file-cache-bytes', 0)
@@ -18,10 +25,10 @@ cache_guard = mp.add_periodic_timer(0.1, function()
         cache_guard:kill()
     end
 end)
-local function episode(id, auto)
+local function episode(id, auto, completed)
     if requested or not id or id == '' then return end
     requested = true
-    mp.set_property_native('user-data/primio/request', {id=id,auto=auto == true})
+    mp.set_property_native('user-data/primio/request', {id=id,auto=auto == true,completed=completed==true})
     mp.add_timeout(0.8, function() mp.commandv('quit') end)
 end
 mp.register_script_message('episode', function(id) episode(id, false) end)
@@ -65,16 +72,31 @@ end
 mp.observe_property('time-pos', 'number', function(_, pos)
     if not pos or requested then return end
     local duration=mp.get_property_number('duration',0)
+    if not inferred_previous and duration>0 and pos/duration>.5 then
+        inferred_previous=true
+        local current
+        for _,ep in ipairs(config.episodes or {})do if ep.id==config.currentVideoId then current=ep;break end end
+        local changes={}
+        if current and (current.season or 1)>0 then
+            for _,ep in ipairs(config.episodes or {})do
+                if (ep.season or 1)>0 and not ep.watched and not watched_edits[ep.id] and
+                   ((ep.season or 1)<(current.season or 1) or ((ep.season or 1)==(current.season or 1) and (ep.episode or 0)<(current.episode or 0))) then
+                    changes[#changes+1]={videoId=ep.id,watched=true,season=ep.season,episode=ep.episode}
+                end
+            end
+        end
+        if #changes>0 then mp.set_property_native('user-data/primio/inferred-watched',changes);mp.commandv('script-message-to','primio_ui','inferred-watched',utils.format_json(changes))end
+    end
     for i, segment in ipairs(config.skipSegments or {}) do
         if not handled[i] and segment.start>=0 and segment['end']<=duration and pos >= segment.start and pos < segment['end'] and (not segment.episodeLength or segment.episodeLength==0 or math.abs(duration-segment.episodeLength)<math.max(10,duration*.03)) then
             handled[i]=true
             if segment.kind=='outro' then
-                if config.autoNextEpisode then episode(config.nextVideoId,true) else offer_next() end
-            elseif (segment.kind=='intro' and config.autoSkipIntro) or (segment.kind=='recap' and config.autoSkipRecap) then mp.commandv('seek',segment['end'],'absolute') end
+                if not cancelled_next and not cancelled_segments[segment.start] and config.autoNextEpisode then episode(config.nextVideoId,true,true) else offer_next() end
+            elseif not cancelled_segments[segment.start] and ((segment.kind=='intro' and config.autoSkipIntro) or (segment.kind=='recap' and config.autoSkipRecap)) then mp.commandv('seek',segment['end'],'absolute') end
         end
     end
     if duration>0 and duration-pos<=30 then offer_next() end
-    if config.autoNextEpisode and duration>0 and duration-pos<=0.5 then episode(config.nextVideoId,true) end
+    if not cancelled_next and config.autoNextEpisode and duration>0 and duration-pos<=0.5 then episode(config.nextVideoId,true,true) end
 end)
 
 local function lang(value)

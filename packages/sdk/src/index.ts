@@ -47,6 +47,7 @@ export const pluginSchema = z
       .regex(/^[a-z0-9]+([.-][a-z0-9]+)+$/)
       .max(100),
     name: z.string().min(1).max(80),
+    icon: https.optional(),
     version: z.string().regex(/^\d+\.\d+\.\d+$/),
     description: z.string().max(500),
     author: z.string().max(100),

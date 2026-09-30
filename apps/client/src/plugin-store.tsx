@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { definePlugin, type PrimioPlugin } from '@primio/sdk'
-import { Check, Download, Search, Trash2, Play, Settings, Puzzle, Sparkles } from './icons'
+import { Check, Download, Search, Trash2, Play, Settings, Puzzle, Sparkles, Clapperboard, Bookmark, Eye } from './icons'
 import { configurablePlugin } from './plugin-configuration'
 import { t } from './i18n'
 
@@ -260,11 +260,11 @@ export function InstalledPlugins({ installed, onConfigure, onToggle, onRemove, o
   </button>
   return <section className="installed-plugins" aria-label={t('Plugins installés')}>
     <article className="installed-plugin">
-      <div className="installed-plugin-heading"><Sparkles /><div className="store-copy"><h2>Primio Intro Skipper</h2><p>{t('Passer les intros et les génériques.')}</p><small>{t('Plugin intégré')} · 0.2.0</small></div><span className="plugin-enabled"><Check size={16} />{t('Activé')}</span></div>
+      <div className="installed-plugin-heading"><span className="plugin-art" aria-hidden="true"><Sparkles /></span><div className="store-copy"><h2>Primio Intro Skipper</h2><p>{t('Passer les intros et les génériques.')}</p><small>{t('Plugin intégré')} · 0.2.0</small></div><span className="plugin-enabled"><Check size={16} />{t('Activé')}</span></div>
       <div className="store-actions">{configurationButton(null)}</div>
     </article>
     {installed.map(p => <article className="installed-plugin" key={p.id}>
-      <div className="installed-plugin-heading"><Puzzle /><div className="store-copy"><h2>{t(p.name)}</h2><p>{t(p.description)}</p><small>{p.author} · {p.version}</small></div></div>
+      <div className="installed-plugin-heading"><PluginIcon plugin={p} /><div className="store-copy"><h2>{t(p.name)}</h2><p>{t(p.description)}</p><small>{p.author} · {p.version}</small></div></div>
       <div className="store-actions">
         <button className="secondary" aria-pressed={p.enabled !== false} onClick={() => onToggle(p)}>{p.enabled !== false && <Check size={16} />}{t(p.enabled !== false ? 'Activé' : 'Activer')}</button>
         {configurablePlugin(p) && configurationButton(p)}
@@ -282,6 +282,15 @@ export function installPlugin(list: PrimioPlugin[], candidate: PrimioPlugin) {
       .map((p) => (candidate.theme && p.theme ? { ...p, enabled: false } : p)),
     { ...candidate, enabled: true },
   ]
+}
+function PluginIcon({ plugin }: { plugin: PrimioPlugin }) {
+  const [failed, setFailed] = useState<string>()
+  if (plugin.icon && failed !== plugin.icon) return <span className="plugin-art" aria-hidden="true"><img src={plugin.icon} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setFailed(plugin.icon)} /></span>
+  if (plugin.theme) return <span className="plugin-art plugin-theme-art" aria-hidden="true" style={{ background: plugin.theme.background, borderColor: plugin.theme.accent }}>
+    <span style={{ background: plugin.theme.surface }}><Play size={20} style={{ color: plugin.theme.accent }} /></span>
+  </span>
+  const Icon = plugin.watchOrder ? Clapperboard : plugin.sources ? Play : plugin.layout ? Bookmark : plugin.accessibility || plugin.spoilers ? Eye : Puzzle
+  return <span className="plugin-art" aria-hidden="true"><Icon /></span>
 }
 export function enableInstalledPlugin(list: PrimioPlugin[], candidate: PrimioPlugin) {
   return list.map(p => p.id === candidate.id ? { ...p, enabled:true } : candidate.theme && p.theme ? { ...p, enabled:false } : p)
@@ -343,7 +352,7 @@ export function PluginStore({
             enabled = existing?.enabled !== false
           return (
             <article key={p.id} className="store-entry">
-              {p.theme && (
+              {p.theme ? (
                 <div
                   className={'theme-swatch' + (p.theme.material === 'neumorphic' ? ' theme-swatch-neo' : '')}
                   aria-hidden="true"
@@ -362,7 +371,7 @@ export function PluginStore({
                     <span style={{ background: p.theme.muted }} />
                   </>}
                 </div>
-              )}
+              ) : <PluginIcon plugin={p} />}
               <div className="store-copy">
                 <h3>{t(p.name)}</h3>
                 <p>{t(p.description)}</p>

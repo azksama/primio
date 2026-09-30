@@ -11,7 +11,7 @@ Documentation : https://github.com/azksama/primio/blob/main/docs/PLUGINS.md
 ## Installation
 
 ```sh
-npm install https://github.com/azksama/primio/releases/download/sdk-v0.3.0/primio-sdk-0.3.0.tgz
+npm install https://github.com/azksama/primio/releases/download/sdk-v0.4.0/primio-sdk-0.4.0.tgz
 ```
 
 Cette archive contient le module JavaScript compilé et ses types TypeScript. Aucun serveur Primio n’est requis pour développer un plugin déclaratif. Voir [le guide et l’exemple complet](https://github.com/azksama/primio/blob/main/docs/PLUGINS.md).
@@ -20,6 +20,8 @@ Cette archive contient le module JavaScript compilé et ses types TypeScript. Au
 ## Schema v2 (SDK 0.2.0)
 
 Version 1 manifests remain supported. Version 2 adds declarative, permission-scoped customization:
+
+SDK 0.4.0 accepts an optional top-level `icon` HTTPS URL without embedded credentials. Primio 0.2.20 and newer display it in the installed list and store, with a theme/capability fallback if it cannot load. This field does not request an extra permission; existing manifests remain compatible.
 
 - `theme`: background, surface, accent, text, muted, border, radius (8–28), glassOpacity (0.4–1), font (Inter/serif/monospace).
 - `layout`: columns (3/4/5), labels and density (compact/comfortable).

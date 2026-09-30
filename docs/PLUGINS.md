@@ -8,6 +8,8 @@ Le module intégré [Primio Intro Skipper 0.2](../packages/intro-skipper/README.
 
 packages/sdk expose definePlugin, pluginSchema, activatePlugin et rankSources. Un plugin est un document JSON déclaratif validé intégralement avec Zod. Installer un fichier .primio.json depuis Préférences → Plugins et thèmes. Les permissions sont présentées avant l’installation et vérifiées par le runtime ; un fichier ne peut pas déclarer une fonctionnalité sans sa permission.
 
+Le SDK 0.4.0 accepte aussi `icon`, URL HTTPS facultative sans identifiants intégrés. Depuis Primio 0.2.20, la liste installée et le magasin l’affichent sans transmettre de référent, avec une miniature de thème ou un pictogramme en repli si elle échoue. Le champ n’ajoute pas de permission et les manifestes existants restent compatibles.
+
 | Permission | Fonctions |
 |---|---|
 | theme | Couleurs background, surface, accent, text, muted et border ; rayon, transparence, police, matière glass/neumorphic, ombres et mode sombre/clair |

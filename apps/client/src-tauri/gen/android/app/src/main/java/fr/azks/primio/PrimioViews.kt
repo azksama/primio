@@ -26,6 +26,7 @@ object PrimioStyle {
 
 class PrimioSheet(context:Context,title:String,private val lateral:Boolean=false):Dialog(context) {
  val content=LinearLayout(context).apply{orientation=LinearLayout.VERTICAL;setPadding(20.dp,0,20.dp,12.dp)}
+ val scroll=ScrollView(context).apply{isFillViewport=false;addView(content)}
  private val Int.dp:Int get()=PrimioStyle.dp(context,this)
  private val panel=LinearLayout(context).apply{orientation=LinearLayout.VERTICAL;background=PrimioStyle.glass(context)}
  init {
@@ -33,7 +34,7 @@ class PrimioSheet(context:Context,title:String,private val lateral:Boolean=false
   head.addView(PrimioStyle.text(context,title,20f),LinearLayout.LayoutParams(0,-2,1f))
   head.addView(PrimioStyle.button(context,"×",PrimioI18n.text(context,"Fermer")){dismiss()},LinearLayout.LayoutParams(48.dp,48.dp).apply{leftMargin=16.dp})
   panel.addView(head)
-  panel.addView(ScrollView(context).apply{isFillViewport=false;addView(content)},LinearLayout.LayoutParams(-1,0,1f))
+  panel.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
   requestWindowFeature(Window.FEATURE_NO_TITLE);setContentView(panel)
   window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
  }
@@ -182,15 +183,16 @@ class PrimioIconButton(context:Context,symbol:String,description:String,action:(
 }
 
 class PrimioCountdown(context:Context):View(context) {
- var elapsed=0f;set(value){field=value.coerceIn(0f,5f);contentDescription=PrimioI18n.text(context,"{n} secondes",mapOf("n" to ceil(5f-field).toInt()));invalidate()}
+ var elapsed=0f;set(value){field=value.coerceIn(0f,3f);contentDescription=PrimioI18n.text(context,"Annuler le compte à rebours ({n} secondes)",mapOf("n" to ceil(3f-field).toInt().coerceAtLeast(1)));invalidate()}
  private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
- init{background=PrimioStyle.glass(context,24);importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_YES}
+ init{background=PrimioStyle.focusGlass(context,24);isClickable=true;isFocusable=true;importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_YES}
  override fun onDraw(canvas:Canvas){
   val d=resources.displayMetrics.density;val inset=4*d
   paint.style=Paint.Style.STROKE;paint.strokeWidth=2*d;paint.color=0x44ffffff;paint.strokeCap=Paint.Cap.ROUND
   val circle=RectF(inset,inset,width-inset,height-inset);canvas.drawOval(circle,paint)
-  paint.color=PrimioStyle.palette(context).accent;canvas.drawArc(circle,-90f,360f*(1-elapsed/5f),false,paint)
+  paint.color=PrimioStyle.palette(context).accent;canvas.drawArc(circle,-90f,360f*(1-elapsed/3f),false,paint)
   paint.style=Paint.Style.FILL;paint.textSize=16*d;paint.textAlign=Paint.Align.CENTER
-  canvas.drawText(ceil(5f-elapsed).toInt().coerceAtLeast(1).toString(),width/2f,height/2f-(paint.ascent()+paint.descent())/2,paint)
+  canvas.drawText(ceil(3f-elapsed).toInt().coerceAtLeast(1).toString(),width/2f,height/2f-(paint.ascent()+paint.descent())/2,paint)
  }
+ override fun onInitializeAccessibilityNodeInfo(info:AccessibilityNodeInfo){super.onInitializeAccessibilityNodeInfo(info);info.className="android.widget.Button"}
 }

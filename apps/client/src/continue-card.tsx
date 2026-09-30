@@ -4,14 +4,15 @@ import { MediaImage } from './media-image'
 import { episodeProgress } from './progress'
 import { durationLabel } from './preferences'
 import { t } from './i18n'
-import type { Addon, Progress } from './types'
+import type { Addon } from './types'
+import type { ContinueItem } from './continue-watching'
 export function ContinueCard({
   item,
   addons,
   onPlay,
   hideSpoilers = false,
 }: {
-  item: Progress
+  item: ContinueItem
   addons: Addon[]
   onPlay: () => void
   hideSpoilers?: boolean
@@ -58,7 +59,7 @@ export function ContinueCard({
       <small>
         {item.duration > item.position
           ? t('{time} restantes', { time: durationLabel(item.duration - item.position) })
-          : t('Reprendre')}
+          : t(item.nextEpisode ? 'Épisode suivant' : 'Reprendre')}
       </small>
     </button>
   )

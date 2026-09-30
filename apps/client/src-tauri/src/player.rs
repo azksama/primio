@@ -287,7 +287,12 @@ pub extern "system" fn Java_fr_azks_primio_PlayerActivity_nativeState(
    let field=|name:&str|format!("track-list/{i}/{name}");
    json!({"id":p.mpv.get_property::<i64>(&field("id")).unwrap_or(0),"type":p.mpv.get_property::<String>(&field("type")).unwrap_or_default(),"lang":p.mpv.get_property::<String>(&field("lang")).unwrap_or_default(),"title":p.mpv.get_property::<String>(&field("title")).unwrap_or_default(),"codec":p.mpv.get_property::<String>(&field("codec")).unwrap_or_default(),"channels":p.mpv.get_property::<i64>(&field("demux-channel-count")).unwrap_or(0),"externalUrl":p.mpv.get_property::<String>(&field("external-filename")).unwrap_or_default(),"forced":p.mpv.get_property::<bool>(&field("forced")).unwrap_or(false),"selected":p.mpv.get_property::<bool>(&field("selected")).unwrap_or(false)})
   }).collect::<Vec<_>>();
-        json!({"subtitleFont":p.mpv.get_property::<String>("sub-font").unwrap_or_default(),"subtitleStyle":p.mpv.get_property::<String>("sub-ass-override").unwrap_or_default(),"cacheBytes":p.mpv.get_property::<i64>("demuxer-cache-state/file-cache-bytes").unwrap_or(0),"bufferedUntil":p.mpv.get_property::<f64>("demuxer-cache-time").unwrap_or(0.0),"position":p.position,"duration":p.duration,"paused":p.mpv.get_property::<bool>("pause").unwrap_or(false),"buffering":p.mpv.get_property::<bool>("paused-for-cache").unwrap_or(false),"eof":p.ended || p.mpv.get_property::<bool>("eof-reached").unwrap_or(false),"loaded":p.loaded,"tracks":tracks,"error":p.last_error})
+        let aspect = p
+            .mpv
+            .get_property::<f64>("video-out-params/aspect")
+            .or_else(|_| p.mpv.get_property::<f64>("video-params/aspect"))
+            .unwrap_or(16.0 / 9.0);
+        json!({"videoAspect":aspect,"subtitleFont":p.mpv.get_property::<String>("sub-font").unwrap_or_default(),"subtitleStyle":p.mpv.get_property::<String>("sub-ass-override").unwrap_or_default(),"cacheBytes":p.mpv.get_property::<i64>("demuxer-cache-state/file-cache-bytes").unwrap_or(0),"bufferedUntil":p.mpv.get_property::<f64>("demuxer-cache-time").unwrap_or(0.0),"position":p.position,"duration":p.duration,"paused":p.mpv.get_property::<bool>("pause").unwrap_or(false),"buffering":p.mpv.get_property::<bool>("paused-for-cache").unwrap_or(false),"eof":p.ended || p.mpv.get_property::<bool>("eof-reached").unwrap_or(false),"loaded":p.loaded,"tracks":tracks,"error":p.last_error})
     };
     env.new_string(result.to_string())
         .map(|s| s.into_raw())

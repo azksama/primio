@@ -105,14 +105,15 @@ export function mergeAccount(
   const initial = !base
     ? {
         ...l,
-        settings: r.settings,
+        settings: { ...r.settings, ...(r.settings.oledAccent === undefined && l.settings.oledAccent ? { oledAccent: l.settings.oledAccent } : {}) },
         profiles: l.profiles.map((p) => ({
           ...p,
           ...r.profiles.find((q) => q.id === p.id),
           library: p.library,
           progress: p.progress,
           collections: p.collections,
-          settings: r.profiles.find((q) => q.id === p.id)?.settings ?? p.settings,
+          settings: { ...(r.profiles.find((q) => q.id === p.id)?.settings ?? p.settings),
+            ...(r.profiles.find(q => q.id === p.id)?.settings.oledAccent === undefined && p.settings.oledAccent ? { oledAccent: p.settings.oledAccent } : {}) },
         })),
       }
     : l

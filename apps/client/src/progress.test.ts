@@ -1,8 +1,40 @@
 import { describe, it, expect } from 'vitest'
 import { createState, switchProfile, snapshotState } from './preferences'
-import { recordProgress, resumePosition, isWatched, mergeNativeProgress } from './progress'
+import { recordProgress, resumePosition, isWatched, mergeNativeProgress, findProgress } from './progress'
 const movie = { id: 'tt1', type: 'movie', name: 'Film' }
 describe('playback history', () => {
+  const series = { id: 'show', type: 'series', name: 'Show', videos: [
+    { id: 'special', title: 'Special', season: 0, episode: 1 },
+    { id: 'one', title: 'One', season: 1, episode: 1 },
+    { id: 'two', title: 'Two', season: 1, episode: 2 },
+    { id: 'three', title: 'Three', season: 2, episode: 1 },
+    { id: 'four', title: 'Four', season: 2, episode: 2 },
+  ] }
+  it('marks earlier regular episodes only after passing 50 percent', () => {
+    const half = recordProgress([], series, 'three', 50, 100, 1)
+    expect(half).toHaveLength(1)
+    const passed = recordProgress(half, series, 'three', 51, 100, 2)
+    expect(isWatched(findProgress(passed, 'series', 'one'))).toBe(true)
+    expect(isWatched(findProgress(passed, 'series', 'two'))).toBe(true)
+    expect(isWatched(findProgress(passed, 'series', 'three'))).toBe(false)
+    expect(findProgress(passed, 'series', 'four')).toBeUndefined()
+    expect(findProgress(passed, 'series', 'special')).toBeUndefined()
+  })
+  it('preserves measured positions and later manual unwatched choices', () => {
+    let items = recordProgress([], series, 'one', 20, 100, 1)
+    items = recordProgress(items, series, 'three', 60, 100, 2)
+    expect(findProgress(items, 'series', 'one')).toMatchObject({ position: 20, duration: 100, watched: true })
+    items = recordProgress(items, series, 'one', 20, 100, 3, false)
+    items = recordProgress(items, series, 'three', 61, 100, 4)
+    expect(isWatched(findProgress(items, 'series', 'one'))).toBe(false)
+  })
+  it('applies inference to the native session profile and honors history deletions', () => {
+    const state = createState()
+    state.deletedProgress = [{ type: 'series', videoId: 'one', updatedAt: 30 }]
+    const result = mergeNativeProgress(state, { context: { profileId: 'main', meta: series, videoId: 'three' }, position: 60, duration: 100, updatedAt: 20 })
+    expect(findProgress(result.progress, 'series', 'one')).toBeUndefined()
+    expect(isWatched(findProgress(result.progress, 'series', 'two'))).toBe(true)
+  })
   it('retains episode artwork and numbering after a restart or source change', () => {
     const meta = {
       id: 'series',

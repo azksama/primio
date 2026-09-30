@@ -10,6 +10,12 @@ const base = {
   permissions: [],
 }
 describe('permissions', () => {
+  it('accepts declarative HTTPS plugin icons and rejects unsafe image URLs', () => {
+    expect(pluginSchema.parse({ ...base, icon: 'https://example.org/icon.png' }).icon).toBe('https://example.org/icon.png')
+    for (const icon of ['http://example.org/icon.png', 'javascript:alert(1)', 'https://user:secret@example.org/icon.png']) {
+      expect(pluginSchema.safeParse({ ...base, icon }).success).toBe(false)
+    }
+  })
   it('supports bounded material tokens while preserving existing theme manifests', () => {
     const theme = { ...base, permissions:['theme'], theme:{material:'neumorphic',colorScheme:'dark',shadowLight:'#383D45',shadowDark:'#191C20'} }
     expect(pluginSchema.safeParse(theme).success).toBe(true)

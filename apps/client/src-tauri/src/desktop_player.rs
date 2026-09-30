@@ -1,5 +1,6 @@
 use crate::desktop;
 use serde_json::{json, Value};
+use std::collections::HashSet;
 use std::os::windows::process::CommandExt;
 use std::{
     process::{Child, Command, Stdio},
@@ -73,6 +74,8 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
     settings["audioLanguage"] = args["language"].clone();
     let logo_dir = desktop::data_dir(app)?.join(format!("logo-{generation}"));
     settings["logoPath"] = json!(player_path(&logo_dir));
+    let episode_image_dir = logo_dir.join("episodes");
+    settings["episodeImagePath"] = json!(player_path(&episode_image_dir));
     let logo_url = extra["logo"].as_str().unwrap_or("").to_owned();
     let logo_task_dir = logo_dir.clone();
     let logo_task = tauri::async_runtime::spawn(async move {
@@ -191,6 +194,7 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
             &child,
             &mut position,
             &mut duration,
+            &episode_image_dir,
         )
         .await;
         if let Ok(mut child) = child.lock() {
@@ -261,6 +265,7 @@ async fn run(
     child: &Arc<Mutex<Child>>,
     position: &mut f64,
     duration: &mut f64,
+    episode_image_dir: &std::path::Path,
 ) -> Result<(), String> {
     let mut connected = None;
     for _ in 0..100 {
@@ -301,6 +306,8 @@ async fn run(
         (4, "user-data/primio/track-preferences"),
         (5, "user-data/primio/watched"),
         (6, "paused-for-cache"),
+        (7, "user-data/primio/episode-images"),
+        (8, "user-data/primio/inferred-watched"),
     ] {
         send(&mut pipe, json!(["observe_property", id, prop])).await?;
     }
@@ -312,7 +319,12 @@ async fn run(
     let opened_at = std::time::Instant::now();
     let mut last_advance = opened_at;
     let mut buffering = false;
+    let extra = decoded(&args["playerExtra"]);
+    let mut image_jobs = tokio::task::JoinSet::new();
+    let image_limit = Arc::new(tokio::sync::Semaphore::new(2));
+    let mut requested_images = HashSet::new();
     loop {
+        while image_jobs.try_join_next().is_some() {}
         tokio::select! {
             result=lines.next_line()=>{
                 let Some(line)=result.map_err(|e|e.to_string())? else {break};
@@ -321,7 +333,7 @@ async fn run(
                     "property-change"=>match event["name"].as_str().unwrap_or("") {
                         "time-pos"=>if let Some(v)=event["data"].as_f64(){if v != *position {last_advance=std::time::Instant::now();} *position=v},
                         "duration"=>if let Some(v)=event["data"].as_f64(){*duration=v},
-                        "user-data/primio/request"=>if event["data"]["id"].as_str().is_some(){publish(app,context,*position,*duration,true,Some(&event["data"]));break},
+                        "user-data/primio/request"=>if event["data"]["id"].as_str().is_some(){if event["data"]["completed"]==true && *duration>0.0 {*position=*duration;}publish(app,context,*position,*duration,true,Some(&event["data"]));break},
                         "user-data/primio/track-preferences"=>if event["data"].is_object(){context["trackPreferences"]=event["data"].clone();publish(app,context,*position,*duration,false,None);},
                         "user-data/primio/watched"=>if event["data"]["videoId"].is_string() && event["data"]["watched"].is_boolean() {
                             let mut change=event["data"].clone();change["updatedAt"]=json!(desktop::now());
@@ -331,11 +343,34 @@ async fn run(
                             context["watchedChanges"]=json!(changes);publish(app,context,*position,*duration,false,None);
                         },
                         "paused-for-cache"=>{buffering=event["data"].as_bool().unwrap_or(false);last_advance=std::time::Instant::now();},
+                        "user-data/primio/episode-images"=>{
+                            let w=event["data"]["width"].as_u64().unwrap_or(0);
+                            let h=event["data"]["height"].as_u64().unwrap_or(0);
+                            if (1..=512).contains(&w) && (1..=512).contains(&h) {
+                                for index in event["data"]["indices"].as_array().into_iter().flatten().take(12).filter_map(Value::as_u64) {
+                                    let Some(url)=extra["episodes"].as_array().and_then(|eps|eps.get(index as usize)).and_then(|ep|ep["thumbnail"].as_str()) else {continue};
+                                    if requested_images.len()>=2048 || !requested_images.insert((index,w,h)) {continue}
+                                    let url=url.to_owned();let directory=episode_image_dir.to_owned();let limit=image_limit.clone();
+                                    image_jobs.spawn(async move {
+                                        let Ok(_permit)=limit.acquire_owned().await else {return};
+                                        let _=prepare_episode_image(&url,&directory,index,w as u32,h as u32).await;
+                                    });
+                                }
+                            }
+                        },
+                        "user-data/primio/inferred-watched"=>{
+                            let mut changes=context["watchedChanges"].as_array().cloned().unwrap_or_default();
+                            for edit in event["data"].as_array().into_iter().flatten().take(499) {
+                                if !edit["videoId"].is_string() || edit["watched"]!=true || changes.iter().any(|c|c["videoId"]==edit["videoId"]) {continue}
+                                let mut change=edit.clone();change["updatedAt"]=json!(desktop::now());changes.push(change);
+                            }
+                            context["watchedChanges"]=json!(changes);publish(app,context,*position,*duration,false,None);
+                        },
                         _=>{}
                     },
                     "file-loaded"=>{loaded=true;for sub in args["subtitles"].as_array().into_iter().flatten(){if let Some(url)=sub["url"].as_str(){send(&mut writer,json!(["sub-add",url,"auto",sub["lang"].as_str().unwrap_or(""),sub["lang"].as_str().unwrap_or("")])).await?;}}},
                     "playback-restart"=>{context["playbackReady"]=json!(true);last_advance=std::time::Instant::now();},
-                    "end-file"=>{if event["reason"]=="error" {return Err("This source could not be played. Please choose another source.".into())} if loaded {break}},
+                    "end-file"=>{if event["reason"]=="error" {return Err("This source could not be played. Please choose another source.".into())} if event["reason"]=="eof" && *duration>0.0 {*position=*duration;} if loaded {break}},
                     "shutdown"=>break,
                     _=>{}
                 }
@@ -350,6 +385,70 @@ async fn run(
             }
         }
     }
+    image_jobs.abort_all();
+    while image_jobs.join_next().await.is_some() {}
+    Ok(())
+}
+
+async fn prepare_episode_image(
+    url: &str,
+    directory: &std::path::Path,
+    index: u64,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let url = url::Url::parse(url).map_err(|_| "Invalid artwork")?;
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+        return Err("Invalid artwork".into());
+    }
+    let client = crate::network::client_for(&url).await?;
+    let mut response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|_| "Artwork unavailable")?;
+    if !response.status().is_success() {
+        return Err("Artwork unavailable".into());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| "Artwork unavailable")? {
+        if bytes.len() + chunk.len() > 2_000_000 {
+            return Err("Artwork too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|_| "Invalid artwork")?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(4096);
+    limits.max_image_height = Some(4096);
+    limits.max_alloc = Some(64_000_000);
+    reader.limits(limits);
+    let image = reader
+        .decode()
+        .map_err(|_| "Invalid artwork")?
+        .resize_to_fill(width, height, image::imageops::FilterType::Lanczos3)
+        .to_rgba8();
+    let mut data = Vec::with_capacity((width * height * 4) as usize);
+    for pixel in image.pixels() {
+        let alpha = pixel[3] as f32 / 255.0;
+        data.extend_from_slice(&[
+            (pixel[2] as f32 * alpha) as u8,
+            (pixel[1] as f32 * alpha) as u8,
+            (pixel[0] as f32 * alpha) as u8,
+            pixel[3],
+        ]);
+    }
+    tokio::fs::create_dir_all(directory)
+        .await
+        .map_err(|_| "Artwork cache unavailable")?;
+    tokio::fs::write(
+        directory.join(format!("episode-{index}-{width}-{height}.bgra")),
+        data,
+    )
+    .await
+    .map_err(|_| "Artwork cache unavailable")?;
     Ok(())
 }
 

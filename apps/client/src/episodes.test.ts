@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { episodeQueue } from './episodes'
+import { episodeQueue, watchVideoId } from './episodes'
 const meta = {
   id: 'series',
   name: 'Series',
@@ -13,6 +13,17 @@ const meta = {
   ],
 }
 describe('episode queue', () => {
+  it('transfers artwork and synopsis and conceals spoilers for unwatched episodes', () => {
+    const rich = { ...meta, videos: [{ id: 's1e1', title: 'Long episode title', season: 1, episode: 1,
+      thumbnail: 'https://example.org/episode.jpg', overview: 'Episode synopsis' }] }
+    expect(episodeQueue(rich, 's1e1').episodes[0]).toMatchObject({ thumbnail: 'https://example.org/episode.jpg', description: 'Episode synopsis' })
+    expect(episodeQueue(rich, 's1e1', Date.now(), true).episodes[0]).toMatchObject({ thumbnail: '', description: '' })
+    expect(episodeQueue(rich, 's1e1', Date.now(), true).episodes[0].title).not.toBe('Long episode title')
+  })
+  it('does not select a future or unconfirmed first episode', () => {
+    expect(watchVideoId({ ...meta, videos: [meta.videos[4]] }, [])).toBeUndefined()
+    expect(watchVideoId({ ...meta, videos: [{ ...meta.videos[3], releaseUnconfirmed: true }] }, [])).toBeUndefined()
+  })
   it('sorts episodes and crosses season boundaries', () => {
     expect(episodeQueue(meta, 's1e1').nextVideoId).toBe('s1e2')
     expect(episodeQueue(meta, 's1e2').nextVideoId).toBe('s2e1')

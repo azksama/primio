@@ -2969,12 +2969,15 @@ dialog.trailer-dialog {
 [hidden]{display:none!important}
 
 .search-completion{position:relative}
-.search-toolbar { display:flex; align-items:center; gap:10px; min-width:0; }
+.search-toolbar { --search-control-size:52px; display:flex; align-items:center; gap:10px; min-width:0; }
 .search-toolbar .search-completion { flex:1; min-width:0; }
-.search-toolbar .search-box { gap:8px; margin:0; padding-right:5px; min-height:52px; }
+.search-toolbar .search-box { gap:8px; margin:0; padding-block:0; padding-right:5px; height:var(--search-control-size); min-height:var(--search-control-size); }
 .search-toolbar .search-box > svg { flex-shrink:0; }
 .search-toolbar .search-box input { width:100%; min-width:0; }
-.search-toolbar .search-filter-toggle { flex:0 0 48px; width:48px; height:48px; border-radius:50%; }
+.search-toolbar .search-filter-toggle { flex:0 0 var(--search-control-size); width:var(--search-control-size); height:var(--search-control-size); min-height:var(--search-control-size); border-radius:50%; }
+.page-head .library-title { display:flex; align-items:baseline; flex-wrap:wrap; gap:6px 12px; }
+.library-title-count { font-size:15px; font-weight:400; letter-spacing:0; font-variant-numeric:tabular-nums; }
+.source-target-title { overflow-wrap:anywhere; }
 .search-filter-toggle[aria-expanded='true'] { color:var(--accent); border-color:var(--accent); background:rgb(var(--accent-rgb) / .12); }
 .voice-search.inline-voice-search { position:relative; flex:0 0 44px; margin:0; }
 .inline-voice-search .search-microphone { width:44px; height:44px; border-radius:50%; }

@@ -34,6 +34,8 @@ local countdown_key,countdown_elapsed="",0
 local skipped_segments={}
 local seek_feedback,seek_feedback_at=0,0
 local season, forced = nil, config.forceSubtitleStyle == true
+local season_picker=false
+local levels={}
 local function escape(s) return tostring(s or ''):gsub('\\','\\e'):gsub('{','\\{'):gsub('}','\\}'):gsub('[\r\n]+',' ') end
 local function shorten(s, n)
     local chars = {}; for c in tostring(s or ''):gmatch('[%z\1-\127\194-\244][\128-\191]*') do chars[#chars+1] = c end
@@ -68,8 +70,11 @@ local function glass(a,x,y,w,h,active)
     rect(a,x,y,w,h,math.min(22,h/2),active and '727269' or '2D2E2B','80',1)
     rect(a,x+2,y+2,w-4,h-4,math.min(20,h/2-2),'D7DBD1','F5',0.5)
 end
-local function button(a,x,y,w,h,text,action,active)
-    glass(a,x,y,w,h,active);label(a,x+w/2,y+h/2,shorten(text,math.floor(w/9)),18,5,active and accent or nil)
+local function button(a,x,y,w,h,text,action,active,trailing)
+    glass(a,x,y,w,h,active);label(a,trailing and x+18 or x+w/2,y+h/2,shorten(text,math.floor((w-(trailing and 52 or 0))/9)),18,trailing and 4 or 5,active and accent or nil)
+    if trailing then
+        for _,path in ipairs(icons[trailing] or {})do a:new_event();a:append(string.format('{\\an7\\pos(%f,%f)\\1c&H%s&\\bord0\\shad0\\p1}%s{\\p0}',x+w-44,y+h/2-14,foreground,path))end
+    end
     hits[#hits+1]={x=x,y=y,w=w,h=h,action=action}
 end
 local function icon(a,x,y,kind)
@@ -94,18 +99,28 @@ local function video_time(a,x,y,text,align)
         label(a,left+10,y-15,text,17,4)
     else label(a,x,y,text,17,align) end
 end
-local function title(a,x,y,text,available,maxsize)
+local function title(a,x,y,text,available,maxsize,centered)
     local chars={};for c in tostring(text):gmatch('[%z\1-\127\194-\244][\128-\191]*')do chars[#chars+1]=c end
     -- Conservative glyph width also accommodates Japanese and Chinese names.
     local units=0;for _,c in ipairs(chars)do units=units+(#c>1 and 1 or .55)end
-    local size=math.max(16,math.min(maxsize,math.floor(available/math.max(1,units))))
+    local size=math.max(centered and 12 or 16,math.min(maxsize,math.floor(available/math.max(1,units))))
     local lines=math.max(1,math.ceil(units*size/available))
     local count=math.ceil(#chars/lines)
     if neo then
         local w=math.min(available,units*size)+20
-        relief(a,x-10,y-lines*size*1.12/2-8,w,lines*size*1.12+16,10,true)
+        relief(a,x-(centered and w/2 or 10),y-lines*size*1.12/2-8,w,lines*size*1.12+16,10,true)
     end
-    for i=1,lines do label(a,x,y+(i-(lines+1)/2)*size*1.12,table.concat(chars,'',(i-1)*count+1,math.min(#chars,i*count)),size,4,nil,'Cormorant Garamond Light')end
+    for i=1,lines do label(a,x,y+(i-(lines+1)/2)*size*1.12,table.concat(chars,'',(i-1)*count+1,math.min(#chars,i*count)),size,centered and 5 or 4,nil,'Cormorant Garamond Light')end
+end
+local function render_level(a,kind,value)
+    local x=kind=='brightness' and 28 or width-92
+    local y=height/2-102
+    local fraction=math.max(0,math.min(1,value.fraction))
+    glass(a,x,y,64,204,false)
+    icon(a,x+32,y+30,kind=='volume' and fraction==0 and 'mute' or kind)
+    rect(a,x+28,y+57,8,103,4,foreground,'C8')
+    if fraction>0 then rect(a,x+28,y+57+103*(1-fraction),8,103*fraction,4,accent,'00')end
+    label(a,x+32,y+180,tostring(math.floor(fraction*100+.5))..'%',15,5)
 end
 local function end_scrub(commit)
     if scrub then
@@ -114,7 +129,7 @@ local function end_scrub(commit)
     end
     press=nil;last_move=mp.get_time()
 end
-local function open(name) panel=name;scroll=0;last_move=mp.get_time() end
+local function open(name) panel=name;season_picker=false;scroll=0;last_move=mp.get_time() end
 local function jump(forward)
     local pos=mp.get_property_number('time-pos',0)
     local duration=mp.get_property_number('duration',0)
@@ -207,9 +222,15 @@ local function render_panel(a)
                 for _,ep in ipairs(config.episodes or {}) do if ep.id==config.currentVideoId then season=ep.season;break end end
                 season=season or seasons[1]
             end
-            button(a,x+24,top,w-48,44,tr('Season ','Saison ')..season..'  ›',function()for i,s in ipairs(seasons)do if s==season then season=seasons[i%#seasons+1];scroll=0;break end end end)
+            button(a,x+24,top,w-48,44,season==0 and tr('Specials','Hors-série') or tr('Season ','Saison ')..season,function()season_picker=not season_picker;scroll=0 end,false,'chevron')
             top=top+62
         end
+        if season_picker then
+            local count=math.max(1,math.floor((y+h-top-24)/52));scroll=math.max(0,math.min(scroll,#seasons-count))
+            for i=1,count do local choice=seasons[i+scroll];if choice then
+                button(a,x+24,top+(i-1)*52,w-48,44,choice==0 and tr('Specials','Hors-série') or tr('Season ','Saison ')..choice,function()season=choice;season_picker=false;scroll=0 end,choice==season)
+            end end
+        else
         local list={};for _,ep in ipairs(config.episodes or {})do if #seasons<=1 or ep.season==season then list[#list+1]=ep end end
         local count=math.max(1,math.floor((y+h-top-24)/74));scroll=math.max(0,math.min(scroll,#list-count))
         for i=1,count do local ep=list[i+scroll];if ep then
@@ -225,6 +246,7 @@ local function render_panel(a)
                 mp.set_property_native('user-data/primio/watched',{videoId=ep.id,watched=ep.watched,season=ep.season,episode=ep.episode})
             end,ep.watched)
         end end
+        end
     end
 end
 local pip=false
@@ -273,7 +295,7 @@ local function render()
             if not scrub then
                 icon_button(a,24,24,48,'back',leave_player)
                 icon_button(a,84,24,48,'close',function()mp.commandv('quit')end)
-                title(a,152,48,config.title or mp.get_property('media-title','Primio'),width-340,34)
+                title(a,width/2,48,config.title or mp.get_property('media-title','Primio'),math.max(96,width-384),26,true)
                 if #(config.episodes or {})>0 then button(a,width-168,24,144,48,tr('Episodes','Épisodes'),function()open('episodes')end)end
                 icon_button(a,width/2-148,height/2-30,60,'rewind',function()jump(false)end)
                 icon_button(a,width/2-36,height/2-36,72,mp.get_property_native('pause') and 'play' or 'pause',function()mp.commandv('cycle','pause')end)
@@ -310,8 +332,11 @@ local function render()
     local feedback_age=mp.get_time()-seek_feedback_at
     if seek_feedback~=0 and feedback_age<1.2 and not panel and not pip and not scrub then
         local alpha=config.reduceMotion and '00' or feedback_age<.65 and (math.floor(feedback_age/.16)%2==0 and '00' or 'A0') or string.format('%02X',math.floor(math.min(255,(feedback_age-.65)/.55*255)))
-        local x=width/2+(seek_feedback>0 and 118 or -118)
-        a:new_event();a:append(string.format('{\\an5\\pos(%.1f,%.1f)\\fnInter\\fs18\\bord0\\shad1.2\\alpha&H%s&\\1c&H%s&}%s%d s',x,height/2+67,alpha,foreground,seek_feedback>0 and '+' or '−',math.floor(math.abs(seek_feedback)+.5)))
+        local x=width*(seek_feedback>0 and .75 or .25)
+        a:new_event();a:append(string.format('{\\an5\\pos(%.1f,%.1f)\\fnInter\\fs32\\bord0\\shad1.2\\alpha&H%s&\\1c&H%s&}%s%d s',x,height/2,alpha,foreground,seek_feedback>0 and '+' or '−',math.floor(math.abs(seek_feedback)+.5)))
+    end
+    if loaded and not buffering and not panel and not pip and not scrub then
+        for kind,value in pairs(levels)do if mp.get_time()-value.at<1.2 then render_level(a,kind,value)end end
     end
     local pos,duration=mp.get_property_number('time-pos',0),mp.get_property_number('duration',0)
     local segment,upcoming
@@ -397,4 +422,17 @@ mp.register_script_message('next-offer',function()next_offer=true end)
 mp.register_event('start-file',function()loaded=false end)
 mp.register_event('playback-restart',function()loaded=true;last_move=mp.get_time()end)
 mp.register_event('shutdown',hide_logo)
+local last_volume,last_brightness,last_mute
+mp.observe_property('volume','number',function(_,value)
+    if value and last_volume~=nil and value~=last_volume and loaded then levels.volume={fraction=mp.get_property_native('mute') and 0 or value/100,at=mp.get_time()}end
+    last_volume=value
+end)
+mp.observe_property('brightness','number',function(_,value)
+    if value and last_brightness~=nil and value~=last_brightness and loaded then levels.brightness={fraction=(value+100)/200,at=mp.get_time()}end
+    last_brightness=value
+end)
+mp.observe_property('mute','bool',function(_,value)
+    if last_mute~=nil and value~=last_mute and loaded then levels.volume={fraction=value and 0 or mp.get_property_number('volume',0)/100,at=mp.get_time()}end
+    last_mute=value
+end)
 mp.add_periodic_timer(1/24,render)

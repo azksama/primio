@@ -1219,6 +1219,7 @@ export default function App() {
   const heading = (
     title: string,
     back = !['home', 'explore', 'library', 'settings'].includes(tab),
+    library = false,
   ) => (
     <header className="page-head">
       {back && (
@@ -1226,8 +1227,15 @@ export default function App() {
           <ArrowLeft />
         </button>
       )}
-      <h1>{title}</h1>
-      {tab === 'library' && (
+      <h1 className={library ? 'library-title' : undefined}>
+        {title}
+        {library && (
+          <small className="library-title-count" aria-label={t(state.library.length === 1 ? '{n} titre' : '{n} titres', { n: state.library.length })}>
+            {state.library.length}
+          </small>
+        )}
+      </h1>
+      {library && (
         <button className="icon" aria-label={t('Sorties')} onClick={() => navigate('calendar')}>
           <CalendarDays />
         </button>
@@ -1977,15 +1985,8 @@ export default function App() {
           </main>
         ) : tab === 'library' ? (
           <main>
-            {heading(t('Ma liste'))}
+            {heading(t('Ma liste'), false, true)}
             <section className="page-content">
-              <div className="section-head">
-                <p className="muted">
-                  {t(state.library.length === 1 ? '{n} titre' : '{n} titres', {
-                    n: state.library.length,
-                  })}
-                </p>
-              </div>
               {token && accountSync.error && (
                 <p className="muted" role="status">
                   {t('Synchronisation indisponible. Nouvel essai automatique.')}
@@ -2812,7 +2813,7 @@ export default function App() {
             setSourceTarget(null)
           }}
         >
-          <p className="muted">{sourceTarget.meta.name}</p>
+          <p className="muted source-target-title">{playbackTitle(sourceTarget.meta, sourceTarget.id)}</p>
           {launching && (
             <div className="loading source-loading" role="status">
               <LoaderCircle />

@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.*
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.view.*
 import android.view.accessibility.AccessibilityNodeInfo
@@ -37,7 +38,7 @@ class PrimioSheet(context:Context,title:String,private val lateral:Boolean=false
   window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
  }
  fun section(title:String){content.addView(PrimioStyle.text(context,title,12f).apply{setTextColor(PrimioStyle.palette(context).muted);setPadding(0,12.dp,0,10.dp)})}
- fun option(label:String,selected:Boolean=false,action:()->Unit){content.addView(PrimioStyle.button(context,(if(selected)"✓  " else "")+label,label){action()}.apply{gravity=Gravity.CENTER_VERTICAL or Gravity.START;isSelected=selected;if(selected)setTextColor(PrimioStyle.palette(context).accent)},LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=10.dp})}
+ fun option(label:String,selected:Boolean=false,trailingIcon:String?=null,action:()->Unit){content.addView(PrimioStyle.button(context,(if(selected)"✓  " else "")+label,label){action()}.apply{gravity=Gravity.CENTER_VERTICAL or Gravity.START;isSelected=selected;if(selected)setTextColor(PrimioStyle.palette(context).accent);if(trailingIcon!=null){setCompoundDrawablesWithIntrinsicBounds(null,null,PrimioIconDrawable(context,trailingIcon),null);compoundDrawablePadding=12.dp}},LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=10.dp})}
  override fun onStart(){
   super.onStart()
   val manager=context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -54,6 +55,41 @@ class PrimioSheet(context:Context,title:String,private val lateral:Boolean=false
   window?.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);window?.setDimAmount(.48f)
  }
 
+}
+
+class PrimioIconDrawable(context:Context,private val symbol:String):Drawable() {
+ private val size=PrimioStyle.dp(context,24)
+ private val paint=Paint(Paint.ANTI_ALIAS_FLAG).apply{color=PrimioStyle.palette(context).text;style=Paint.Style.STROKE;strokeCap=Paint.Cap.ROUND;strokeJoin=Paint.Join.ROUND;strokeWidth=1.8f}
+ override fun draw(canvas:Canvas){val saved=canvas.save();canvas.translate(bounds.left.toFloat(),bounds.top.toFloat());canvas.scale(bounds.width()/24f,bounds.height()/24f);(PrimioIcons.paths[symbol]?:emptyList()).forEach{canvas.drawPath(it,paint)};canvas.restoreToCount(saved)}
+ override fun getIntrinsicWidth()=size
+ override fun getIntrinsicHeight()=size
+ override fun setAlpha(alpha:Int){paint.alpha=alpha;invalidateSelf()}
+ override fun setColorFilter(filter:ColorFilter?){paint.colorFilter=filter;invalidateSelf()}
+ @Deprecated("Deprecated in Java") override fun getOpacity()=PixelFormat.TRANSLUCENT
+}
+
+class PrimioLevelIndicator(context:Context,private val kind:String,private val label:String):LinearLayout(context) {
+ private var fraction=0f
+ private val dp={n:Int->PrimioStyle.dp(context,n)}
+ private val icon=ImageView(context).apply{setImageDrawable(PrimioIconDrawable(context,kind));importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO}
+ private val percentage=PrimioStyle.text(context,"",12f).apply{gravity=Gravity.CENTER;importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO}
+ private val meter=object:View(context){
+  private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
+  override fun onDraw(canvas:Canvas){
+   val palette=PrimioStyle.palette(context);val radius=width/2f
+   paint.color=palette.muted;paint.alpha=60;canvas.drawRoundRect(0f,0f,width.toFloat(),height.toFloat(),radius,radius,paint)
+   paint.color=palette.accent;paint.alpha=255
+   if(fraction>0f)canvas.drawRoundRect(0f,height*(1-fraction),width.toFloat(),height.toFloat(),radius,radius,paint)
+  }
+ }
+ init{
+  orientation=VERTICAL;gravity=Gravity.CENTER_HORIZONTAL;setPadding(dp(12),dp(14),dp(12),dp(14));background=PrimioStyle.glass(context,30);visibility=View.GONE
+  addView(icon,LayoutParams(dp(28),dp(28)))
+  addView(meter,LayoutParams(dp(8),0,1f).apply{topMargin=dp(12);bottomMargin=dp(12)})
+  addView(percentage,LayoutParams(-1,dp(18)))
+ }
+ fun showLevel(value:Float){fraction=value.coerceIn(0f,1f);val percent=(fraction*100).roundToInt();percentage.text="$percent%";contentDescription="$label $percent%";icon.setImageDrawable(PrimioIconDrawable(context,if(kind=="volume"&&fraction==0f)"mute" else kind));meter.invalidate();visibility=View.VISIBLE}
+ override fun onInitializeAccessibilityNodeInfo(info:AccessibilityNodeInfo){super.onInitializeAccessibilityNodeInfo(info);info.className="android.widget.ProgressBar";info.rangeInfo=AccessibilityNodeInfo.RangeInfo.obtain(AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_FLOAT,0f,1f,fraction)}
 }
 
 class PrimioTimeline(context:Context):View(context) {

@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 process.chdir(fileURLToPath(new URL('..', import.meta.url)))
 const require=createRequire(new URL('../apps/client/package.json',import.meta.url))
-const names={back:'ArrowLeft02Icon',play:'PlayIcon',pause:'PauseIcon',eye:'ViewIcon','eye-off':'ViewOffSlashIcon',close:'Cancel01Icon',source:'Exchange01Icon',speed:'DashboardSpeed01Icon',subtitles:'SubtitleIcon',forward:'Forward02Icon',rewind:'Backward02Icon'}
+const names={back:'ArrowLeft02Icon',play:'PlayIcon',pause:'PauseIcon',eye:'ViewIcon','eye-off':'ViewOffSlashIcon',close:'Cancel01Icon',source:'Exchange01Icon',speed:'DashboardSpeed01Icon',subtitles:'SubtitleIcon',forward:'Forward02Icon',rewind:'Backward02Icon',chevron:'ArrowDown01Icon',brightness:'Sun03Icon',volume:'VolumeHighIcon',mute:'VolumeOffIcon'}
 const paths={}
 for(const [key,name] of Object.entries(names)){
  const {default:icon}=await import(pathToFileURL(require.resolve('@hugeicons/core-free-icons/'+name)))

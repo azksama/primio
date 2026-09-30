@@ -33,7 +33,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
  private var handle=0L
  private lateinit var options:JSONObject
  private lateinit var root:FrameLayout
- private lateinit var top:LinearLayout
+ private lateinit var top:FrameLayout
  private lateinit var center:LinearLayout
  private lateinit var playerActions:LinearLayout
  private var scrubbing=false
@@ -61,6 +61,9 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
  private lateinit var loadingLabel:TextView
  private lateinit var gestureLabel:TextView
  private lateinit var seekFeedback:TextView
+ private lateinit var brightnessIndicator:PrimioLevelIndicator
+ private lateinit var volumeIndicator:PrimioLevelIndicator
+ private val clearLevels=Runnable{brightnessIndicator.visibility=View.GONE;volumeIndicator.visibility=View.GONE}
  private val watchedChanges=linkedMapOf<String,JSONObject>()
  private val clearSeekFeedback=Runnable{if(::seekFeedback.isInitialized)seekFeedback.visibility=View.GONE}
  private lateinit var audio:AudioManager
@@ -110,12 +113,14 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   val surface=SurfaceView(this);surface.holder.addCallback(this);root.addView(surface,FrameLayout.LayoutParams(-1,-1))
   val gestureLayer=View(this);root.addView(gestureLayer,FrameLayout.LayoutParams(-1,-1));installGestures(gestureLayer)
   overlay=FrameLayout(this);root.addView(overlay,FrameLayout.LayoutParams(-1,-1))
-  top=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL;setPadding(dp(24),dp(14),dp(24),dp(8))}
-  top.addView(PrimioIconButton(this,"back",tr("Retour")){leavePlayer()},LinearLayout.LayoutParams(dp(48),dp(48)))
-  top.addView(PrimioIconButton(this,"close",tr("Fermer")){finish()},LinearLayout.LayoutParams(dp(48),dp(48)).apply{leftMargin=dp(10)})
-  top.addView(text(options.optString("title","Primio"),28f).apply{typeface=android.graphics.Typeface.createFromAsset(assets,"fonts/cormorant-garamond.ttf");setPadding(dp(16),0,dp(12),0);setShadowLayer(dp(2).toFloat(),0f,dp(1).toFloat(),0xcc000000.toInt());maxLines=3;setAutoSizeTextTypeUniformWithConfiguration(12,28,1,android.util.TypedValue.COMPLEX_UNIT_SP)},LinearLayout.LayoutParams(0,dp(68),1f))
-  if((options.optJSONArray("episodes")?.length()?:0)>0)top.addView(button(tr("Épisodes"),tr("Choisir un épisode")){episodes()})
-  overlay.addView(top,FrameLayout.LayoutParams(-1,dp(90),Gravity.TOP))
+  top=FrameLayout(this).apply{setPadding(dp(24),dp(14),dp(24),dp(14))}
+  val headerActions=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL}
+  headerActions.addView(PrimioIconButton(this,"back",tr("Retour")){leavePlayer()},LinearLayout.LayoutParams(dp(48),dp(48)))
+  headerActions.addView(PrimioIconButton(this,"close",tr("Fermer")){finish()},LinearLayout.LayoutParams(dp(48),dp(48)).apply{leftMargin=dp(10)})
+  top.addView(headerActions,FrameLayout.LayoutParams(-2,dp(48),Gravity.START or Gravity.CENTER_VERTICAL))
+  top.addView(text(options.optString("title","Primio"),22f).apply{typeface=android.graphics.Typeface.createFromAsset(assets,"fonts/cormorant-garamond.ttf");gravity=Gravity.CENTER;includeFontPadding=false;setShadowLayer(dp(2).toFloat(),0f,dp(1).toFloat(),0xcc000000.toInt());maxLines=3;setAutoSizeTextTypeUniformWithConfiguration(12,22,1,android.util.TypedValue.COMPLEX_UNIT_SP)},FrameLayout.LayoutParams(-1,dp(48),Gravity.CENTER).apply{leftMargin=dp(140);rightMargin=dp(140)})
+  if((options.optJSONArray("episodes")?.length()?:0)>0)top.addView(button(tr("Épisodes"),tr("Choisir un épisode")){episodes()},FrameLayout.LayoutParams(dp(128),dp(48),Gravity.END or Gravity.CENTER_VERTICAL))
+  overlay.addView(top,FrameLayout.LayoutParams(-1,dp(76),Gravity.TOP))
   center=LinearLayout(this).apply{gravity=Gravity.CENTER}
   center.addView(PrimioIconButton(this,"rewind",PrimioI18n.text(this,"Reculer de {n} secondes",mapOf("n" to rewind))){jump(false)},LinearLayout.LayoutParams(dp(56),dp(56)).apply{setMargins(dp(16),0,dp(16),0)})
   pause=PrimioIconButton(this,"pause",tr("Lecture ou pause")){command("cycle","pause");showControls()}
@@ -152,8 +157,12 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   overlay.visibility=View.GONE
   gestureLabel=text("",16f).apply{gravity=Gravity.CENTER;background=PrimioStyle.glass(this@PlayerActivity);setPadding(dp(24),dp(16),dp(24),dp(16));visibility=View.GONE}
   root.addView(gestureLabel,FrameLayout.LayoutParams(-2,-2,Gravity.CENTER))
-  seekFeedback=text("",18f).apply{gravity=Gravity.CENTER;visibility=View.GONE;setShadowLayer(dp(3).toFloat(),0f,dp(1).toFloat(),Color.BLACK);importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO}
-  root.addView(seekFeedback,FrameLayout.LayoutParams(dp(100),dp(44),Gravity.CENTER))
+  seekFeedback=text("",30f).apply{gravity=Gravity.CENTER;includeFontPadding=false;visibility=View.GONE;setShadowLayer(dp(3).toFloat(),0f,dp(1).toFloat(),Color.BLACK);importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO}
+  root.addView(seekFeedback,FrameLayout.LayoutParams(dp(144),dp(64),Gravity.CENTER_VERTICAL or Gravity.START))
+  brightnessIndicator=PrimioLevelIndicator(this,"brightness",tr("Luminosité"))
+  volumeIndicator=PrimioLevelIndicator(this,"volume",tr("Volume"))
+  root.addView(brightnessIndicator,FrameLayout.LayoutParams(dp(60),dp(204),Gravity.CENTER_VERTICAL or Gravity.START).apply{leftMargin=dp(28)})
+  root.addView(volumeIndicator,FrameLayout.LayoutParams(dp(60),dp(204),Gravity.CENTER_VERTICAL or Gravity.END).apply{rightMargin=dp(28)})
   skipButton=button(tr("Passer l’intro")){currentSegment?.let{command("seek",it.optDouble("end").toString(),"absolute");skipped.add(it.optDouble("start"))}}
   skipButton.visibility=View.GONE
   root.addView(skipButton,FrameLayout.LayoutParams(-2,dp(48),Gravity.BOTTOM or Gravity.END).apply{rightMargin=dp(28);bottomMargin=dp(144)})
@@ -184,8 +193,8 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
     val delta=first.y-e.y
     if(!vertical&&(abs(delta)<dp(16)||abs(delta)<abs(e.x-first.x)))return true
     vertical=true;handler.removeCallbacks(hide);val change=delta/root.height.coerceAtLeast(1)*1.4f
-    if(first.x<root.width/2){val brightness=(startBrightness+change).coerceIn(0.05f,1f);window.attributes=window.attributes.apply{screenBrightness=brightness};feedback("☀  Luminosité ${(brightness*100).roundToInt()} %")}
-    else{val max=audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);val volume=(startVolume+change*max).roundToInt().coerceIn(0,max);audio.setStreamVolume(AudioManager.STREAM_MUSIC,volume,0);feedback("♫  Volume ${(volume*100f/max.coerceAtLeast(1)).roundToInt()} %")};return true
+    if(first.x<root.width/2){val brightness=(startBrightness+change).coerceIn(0.05f,1f);window.attributes=window.attributes.apply{screenBrightness=brightness};showLevel(true,brightness)}
+    else{val max=audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);val volume=(startVolume+change*max).roundToInt().coerceIn(0,max);audio.setStreamVolume(AudioManager.STREAM_MUSIC,volume,0);showLevel(false,volume.toFloat()/max.coerceAtLeast(1))};return true
    }
   })
   detector.setIsLongpressEnabled(false)
@@ -201,7 +210,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
     if(event.actionMasked==MotionEvent.ACTION_MOVE&&!scrubbing&&!vertical&&loaded&&duration>0&&event.eventTime-downTime>=350&&abs(dx)>dp(12)&&abs(dx)>abs(dy)*1.5f){
      scrubbing=true;dragging=true;scrubWasPaused=last.optBoolean("paused");command("set","pause","yes")
      top.visibility=View.INVISIBLE;center.visibility=View.INVISIBLE;playerActions.visibility=View.INVISIBLE;remaining.visibility=View.INVISIBLE
-     skipButton.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;skipCountdown.visibility=View.GONE;gestureLabel.visibility=View.GONE
+     skipButton.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;skipCountdown.visibility=View.GONE;gestureLabel.visibility=View.GONE;clearLevels.run()
      preview.hide();previewPanel.visibility=View.GONE;overlay.visibility=View.VISIBLE;handler.removeCallbacks(hide)
      val cancel=MotionEvent.obtain(event);cancel.action=MotionEvent.ACTION_CANCEL;detector.onTouchEvent(cancel);cancel.recycle()
     }
@@ -210,7 +219,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
      seek.fraction=(scrubTarget/duration).toFloat();time.text=format(scrubTarget)+" / "+format(duration)
      if(event.actionMasked==MotionEvent.ACTION_UP||event.actionMasked==MotionEvent.ACTION_CANCEL)endScrub(event.actionMasked==MotionEvent.ACTION_UP)
      true
-    }else{detector.onTouchEvent(event);if(vertical&&(event.actionMasked==MotionEvent.ACTION_UP||event.actionMasked==MotionEvent.ACTION_CANCEL))showControls();true}
+    }else{detector.onTouchEvent(event);true}
    }
   }
  }
@@ -226,7 +235,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   command("seek",amount.toString(),"relative");showControls()
   seekFeedback.animate().cancel();handler.removeCallbacks(clearSeekFeedback)
   seekFeedback.text=(if(impacted>=0)"+" else "−")+abs(impacted.roundToInt()).toString()+" s"
-  seekFeedback.layoutParams=FrameLayout.LayoutParams(dp(100),dp(44),Gravity.CENTER).apply{leftMargin=if(ahead)dp(234) else -dp(234);topMargin=dp(90)}
+  seekFeedback.layoutParams=FrameLayout.LayoutParams(dp(144),dp(64),Gravity.CENTER_VERTICAL or Gravity.START).apply{leftMargin=(root.width*(if(ahead).75f else .25f)-dp(72)).roundToInt().coerceIn(dp(16),(root.width-dp(160)).coerceAtLeast(dp(16)))}
   seekFeedback.visibility=View.VISIBLE;seekFeedback.alpha=1f
   if(!options.optBoolean("reduceMotion"))seekFeedback.animate().alpha(.25f).setDuration(180).withEndAction{seekFeedback.animate().alpha(1f).setDuration(180).withEndAction{seekFeedback.animate().alpha(0f).setDuration(350).start()}.start()}.start()
   handler.postDelayed(clearSeekFeedback,900)
@@ -241,6 +250,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   }}
   return super.onKeyDown(keyCode,event)
  }
+ private fun showLevel(brightness:Boolean,value:Float){overlay.visibility=View.GONE;gestureLabel.visibility=View.GONE;handler.removeCallbacks(clearLevels);brightnessIndicator.visibility=View.GONE;volumeIndicator.visibility=View.GONE;(if(brightness)brightnessIndicator else volumeIndicator).showLevel(value);handler.postDelayed(clearLevels,1200)}
  private fun feedback(value:String){gestureLabel.text=value;gestureLabel.visibility=View.VISIBLE;handler.removeCallbacks(clearGesture);handler.postDelayed(clearGesture,1000)}
  private fun exportCertificates():String {
   val file=File(filesDir,"system-ca.pem");val store=KeyStore.getInstance("AndroidCAStore").apply{load(null)}
@@ -337,7 +347,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   val current=options.optString("currentVideoId")
   val season=episodeSeason?:entries.firstOrNull{it.optString("id")==current}?.optInt("season",1)?:seasons.firstOrNull()?:1
   val dialog=PrimioSheet(this,tr("Épisodes"),true)
-  if(seasons.size>1)dialog.option(if(season==0)tr("Hors-série  ⌄") else PrimioI18n.text(this,"Saison {n}",mapOf("n" to season))+"  ⌄"){
+  if(seasons.size>1)dialog.option(if(season==0)tr("Hors-série") else PrimioI18n.text(this,"Saison {n}",mapOf("n" to season)),trailingIcon="chevron"){
    dialog.dismiss();val selector=PrimioSheet(this,tr("Saison"),true)
    seasons.forEach{s->selector.option(if(s==0)tr("Hors-série") else PrimioI18n.text(this,"Saison {n}",mapOf("n" to s)),s==season){episodeSeason=s;selector.dismiss();episodes()}}
    sheet=selector;selector.setOnDismissListener{if(sheet===selector)sheet=null};selector.show()
@@ -471,7 +481,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
  override fun onUserLeaveHint(){super.onUserLeaveHint();if(Build.VERSION.SDK_INT<31)enterPip()}
  override fun onPictureInPictureModeChanged(inPip:Boolean,configuration:android.content.res.Configuration){
   super.onPictureInPictureModeChanged(inPip,configuration)
-  if(inPip){skipCountdown.visibility=View.GONE;overlay.visibility=View.GONE;skipButton.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;gestureLabel.visibility=View.GONE}else{if(lifecycleStopped){finish()}else showControls()}
+  if(inPip){skipCountdown.visibility=View.GONE;overlay.visibility=View.GONE;skipButton.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;gestureLabel.visibility=View.GONE;clearLevels.run();seekFeedback.visibility=View.GONE}else{if(lifecycleStopped){finish()}else showControls()}
  }
  private var lifecycleStopped=false
  override fun onStart(){super.onStart();lifecycleStopped=false}

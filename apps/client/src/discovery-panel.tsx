@@ -14,7 +14,7 @@ import { matchesCategory } from './preferences'
 import { t, locale } from './i18n'
 import { discoveryService } from './random-discovery'
 import { tmdbToken } from './metadata-provider'
-import { Shuffle, SlidersHorizontal, ChevronDown, ArrowRight, LoaderCircle } from './icons'
+import { Shuffle, SlidersHorizontal, ChevronDown, ArrowRight, LoaderCircle, Mic } from './icons'
 
 export function DiscoveryControls({
   value,
@@ -140,11 +140,12 @@ export function DiscoveryControls({
   )
 }
 
-export function AdvancedFilters({ value, onChange }: {
-  value: DiscoveryFilters; onChange: (v: DiscoveryFilters) => void
+export function AdvancedFilters({ value, onChange, open, onToggle }: {
+  value: DiscoveryFilters; onChange: (v: DiscoveryFilters) => void; open?: boolean; onToggle?: (open: boolean) => void
 }) {
   const count = Object.values(value).filter(v => v !== undefined && v !== '').length
-  return <details className="advanced-discover">
+  if (open !== undefined) return open ? <section className="advanced-filter-panel search-filter-panel" id="advanced-search-filters" aria-label={t('Filtres avancés')}><DiscoveryControls value={value} onChange={onChange} /></section> : null
+  return <details className="advanced-discover" onToggle={event => onToggle?.(event.currentTarget.open)}>
     <summary><SlidersHorizontal size={18} /><span>{t('Filtres avancés')}</span>
       {count > 0 && <span className="filter-count">{count}</span>}<ChevronDown size={16} />
     </summary>
@@ -499,14 +500,17 @@ export function VoiceSearch({ onResult }: { onResult: (value: string) => void })
     }
   }
   return (
-    <div className="voice-search">
+    <div className="voice-search inline-voice-search">
       <button
-        className="secondary"
+        className="icon search-microphone"
+        type="button"
+        aria-label={t(listening ? 'Écoute en cours…' : 'Recherche vocale')}
+        title={t(listening ? 'Écoute en cours…' : 'Recherche vocale')}
         aria-pressed={listening}
         disabled={isTauri() && listening}
         onClick={() => void start()}
       >
-        {t(listening ? 'Écoute en cours…' : 'Recherche vocale')}
+        {listening ? <LoaderCircle size={20} className="spin" /> : <Mic size={20} />}
       </button>
       {error && <p role="status">{error}</p>}
     </div>

@@ -7,7 +7,7 @@ import { t, locale, appLanguages, languageName } from './i18n'
 import { ProgressiveList } from './progressive'
 import { findProgress, isWatched } from './progress'
 import { MediaImage } from './media-image'
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Check, ChevronDown, Puzzle, Play, Plus, Trash2, Pencil, UserRound, Info, X } from './icons'
 import type { Meta, UserState, Settings, Progress } from './types'
 import {
@@ -59,7 +59,7 @@ export function Choice({
 }) {
   const [open, setOpen] = useState(false)
   const container = useRef<HTMLDivElement>(null)
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return
     const dismiss = (event: PointerEvent) => {
       if (!container.current?.contains(event.target as Node)) setOpen(false)
@@ -67,11 +67,17 @@ export function Choice({
     const escape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false)
     }
+    const back = (event: Event) => {
+      event.stopImmediatePropagation()
+      setOpen(false)
+    }
+    window.addEventListener('primio:back', back, true)
     document.addEventListener('pointerdown', dismiss)
     document.addEventListener('keydown', escape)
     return () => {
       document.removeEventListener('pointerdown', dismiss)
       document.removeEventListener('keydown', escape)
+      window.removeEventListener('primio:back', back, true)
     }
   }, [open])
   return (

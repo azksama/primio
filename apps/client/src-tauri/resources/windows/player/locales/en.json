@@ -743,5 +743,18 @@
   "Votre jeton TMDB a expiré ou est invalide. Remplacez-le dans les paramètres.": "Your TMDB token is expired or invalid. Replace it in Settings.",
   "Animes via AniList. Films et séries avec votre jeton TMDB.": "Anime via AniList. Movies and series with your TMDB token.",
   "Configurer TMDB": "Configure TMDB",
-  "Un graphite doux, des commandes sculptées et des creux délicats. Un thème néomorphique complet.": "Soft graphite, sculpted controls and subtle recessed surfaces. A complete neumorphic theme."
+  "Un graphite doux, des commandes sculptées et des creux délicats. Un thème néomorphique complet.": "Soft graphite, sculpted controls and subtle recessed surfaces. A complete neumorphic theme.",
+  "Aucun épisode disponible pour ce contenu.": "No episodes available for this title.",
+  "Personnaliser OLED": "Customize OLED",
+  "Couleur secondaire OLED": "OLED accent color",
+  "Choisissez votre couleur. L’aperçu s’applique immédiatement.": "Choose your color. The preview applies immediately.",
+  "Teinte et saturation": "Hue and saturation",
+  "Couleur hexadécimale": "Hex color",
+  "En cours de lecture": "Now playing",
+  "Lecture indisponible": "Playback unavailable",
+  "Revenir aux sources": "Choose another source",
+  "Non vu": "Not seen",
+  "Aperçu": "Preview",
+  "Marquer comme non vu": "Mark as unwatched",
+  "Par défaut": "Default"
 }

@@ -96,6 +96,7 @@ export interface Progress extends Pick<Meta, 'id' | 'type' | 'name' | 'poster' |
   updatedAt: number
 }
 export interface Settings {
+  oledAccent?: string
   dismissedRecommendations?: string[]
   tvMode?: 'auto' | 'on' | 'off'
   uiLanguage: string

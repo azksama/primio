@@ -1,5 +1,7 @@
 import { useProfilePin, PinSettings } from './profile-pin'
 import { applyTheme, resolveTheme } from './themes'
+import { OledAccentPicker } from './accent-picker'
+import { useSwipeNavigation } from './swipe-navigation'
 import { useFeatured } from './featured'
 import {
   EmailVerification,
@@ -24,7 +26,7 @@ import { IntegrationsPanel } from './integrations-panel'
 import { MetadataSettings } from './metadata-settings'
 import { CastPanel, type CastTarget } from './cast-panel'
 import { useAnimeClassification } from './anime-classification'
-import { equivalentSources, rememberSource, previouslyUsedSource } from './source-preferences'
+import { equivalentSources, rememberSource, previouslyUsedSource, failSavedSource } from './source-preferences'
 import { PasswordField } from './password-field'
 import { CopyTitle, ContentLogo } from './copy-title'
 import { DialogShell } from './dialog-shell'
@@ -46,7 +48,7 @@ import { matchesDiscovery, type DiscoveryFilters } from './discovery'
 import { setLocale } from './i18n'
 import { Recommendations } from './recommendations'
 import { Onboarding } from './onboarding'
-import { episodeQueue, playbackTitle } from './episodes'
+import { episodeQueue, playbackTitle, watchVideoId } from './episodes'
 import { version } from '../package.json'
 import { MediaImage, CardSkeleton } from './media-image'
 import {
@@ -141,7 +143,7 @@ type Tab =
   | 'options'
   | 'history'
   | 'downloads'
-type Playback = { meta: Meta; videoId: string; stream: Stream; subs: Subtitle[]; url: string }
+type Playback = { meta: Meta; videoId: string; stream: Stream; subs: Subtitle[]; url: string; fingerprint?: string }
 const message = (e: unknown) =>
   e instanceof Error
     ? e.message
@@ -241,7 +243,11 @@ export default function App() {
   }
   useTvMode(state.settings.tvMode)
   const [slideDirection, setSlideDirection] = useState('left')
-  const touchStart = useRef<{ x: number; y: number } | null>(null)
+  const pageRef = useRef<HTMLDivElement>(null)
+  const navigationHistory = useRef<Tab[]>([])
+  const backAction = useRef<() => void>(() => {})
+  const recoverSource = useRef<() => void>(() => {})
+  const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false)
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [toast, setToast] = useState(''),
@@ -367,9 +373,9 @@ export default function App() {
   }, [token, email, syncVersion, ready])
   useEffect(() => {
     if (ready) writeSecure('plugins', JSON.stringify(installedPlugins)).catch(fail)
-    const theme = applyTheme(plugins)
+    const theme = applyTheme(plugins, state.settings.oledAccent)
     if (isTauri() && isAndroid()) void invoke('set_theme', { theme: JSON.stringify(theme) }).catch(() => {})
-  }, [plugins, installedPlugins, ready])
+  }, [plugins, installedPlugins, ready, state.settings.oledAccent])
   useEffect(() => {
     document.documentElement.dataset.motion =
       state.settings.reduceMotion || pluginAccessibility.reduceMotion ? 'reduced' : 'full'
@@ -469,7 +475,9 @@ export default function App() {
     })
     const unlistenError = listen<string>('player-error', (e) => {
       recordDiagnostic('player', e.payload)
-      setPlayback(null)
+      const current = currentPlayback.current
+      if (current) setState(s => ({ ...s, settings: failSavedSource(s.settings, current.meta, current.videoId, current.fingerprint) }))
+      recoverSource.current()
       fail(e.payload)
     })
     return () => {
@@ -616,12 +624,19 @@ export default function App() {
     if (selected) {
       ++detailSequence.current
       setSelected(null)
+      setDetailLoading(false)
     } else if (pluginPage) setPluginPage(null)
-    else navigate(tab === 'calendar' ? 'library' : tab === 'notifications' ? 'home' : 'settings')
+    else if (advancedSearchOpen && tab === 'explore') setAdvancedSearchOpen(false)
+    else {
+      const previous = navigationHistory.current.pop()
+      if (previous) navigate(previous, false)
+      else if (tab !== 'home') navigate(tab === 'calendar' ? 'library' : ['explore', 'library', 'settings', 'notifications'].includes(tab) ? 'home' : 'settings', false)
+    }
     setSlideDirection('right')
   }
-  function navigate(next: Tab) {
+  function navigate(next: Tab, remember = true) {
     savePageScroll()
+    if (remember && next !== tab) navigationHistory.current = [...navigationHistory.current, tab].slice(-50)
     const order: Tab[] = ['home', 'explore', 'library', 'settings']
     setSlideDirection(order.indexOf(next) >= order.indexOf(tab) ? 'left' : 'right')
     ++detailSequence.current
@@ -631,6 +646,28 @@ export default function App() {
     setPluginPage(null)
     setError('')
   }
+  backAction.current = () => {
+    if (document.querySelector('dialog[open],.choice-options')) return
+    if (onboarding || profileLocked) return
+    if (profileGate) { setProfileGate(false); return }
+    goBack()
+  }
+  useEffect(() => {
+    const back = () => backAction.current()
+    window.addEventListener('primio:back', back)
+    return () => window.removeEventListener('primio:back', back)
+  }, [])
+  const navigationTabs: Tab[] = ['home', 'explore', 'library', 'settings']
+  const isSubpage = !!selected || !!pluginPage || !navigationTabs.includes(tab)
+  useSwipeNavigation(
+    pageRef,
+    ready && state.settings.swipeNavigation && !onboarding && !profileGate && !profileLocked && !playback,
+    direction => isSubpage ? direction === 'right' : !!navigationTabs[navigationTabs.indexOf(tab) + (direction === 'left' ? 1 : -1)],
+    direction => {
+      if (isSubpage) goBack()
+      else navigate(navigationTabs[navigationTabs.indexOf(tab) + (direction === 'left' ? 1 : -1)])
+    },
+  )
   async function details(meta: Meta, refresh = false) {
     savePageScroll()
     const seq = ++detailSequence.current
@@ -693,19 +730,27 @@ export default function App() {
   ])
   async function chooseSources(
     meta: Meta,
-    id = meta.id,
+    id?: string,
     preferredAddon?: string,
     forcePicker = false,
   ) {
-    setSourceTarget({ meta, id })
+    setSourceTarget({ meta, id: id ?? meta.id })
     setSourceList([])
     setSourceGroups([])
     setSourceError('')
     setSourceLoading(true)
     const seq = ++sourceSequence.current
     try {
+      if (!id) {
+        if ((meta.type === 'series' || meta.type === 'anime') && !meta.videos?.length) meta = await metadata(catalogAddons, meta)
+        if (seq !== sourceSequence.current) return
+        id = watchVideoId(meta, state.progress)
+        if (!id) throw Error(t('Aucun épisode disponible pour ce contenu.'))
+        setSourceTarget({ meta, id })
+      }
+      const videoId = id
       const [r, fullMeta] = await Promise.all([
-        streams(catalogAddons, meta.type, id, (result) => {
+        streams(catalogAddons, meta.type, videoId, (result) => {
           if (seq !== sourceSequence.current) return
           setSourceGroups(result.groups)
           const ordered = result.groups.flatMap(group => equivalentSources(rankSources(result.items.filter(s => s.addonKey === group.key), plugins), state.settings, meta).items)
@@ -720,7 +765,8 @@ export default function App() {
       const matching = equivalentSources(rankSources(r.items, plugins), state.settings, meta)
       const ranked = r.groups.flatMap(group => matching.items.filter(s => s.addonKey === group.key))
       setSourceList(ranked)
-      const nextStream = forcePicker
+      const failedSource = state.settings.sourcePreferences?.some(p => p.contentId === meta.type + ':' + meta.id && p.videoId === id && p.failedAt)
+      const nextStream = forcePicker || failedSource
         ? undefined
         : ((await previouslyUsedSource(ranked, state.settings, meta, id)) ??
           (preferredAddon ? matching.equivalent : undefined))
@@ -741,6 +787,11 @@ export default function App() {
     } finally {
       if (seq === sourceSequence.current) setSourceLoading(false)
     }
+  }
+  recoverSource.current = () => {
+    const current = currentPlayback.current
+    setPlayback(null)
+    if (current) void chooseSources(current.meta, current.videoId, undefined, true)
   }
   episodeRequest.current = (event) => {
     if (
@@ -771,13 +822,13 @@ export default function App() {
     launchLock.current = true
     setLaunching(true)
     const sequence = sourceSequence.current
+    const target = override ?? sourceTarget!
     try {
       const url = playbackUrl(stream)
       if (stream.externalUrl && !stream.url) {
         await openLink(url)
         return
       }
-      const target = override ?? sourceTarget!
       const subs = [
         ...(stream.subtitles ?? []),
         ...(await subtitles(catalogAddons, target.meta.type, target.id)),
@@ -789,7 +840,10 @@ export default function App() {
       if (sequence !== sourceSequence.current) return
       const remembered = await rememberSource(state.settings, target.meta, target.id, stream)
       if (sequence !== sourceSequence.current) return
-      const p = { meta: target.meta, videoId: target.id, stream, url, subs }
+      const fingerprint = remembered.sourcePreferences?.find(p => p.contentId === target.meta.type + ':' + target.meta.id && p.videoId === target.id)?.fingerprint
+      const p = { meta: target.meta, videoId: target.id, stream, url, subs, fingerprint }
+      setState(s => ({ ...s, settings: { ...s.settings, sourcePreferences: remembered.sourcePreferences } }))
+      currentPlayback.current = p
       setPlayback(p)
       const position =
         sourceResume.current?.videoId === target.id
@@ -804,7 +858,7 @@ export default function App() {
           external: state.settings.player === 'external' && isAndroid(),
           position,
           playerExtra: JSON.stringify({
-            theme: resolveTheme(plugins),
+            theme: resolveTheme(plugins, state.settings.oledAccent),
             ...episodeQueue(target.meta, target.id, Date.now(), hideSpoilers, state.progress),
             ...(await playerOptions(state.settings)),
             trackPreferences: state.settings.trackPreferences?.find(
@@ -832,6 +886,7 @@ export default function App() {
               videos: target.meta.videos?.filter((v) => v.id === target.id),
             },
             videoId: target.id,
+            sourceFingerprint: fingerprint,
           }),
           headers: stream.behaviorHints?.proxyHeaders?.request ?? {},
           subtitles: subs,
@@ -852,16 +907,13 @@ export default function App() {
         setPlayback(null)
         throw Error(t('Le choix des lecteurs externes est disponible dans l’application Android.'))
       }
-      setState((s) => ({
-        ...s,
-        settings: { ...s.settings, sourcePreferences: remembered.sourcePreferences },
-      }))
       sourceResume.current = null
       ++sourceSequence.current
       setSourceLoading(false)
       setSourceTarget(null)
     } catch (e) {
       if (sequence === sourceSequence.current) {
+        setState(s => ({ ...s, settings: failSavedSource(s.settings, target.meta, target.id, currentPlayback.current?.fingerprint) }))
         setPlayback(null)
         setSourceError(message(e))
       }
@@ -920,7 +972,7 @@ export default function App() {
       await invoke('play_download', {
         id: item.id,
         options: {
-          theme: resolveTheme(plugins),
+          theme: resolveTheme(plugins, state.settings.oledAccent),
           ...(await playerOptions(state.settings)),
           trackPreferences: state.settings.trackPreferences?.find(
             (p) => p.contentId === item.meta.meta.id,
@@ -1430,8 +1482,9 @@ export default function App() {
     >
       {heading(tab === 'anime' ? t('Animes') : t('Explorer'))}
       <section className="page-content">
+        <div className="search-toolbar">
         <div className="search-completion">
-          <label className="search-box">
+          <div className="search-box">
             <Search />
             <input
               placeholder={t('Films, séries, envies…')}
@@ -1448,7 +1501,8 @@ export default function App() {
                 <X />
               </button>
             )}
-          </label>
+            <VoiceSearch onResult={setQuery} />
+          </div>
           <SearchSuggestions
             query={query}
             addons={catalogAddons}
@@ -1462,8 +1516,11 @@ export default function App() {
             }}
           />
         </div>
-        <VoiceSearch onResult={setQuery} />
-        <AdvancedFilters value={discoveryFilters} onChange={setDiscoveryFilters} />
+        <button className="icon glass search-filter-toggle" aria-label={t('Filtres avancés')} title={t('Filtres avancés')} aria-expanded={advancedSearchOpen} aria-controls="advanced-search-filters" onClick={() => setAdvancedSearchOpen(open => !open)}>
+          <SlidersHorizontal size={21} />
+        </button>
+        </div>
+        <AdvancedFilters open={advancedSearchOpen} value={discoveryFilters} onChange={setDiscoveryFilters} />
         <div className="explorer-filters">
           <Choice
             separateLabel
@@ -1685,51 +1742,9 @@ export default function App() {
         </div>
       )}
       <div
+        ref={pageRef}
         inert={onboarding || profileGate || profileLocked}
         className={'page-slide slide-' + slideDirection}
-        onTouchStart={(e) => {
-          touchStart.current = null
-          if (
-            !state.settings.swipeNavigation ||
-            e.touches.length !== 1 ||
-            (e.target instanceof Element &&
-              e.target.closest('input,.poster-rail,.chips,.continue-grid,.choice-options'))
-          )
-            return
-          touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }
-        }}
-        onTouchEnd={(e) => {
-          const start = touchStart.current
-          touchStart.current = null
-          if (!start || !e.changedTouches[0]) return
-          const dx = e.changedTouches[0].clientX - start.x,
-            dy = e.changedTouches[0].clientY - start.y
-          if (
-            dx > 80 &&
-            dx > Math.abs(dy) * 1.8 &&
-            (selected || pluginPage || !['home', 'explore', 'library', 'settings'].includes(tab))
-          ) {
-            goBack()
-            return
-          }
-          const pages: Tab[] = ['home', 'explore', 'library', 'settings']
-          const i = pages.indexOf(tab)
-          if (i >= 0 && Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.8) {
-            const next = pages[i + (dx < 0 ? 1 : -1)]
-            if (next) {
-              e.preventDefault()
-              navigate(next)
-            }
-          }
-        }}
-        onTouchCancel={() => {
-          touchStart.current = null
-        }}
-        onTouchMove={(e) => {
-          const start = touchStart.current
-          const point = e.touches[0]
-          if (start && point && Math.abs(point.clientY - start.y) > 16) touchStart.current = null
-        }}
       >
         {visitedPages.current.has(state.activeProfileId + ':home') && homePage}
         {visitedPages.current.has(state.activeProfileId + ':explore') && explorePage}
@@ -1799,24 +1814,7 @@ export default function App() {
               )}
               <button
                 className="primary"
-                onClick={() =>
-                  selected.videos?.length
-                    ? chooseSources(
-                        selected,
-                        state.progress.find(
-                          (p) =>
-                            p.id === selected.id &&
-                            p.type === selected.type &&
-                            !isWatched(p) &&
-                            p.position > 0,
-                        )?.videoId ??
-                          selected.videos.find(
-                            (v) => !isWatched(findProgress(state.progress, selected.type, v.id)),
-                          )?.id ??
-                          selected.videos[0].id,
-                      )
-                    : chooseSources(selected)
-                }
+                onClick={() => chooseSources(selected)}
               >
                 <Play />{' '}
                 {state.progress.some(
@@ -1987,19 +1985,10 @@ export default function App() {
                     n: state.library.length,
                   })}
                 </p>
-                <button onClick={sync} disabled={syncing || importSync.syncing}>
-                  <RefreshCw size={16} /> {t('Synchroniser')}
-                </button>
               </div>
-              {token && (
+              {token && accountSync.error && (
                 <p className="muted" role="status">
-                  {t(
-                    accountSync.error
-                      ? 'Synchronisation indisponible. Nouvel essai automatique.'
-                      : accountSync.syncing
-                        ? 'Synchronisation…'
-                        : 'Synchronisation automatique active · toutes les 30 secondes',
-                  )}
+                  {t('Synchronisation indisponible. Nouvel essai automatique.')}
                 </p>
               )}
               {importSync.pending && (
@@ -2011,8 +2000,7 @@ export default function App() {
                   )}
                 </p>
               )}
-              <div className="library-selection-actions">
-                {selectingLibrary ? (
+              {selectingLibrary && <div className="library-selection-actions">
                   <>
                     <span>
                       {selectedLibrary.length} {t('sélectionnés')}
@@ -2055,10 +2043,7 @@ export default function App() {
                       {t('Ajouter à une collection')}
                     </button>
                   </>
-                ) : (
-                  <button onClick={() => setSelectingLibrary(true)}>{t('Sélectionner')}</button>
-                )}
-              </div>
+              </div>}
               {collectionPicker && (
                 <AddToCollection
                   state={state}
@@ -2085,8 +2070,9 @@ export default function App() {
                   setLibraryStatus(c?.statusFilter ?? 'all')
                 }}
               />
-              <div className="library-filters">
+              <div className="library-filters explorer-filters">
                 <Choice
+                  separateLabel
                   label={t('État')}
                   value={libraryStatus}
                   options={['all', 'planned', 'watching', 'completed'].map((s) => [
@@ -2111,6 +2097,7 @@ export default function App() {
                   }}
                 />
                 <Choice
+                  separateLabel
                   label={t('Trier par')}
                   value={librarySort}
                   options={[
@@ -2402,6 +2389,9 @@ export default function App() {
                 }
                 onRemove={(p) => setPlugins((list) => list.filter((x) => x.id !== p.id))}
               />
+              {plugins.filter(p => p.permissions.includes('theme') && p.theme).at(-1)?.id === 'primio.oled' && (
+                <OledAccentPicker value={state.settings.oledAccent} onChange={oledAccent => setState(s => ({ ...s, settings: { ...s.settings, oledAccent } }))} />
+              )}
               <WatchOrders plugins={plugins} progress={state.progress} onOpen={details} />
               <WatchOrderBuilder library={state.library} onInstall={setPluginCandidate} />
               {plugins
@@ -3234,9 +3224,10 @@ export default function App() {
               if (Math.floor(e.currentTarget.currentTime) % 10 === 0)
                 saveProgress(playback, e.currentTarget.currentTime, e.currentTarget.duration)
             }}
-            onError={() =>
+            onError={() => {
+              setState(s => ({ ...s, settings: failSavedSource(s.settings, playback.meta, playback.videoId, playback.fingerprint) }))
               setError(t('Ce flux nécessite le lecteur libmpv de l’application Android.'))
-            }
+            }}
           />
           <p className="muted">{t('Aperçu navigateur · lecteur HTML5')}</p>
         </Dialog>

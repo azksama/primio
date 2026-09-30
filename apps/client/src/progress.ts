@@ -1,4 +1,5 @@
 import { withoutDeleted } from './progress-deletions'
+import { failSavedSource } from './source-preferences'
 import type { Meta, Progress, UserState } from './types'
 
 export function episodeProgress(meta: Meta, videoId: string) {
@@ -65,7 +66,9 @@ export function recordProgress(
     position: Math.min(position, duration),
     duration,
     updatedAt,
-    watched: watched ?? (isWatched(previous) || position / duration >= 0.95),
+    watched: watched ?? (isWatched(previous) ||
+      (position / duration >= 0.95 && (!previous || previous.duration <= 0 ||
+        previous.position / previous.duration < 0.95))),
   }
   return [
     item,
@@ -73,6 +76,8 @@ export function recordProgress(
   ].slice(0, 500)
 }
 export interface NativeProgress {
+  sourceFailed?: boolean
+  watchedChanges?: { videoId: string; watched: boolean; updatedAt: number; season?: number; episode?: number }[]
   requestedVideoId?: string
   actionId?: string
   autoPlay?: boolean
@@ -85,6 +90,7 @@ export interface NativeProgress {
     profileId: string
     meta: Meta
     videoId: string
+    sourceFingerprint?: string
   }
   position: number
   duration: number
@@ -97,7 +103,7 @@ export function mergeNativeProgress(state: UserState, event: NativeProgress): Us
     !Number.isFinite(event.position) ||
     !Number.isFinite(event.duration) ||
     event.position < 0 ||
-    event.duration <= 0
+    event.duration < 0
   )
     return state
   const c = event.context
@@ -109,6 +115,32 @@ export function mergeNativeProgress(state: UserState, event: NativeProgress): Us
     (profile.lastPlaybackAt ?? 0) >= event.updatedAt
   )
     return state
+  if (event.sourceFailed) {
+    const update = (settings: import('./types').Settings) =>
+      failSavedSource(settings, c.meta, c.videoId, c.sourceFingerprint, event.updatedAt)
+    state = {
+      ...state,
+      settings: c.profileId === state.activeProfileId ? update(state.settings) : state.settings,
+      profiles: state.profiles.map(p => p.id === c.profileId ? { ...p, settings: update(p.settings) } : p),
+    }
+  }
+  if (event.watchedChanges?.length) {
+    const apply = (items: Progress[], deleted: import('./progress-deletions').ProgressDeletion[] | undefined) => {
+      let next = items
+      for (const change of event.watchedChanges!.slice(-500)) {
+        if (!change.videoId || typeof change.watched !== 'boolean' || !Number.isFinite(change.updatedAt) || change.updatedAt > event.updatedAt) continue
+        const previous = findProgress(next, c.meta.type, change.videoId)
+        const meta = { ...c.meta, videos: [{ id: change.videoId, title: '', season: change.season, episode: change.episode }] }
+        next = recordProgress(next, meta, change.videoId, previous?.position ?? 0, previous?.duration || 1, change.updatedAt, change.watched)
+      }
+      return withoutDeleted(next, deleted)
+    }
+    state = {
+      ...state,
+      progress: c.profileId === state.activeProfileId ? apply(state.progress, state.deletedProgress) : state.progress,
+      profiles: state.profiles.map(p => p.id === c.profileId ? { ...p, progress: apply(p.progress, p.deletedProgress) } : p),
+    }
+  }
   if (c.trackPreferences) {
     const prefs = Object.fromEntries(
       Object.entries(c.trackPreferences).map(([key, p]) => [

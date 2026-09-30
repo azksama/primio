@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { isDesktop } from './platform'
 
@@ -18,6 +18,19 @@ export function DialogShell({
   const ref = useRef<HTMLDialogElement>(null)
   const close = useRef(onClose)
   close.current = onClose
+  useLayoutEffect(() => {
+    const dialog = ref.current
+    if (!dialog) return
+    const back = (event: Event) => {
+      if ([...document.querySelectorAll('dialog[open]')].at(-1) !== dialog) return
+      if (dialog.querySelector('.choice-options')) return
+      event.stopImmediatePropagation()
+      event.preventDefault()
+      close.current()
+    }
+    window.addEventListener('primio:back', back, true)
+    return () => window.removeEventListener('primio:back', back, true)
+  }, [])
   useEffect(() => {
     const dialog = ref.current
     if (!dialog) return

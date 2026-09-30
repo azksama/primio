@@ -8,7 +8,7 @@ Le client demande les streams Stremio depuis Rust, puis ouvre PlayerActivity (no
 
 Les certificats du magasin système Android sont exportés dans le répertoire privé pour libmpv ; la vérification TLS demeure active. Aucun chemin de fichier local ne peut être demandé comme URL de lecture depuis un addon.
 
-Le lecteur gère pause, retour/avance indépendants de 5 à 60 secondes, position absolue, sélection audio/sous-titres, mise en mémoire tampon et émission de progression vers Tauri. Sa timeline, ses panneaux et son indicateur de chargement utilisent le thème Primio. Le double toucher à gauche/droite recule/avance ; le glissement vertical à gauche ajuste la luminosité de la fenêtre, à droite le volume multimédia. Il se met en pause quand l’activité passe en arrière-plan. Il n’y a pas de service de lecture en arrière-plan, Cast ni PiP.
+Le lecteur gère pause, retour/avance indépendants de 5 à 60 secondes, position absolue, sélection audio/sous-titres, mise en mémoire tampon et émission de progression vers Tauri. Sa timeline, ses panneaux et son indicateur de chargement utilisent le thème Primio. Le double toucher à gauche/droite recule/avance ; le glissement vertical à gauche ajuste la luminosité de la fenêtre, à droite le volume multimédia. Le retour et le passage en arrière-plan proposent le PiP quand la lecture est chargée, sans erreur, avant l’outro et avant 99 % de progression ; sinon le lecteur se ferme ou se met en pause. La diffusion Chromecast est proposée pour les sources compatibles. Il n’y a pas de service autonome de lecture en arrière-plan.
 
 ## Cache et téléchargements
 
@@ -51,7 +51,7 @@ Les APKs de préversion n’intègrent pas de jeton de compte, de configuration 
 
 Après `./scripts/build-android.ps1 -Profile release`, exécuter `./scripts/test-android-player.ps1 -DeviceSerial emulator-5554` sur l’émulateur sélectionné. Le script remplace l’APK par un build debug, installe la suite AndroidJUnit et télécharge la bande-annonce publique Big Buck Bunny du W3C avec contrôle SHA-256. La lecture du test utilise ensuite ce fichier local, sans dépendance réseau.
 
-Les sept scénarios vérifient le volet d’épisodes, la position d’Audio/ST, la proposition dans les 30 dernières secondes, les passages sur outro/fin de fichier et le dernier épisode, les changements de pistes sans réinitialisation du média et les notifications locales sans doublon. FFmpeg est nécessaire pour préparer la fixture à deux pistes audio et deux pistes de sous-titres. Un serveur HTTP local au test sert un sous-titre externe. Le journal de progression préexistant est restauré après chaque test. Résultat dans `tmp/player-tests/instrumentation.txt`. Réinstaller ensuite l’APK release pour la validation de livraison.
+La suite vérifie le volet d’épisodes, les pistes, sous-titres, aperçus, segments, épisode suivant, PiP et notifications locales ; les résultats datés sont dans les notes de release. FFmpeg est nécessaire pour préparer la fixture à deux pistes audio et deux pistes de sous-titres. Un serveur HTTP local au test sert un sous-titre externe. Le journal de progression préexistant est restauré après chaque test. Résultat dans `tmp/player-tests/instrumentation.txt`. Réinstaller ensuite l’APK release pour la validation de livraison.
 
 L’autoremplissage de connexion et d’inscription utilise des champs Android natifs portant les identifiants du paquet Primio. Aucun domaine web artificiel n’est injecté. Le nom et l’association affichés par Proton Pass restent une décision du gestionnaire ; ils doivent être vérifiés avec Proton Pass installé.
 

@@ -178,6 +178,7 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
     *PLAYER.lock().map_err(|e| e.to_string())? = Some(child.clone());
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        let mut context = context;
         let mut position = args["position"].as_f64().unwrap_or(0.0);
         let mut duration = 0.0;
         let result = run(
@@ -185,7 +186,7 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
             &pipe_name,
             &url,
             &args,
-            &context,
+            &mut context,
             generation,
             &child,
             &mut position,
@@ -197,6 +198,9 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
             let _ = child.wait();
         }
         if generation == GENERATION.load(Ordering::SeqCst) {
+            if result.is_err() || context["playbackReady"] != true {
+                context["sourceFailed"] = json!(true);
+            }
             publish(&app, &context, position, duration, true, None);
             if let Err(e) = result {
                 desktop::report_error(&app, e);
@@ -224,6 +228,10 @@ pub fn publish(
     request: Option<&Value>,
 ) {
     let mut event = json!({"context":context,"position":position,"duration":duration,"updatedAt":desktop::now(),"closed":closed});
+    event["sourceFailed"] = json!(context["sourceFailed"].as_bool().unwrap_or(false));
+    if context["watchedChanges"].is_array() {
+        event["watchedChanges"] = context["watchedChanges"].clone();
+    }
     if let Some(request) = request {
         event["requestedVideoId"] = request["id"].clone();
         event["autoPlay"] = request["auto"].clone();
@@ -248,7 +256,7 @@ async fn run(
     name: &str,
     url: &str,
     args: &Value,
-    context: &Value,
+    context: &mut Value,
     generation: u64,
     child: &Arc<Mutex<Child>>,
     position: &mut f64,
@@ -291,6 +299,8 @@ async fn run(
         (2, "duration"),
         (3, "user-data/primio/request"),
         (4, "user-data/primio/track-preferences"),
+        (5, "user-data/primio/watched"),
+        (6, "paused-for-cache"),
     ] {
         send(&mut pipe, json!(["observe_property", id, prop])).await?;
     }
@@ -299,7 +309,9 @@ async fn run(
     let mut lines = BufReader::new(read).lines();
     let mut timer = tokio::time::interval(Duration::from_secs(5));
     let mut loaded = false;
-    let mut context = context.clone();
+    let opened_at = std::time::Instant::now();
+    let mut last_advance = opened_at;
+    let mut buffering = false;
     loop {
         tokio::select! {
             result=lines.next_line()=>{
@@ -307,19 +319,35 @@ async fn run(
                 let Ok(event)=serde_json::from_str::<Value>(&line) else {continue};
                 match event["event"].as_str().unwrap_or("") {
                     "property-change"=>match event["name"].as_str().unwrap_or("") {
-                        "time-pos"=>if let Some(v)=event["data"].as_f64(){*position=v},
+                        "time-pos"=>if let Some(v)=event["data"].as_f64(){if v != *position {last_advance=std::time::Instant::now();} *position=v},
                         "duration"=>if let Some(v)=event["data"].as_f64(){*duration=v},
-                        "user-data/primio/request"=>if event["data"]["id"].as_str().is_some(){publish(app,&context,*position,*duration,true,Some(&event["data"]));break},
-                        "user-data/primio/track-preferences"=>if event["data"].is_object(){context["trackPreferences"]=event["data"].clone();publish(app,&context,*position,*duration,false,None);},
+                        "user-data/primio/request"=>if event["data"]["id"].as_str().is_some(){publish(app,context,*position,*duration,true,Some(&event["data"]));break},
+                        "user-data/primio/track-preferences"=>if event["data"].is_object(){context["trackPreferences"]=event["data"].clone();publish(app,context,*position,*duration,false,None);},
+                        "user-data/primio/watched"=>if event["data"]["videoId"].is_string() && event["data"]["watched"].is_boolean() {
+                            let mut change=event["data"].clone();change["updatedAt"]=json!(desktop::now());
+                            if change["videoId"] == context["videoId"] {change["position"]=json!(*position);change["duration"]=json!(*duration);}
+                            let mut changes=context["watchedChanges"].as_array().cloned().unwrap_or_default();
+                            changes.retain(|item| item["videoId"] != change["videoId"]);changes.push(change);
+                            context["watchedChanges"]=json!(changes);publish(app,context,*position,*duration,false,None);
+                        },
+                        "paused-for-cache"=>{buffering=event["data"].as_bool().unwrap_or(false);last_advance=std::time::Instant::now();},
                         _=>{}
                     },
                     "file-loaded"=>{loaded=true;for sub in args["subtitles"].as_array().into_iter().flatten(){if let Some(url)=sub["url"].as_str(){send(&mut writer,json!(["sub-add",url,"auto",sub["lang"].as_str().unwrap_or(""),sub["lang"].as_str().unwrap_or("")])).await?;}}},
+                    "playback-restart"=>{context["playbackReady"]=json!(true);last_advance=std::time::Instant::now();},
                     "end-file"=>{if event["reason"]=="error" {return Err("This source could not be played. Please choose another source.".into())} if loaded {break}},
                     "shutdown"=>break,
                     _=>{}
                 }
             },
-            _=timer.tick()=>{if generation!=GENERATION.load(Ordering::SeqCst){break} if child.lock().map_err(|e|e.to_string())?.try_wait().map_err(|e|e.to_string())?.is_some(){break} if *duration>0.0 {publish(app,&context,*position,*duration,false,None);}}
+            _=timer.tick()=>{
+                if generation!=GENERATION.load(Ordering::SeqCst){break}
+                if child.lock().map_err(|e|e.to_string())?.try_wait().map_err(|e|e.to_string())?.is_some(){break}
+                if (context["playbackReady"] != true && opened_at.elapsed()>Duration::from_secs(45)) || (buffering && last_advance.elapsed()>Duration::from_secs(60)) {
+                    return Err("This source is not responding. Please choose another source.".into());
+                }
+                if *duration>0.0 {publish(app,context,*position,*duration,false,None);}
+            }
         }
     }
     Ok(())
@@ -354,12 +382,21 @@ async fn prepare_logo(url: &str, directory: &std::path::Path) -> Result<(), Stri
     let image = reader.decode().map_err(|_| "Invalid logo")?.to_rgba8();
     let (mut left, mut top, mut right, mut bottom) = (image.width(), image.height(), 0, 0);
     for (x, y, pixel) in image.enumerate_pixels() {
-        if pixel[3] > 16 { left = left.min(x); top = top.min(y); right = right.max(x); bottom = bottom.max(y); }
+        if pixel[3] > 16 {
+            left = left.min(x);
+            top = top.min(y);
+            right = right.max(x);
+            bottom = bottom.max(y);
+        }
     }
     let image = if left <= right && top <= bottom {
         image::imageops::crop_imm(&image, left, top, right - left + 1, bottom - top + 1).to_image()
-    } else { image };
-    let image = image::DynamicImage::ImageRgba8(image).resize(640, 256, image::imageops::FilterType::Lanczos3).to_rgba8();
+    } else {
+        image
+    };
+    let image = image::DynamicImage::ImageRgba8(image)
+        .resize(640, 256, image::imageops::FilterType::Lanczos3)
+        .to_rgba8();
     let mut canvas = image::RgbaImage::new(640, 256);
     image::imageops::overlay(
         &mut canvas,

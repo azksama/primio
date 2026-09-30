@@ -1,10 +1,10 @@
-# Primio for Windows — 0.2.7 preview
+# Primio for Windows
 
 The Windows application shares the Android application's React client, addon SDK, account API, profiles, library and playback history. Platform-specific code lives in `desktop*.rs`, `desktop.tsx` and `desktop.css`.
 
 ## Installation
 
-Run `Primio-0.2.7-windows-x64-setup.exe`. The installer includes the native media player and registers `primio://` and `stremio://` links. Microsoft Edge WebView2 is required; the installer handles its bootstrap if it is missing. This preview is not code-signed.
+Run `Primio-0.2.17-windows-x64-setup.exe`. The installer includes the native media player and registers `primio://` and `stremio://` links. Microsoft Edge WebView2 is required; the installer handles its bootstrap if it is missing. This preview is not code-signed. Current changes and verification are in [0.2.17 release notes](RELEASE-0.2.17.md); the dated checks below describe earlier releases.
 
 The portable archive must be extracted completely: keep the `windows` directory beside `primio.exe`. Starting only the executable without its resources will prevent playback. Portable use does not register protocol associations.
 

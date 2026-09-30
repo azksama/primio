@@ -3,10 +3,12 @@ import android.os.Bundle
 import android.view.View
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 class MainActivity:TauriActivity(),PrimioThemeOwner {
+ private var appWebView:WebView?=null
  override var primioTheme:org.json.JSONObject?=null
  fun applyTheme(value:org.json.JSONObject){
   primioTheme=value
@@ -32,6 +34,7 @@ class MainActivity:TauriActivity(),PrimioThemeOwner {
 
  override fun onWebViewCreate(webView:WebView){
   super.onWebViewCreate(webView)
+  appWebView=webView
   WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
   // App chrome is fixed-size; PlayerActivity handles video pinch gestures separately.
   webView.settings.setSupportZoom(false)
@@ -40,6 +43,9 @@ class MainActivity:TauriActivity(),PrimioThemeOwner {
  }
  override fun onCreate(savedInstanceState:Bundle?){
   enableEdgeToEdge();super.onCreate(savedInstanceState)
+  onBackPressedDispatcher.addCallback(this,object:OnBackPressedCallback(true){
+   override fun handleOnBackPressed(){appWebView?.evaluateJavascript("window.dispatchEvent(new Event('primio:back'))",null)}
+  })
   PrimioUpdate.cleanup(this)
   WindowInsetsControllerCompat(window,window.decorView).isAppearanceLightStatusBars=false
   runCatching{org.json.JSONObject(getSharedPreferences("primio-appearance",0).getString("theme","{}")?:"{}")}.getOrNull()?.let{applyTheme(it)}

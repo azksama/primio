@@ -69,13 +69,15 @@ class PrimioTimeline(context:Context):View(context) {
   if(PrimioStyle.palette(context).neumorphic){drawRelief(canvas);return}
   val left=14*density;val right=width-left;val y=height/2f
   val half=4*density;val radius=half;val x=left+(right-left)*fraction
+  val accent=PrimioStyle.palette(context).accent
+  fun glow(alpha:Int)=(accent and 0x00ffffff) or (alpha shl 24)
   val track=RectF(left,y-half,right,y+half)
   paint.style=Paint.Style.FILL
   // Broad, quiet halo under the played range, with a brighter pool at the playhead.
   if(fraction>0f){
-   paint.shader=LinearGradient(0f,y-13*density,0f,y+13*density,intArrayOf(Color.TRANSPARENT,0x50ddd4b9,Color.TRANSPARENT),floatArrayOf(0f,.5f,1f),Shader.TileMode.CLAMP)
+   paint.shader=LinearGradient(0f,y-13*density,0f,y+13*density,intArrayOf(Color.TRANSPARENT,glow(80),Color.TRANSPARENT),floatArrayOf(0f,.5f,1f),Shader.TileMode.CLAMP)
    canvas.drawRoundRect(RectF(left-4*density,y-13*density,x+4*density,y+13*density),13*density,13*density,paint)
-   paint.shader=RadialGradient(x,y,22*density,intArrayOf(0x66fff1cb,0x22e2d6b7,Color.TRANSPARENT),floatArrayOf(0f,.35f,1f),Shader.TileMode.CLAMP)
+   paint.shader=RadialGradient(x,y,22*density,intArrayOf(glow(102),glow(34),Color.TRANSPARENT),floatArrayOf(0f,.35f,1f),Shader.TileMode.CLAMP)
    canvas.drawCircle(x,y,22*density,paint)
   }
   paint.shader=LinearGradient(0f,y-half,0f,y+half,intArrayOf(0xaa343630.toInt(),0xb0181a17.toInt()),null,Shader.TileMode.CLAMP)
@@ -83,7 +85,7 @@ class PrimioTimeline(context:Context):View(context) {
   val save=canvas.save();val clip=Path().apply{addRoundRect(track,radius,radius,Path.Direction.CW)};canvas.clipPath(clip)
   paint.shader=null;paint.color=0x559d9f91
   canvas.drawRect(left,y-half,left+(right-left)*buffered,y+half,paint)
-  paint.shader=LinearGradient(0f,y-half,0f,y+half,intArrayOf(0xfff5edda.toInt(),0xffbfb99f.toInt(),0xffd9d1b7.toInt()),floatArrayOf(0f,.55f,1f),Shader.TileMode.CLAMP)
+  paint.shader=LinearGradient(0f,y-half,0f,y+half,intArrayOf(androidx.core.graphics.ColorUtils.blendARGB(accent,Color.WHITE,.25f),accent,androidx.core.graphics.ColorUtils.blendARGB(accent,Color.WHITE,.1f)),floatArrayOf(0f,.55f,1f),Shader.TileMode.CLAMP)
   canvas.drawRect(left,y-half,x,y+half,paint)
   paint.shader=null;paint.color=0xccbba978.toInt()
   segments.forEach{(start,end)->canvas.drawRect(left+(right-left)*start,y-half,left+(right-left)*end,y+half,paint)}
@@ -94,7 +96,7 @@ class PrimioTimeline(context:Context):View(context) {
   canvas.drawRoundRect(track,radius,radius,paint)
   paint.shader=null;paint.style=Paint.Style.FILL
   val thumb=(if(dragging)9 else 7)*density
-  paint.color=0x55f5edda;canvas.drawCircle(x,y,thumb+5*density,paint)
+  paint.color=glow(85);canvas.drawCircle(x,y,thumb+5*density,paint)
   paint.color=Color.WHITE;paint.shader=LinearGradient(x,y-thumb,x,y+thumb,intArrayOf(Color.WHITE,0xffd7cfb5.toInt()),null,Shader.TileMode.CLAMP)
   canvas.drawCircle(x,y,thumb,paint);paint.shader=null
   paint.style=Paint.Style.STROKE;paint.strokeWidth=density;paint.color=0x99303030.toInt();canvas.drawCircle(x,y,thumb,paint);paint.style=Paint.Style.FILL

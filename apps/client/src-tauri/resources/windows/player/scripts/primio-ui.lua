@@ -32,6 +32,7 @@ local preview_target,preview_x=0,0
 local next_offer=false
 local countdown_key,countdown_elapsed="",0
 local skipped_segments={}
+local seek_feedback,seek_feedback_at=0,0
 local season, forced = nil, config.forceSubtitleStyle == true
 local function escape(s) return tostring(s or ''):gsub('\\','\\e'):gsub('{','\\{'):gsub('}','\\}'):gsub('[\r\n]+',' ') end
 local function shorten(s, n)
@@ -68,7 +69,7 @@ local function glass(a,x,y,w,h,active)
     rect(a,x+2,y+2,w-4,h-4,math.min(20,h/2-2),'D7DBD1','F5',0.5)
 end
 local function button(a,x,y,w,h,text,action,active)
-    glass(a,x,y,w,h,active);label(a,x+w/2,y+h/2,shorten(text,math.floor(w/9)),18,5,neo and active and accent or nil)
+    glass(a,x,y,w,h,active);label(a,x+w/2,y+h/2,shorten(text,math.floor(w/9)),18,5,active and accent or nil)
     hits[#hits+1]={x=x,y=y,w=w,h=h,action=action}
 end
 local function icon(a,x,y,kind)
@@ -114,6 +115,15 @@ local function end_scrub(commit)
     press=nil;last_move=mp.get_time()
 end
 local function open(name) panel=name;scroll=0;last_move=mp.get_time() end
+local function jump(forward)
+    local pos=mp.get_property_number('time-pos',0)
+    local duration=mp.get_property_number('duration',0)
+    local amount=forward and (config.seekForward or 30) or -(config.seekBackward or 15)
+    local target=math.max(0,duration>0 and math.min(duration,pos+amount) or pos+amount)
+    seek_feedback=target-pos;seek_feedback_at=mp.get_time();last_move=seek_feedback_at
+    mp.commandv('seek',target,'absolute+exact')
+end
+mp.register_script_message('seek',function(direction)jump(direction=='forward')end)
 local function hide_logo() if logo_visible then mp.commandv('overlay-remove',42);logo_visible=false end end
 local function loading(a)
     rect(a,0,0,width,height,0,neo and theme_color('background','302B28') or '090B0C','00')
@@ -193,14 +203,27 @@ local function render_panel(a)
         for _,ep in ipairs(config.episodes or {}) do if ep.season and not seen[ep.season] then seen[ep.season]=true;seasons[#seasons+1]=ep.season end end
         table.sort(seasons)
         if #seasons>1 then
-            season=season or seasons[1]
+            if not season then
+                for _,ep in ipairs(config.episodes or {}) do if ep.id==config.currentVideoId then season=ep.season;break end end
+                season=season or seasons[1]
+            end
             button(a,x+24,top,w-48,44,tr('Season ','Saison ')..season..'  ›',function()for i,s in ipairs(seasons)do if s==season then season=seasons[i%#seasons+1];scroll=0;break end end end)
             top=top+62
         end
         local list={};for _,ep in ipairs(config.episodes or {})do if #seasons<=1 or ep.season==season then list[#list+1]=ep end end
-        local count=math.floor((y+h-top-24)/62);scroll=math.max(0,math.min(scroll,#list-count))
+        local count=math.max(1,math.floor((y+h-top-24)/74));scroll=math.max(0,math.min(scroll,#list-count))
         for i=1,count do local ep=list[i+scroll];if ep then
-            button(a,x+24,top+(i-1)*62,w-48,52,tostring(ep.episode or '')..' · '..(ep.title or ''),function()mp.commandv('script-message-to','primio','episode',ep.id)end,ep.id==config.currentVideoId)
+            local row_y=top+(i-1)*74
+            local current=ep.id==config.currentVideoId
+            local row_w=w-48
+            glass(a,x+24,row_y,row_w,64,current)
+            label(a,x+40,row_y+(current and 22 or 32),shorten(tostring(ep.episode or '')..' · '..(ep.title or ''),math.floor((row_w-134)/9)),17,4,current and accent or nil)
+            if current then label(a,x+40,row_y+45,tr('Now playing','En cours de lecture'),12,4,accent)end
+            hits[#hits+1]={x=x+24,y=row_y,w=row_w-100,h=64,action=function()mp.commandv('script-message-to','primio','episode',ep.id)end}
+            button(a,x+w-112,row_y+10,76,44,ep.watched and tr('Watched','Vu') or tr('Not seen','Non vu'),function()
+                ep.watched=not ep.watched
+                mp.set_property_native('user-data/primio/watched',{videoId=ep.id,watched=ep.watched,season=ep.season,episode=ep.episode})
+            end,ep.watched)
         end end
     end
 end
@@ -252,9 +275,9 @@ local function render()
                 icon_button(a,84,24,48,'close',function()mp.commandv('quit')end)
                 title(a,152,48,config.title or mp.get_property('media-title','Primio'),width-340,34)
                 if #(config.episodes or {})>0 then button(a,width-168,24,144,48,tr('Episodes','Épisodes'),function()open('episodes')end)end
-                icon_button(a,width/2-148,height/2-30,60,'rewind',function()mp.commandv('seek',-(config.seekBackward or 15),'relative')end)
+                icon_button(a,width/2-148,height/2-30,60,'rewind',function()jump(false)end)
                 icon_button(a,width/2-36,height/2-36,72,mp.get_property_native('pause') and 'play' or 'pause',function()mp.commandv('cycle','pause')end)
-                icon_button(a,width/2+88,height/2-30,60,'forward',function()mp.commandv('seek',config.seekForward or 30,'relative')end)
+                icon_button(a,width/2+88,height/2-30,60,'forward',function()jump(true)end)
             end
             local pos,duration=mp.get_property_number('time-pos',0),mp.get_property_number('duration',0)
             if scrub then pos=scrub.target end
@@ -267,7 +290,7 @@ local function render()
                 relief(a,19+fill,y-5.5,18,18,9,false)
                 rect(a,22+fill,y-2.5,12,12,6,foreground,'00')
             else
-                rect(a,28,y,w,7,3,'9EA18F','A0');if fill>1 then rect(a,28,y-2,fill,11,5,'D4DDC2','C0',2);rect(a,28,y,fill,7,3,'DBDFC7','15')end
+                rect(a,28,y,w,7,3,'9EA18F','A0');if fill>1 then rect(a,28,y-2,fill,11,5,accent,'C0',2);rect(a,28,y,fill,7,3,accent,'15')end
                 rect(a,15+fill,y-9.5,26,26,13,'EAE8D1','C0')
                 rect(a,19+fill,y-5.5,18,18,9,'FFFFFF','00',1)
             end
@@ -283,6 +306,12 @@ local function render()
                 icon_button(a,width-76,height-64,48,'subtitles',function()open('tracks')end)
             end
         end
+    end
+    local feedback_age=mp.get_time()-seek_feedback_at
+    if seek_feedback~=0 and feedback_age<1.2 and not panel and not pip and not scrub then
+        local alpha=config.reduceMotion and '00' or feedback_age<.65 and (math.floor(feedback_age/.16)%2==0 and '00' or 'A0') or string.format('%02X',math.floor(math.min(255,(feedback_age-.65)/.55*255)))
+        local x=width/2+(seek_feedback>0 and 118 or -118)
+        a:new_event();a:append(string.format('{\\an5\\pos(%.1f,%.1f)\\fnInter\\fs18\\bord0\\shad1.2\\alpha&H%s&\\1c&H%s&}%s%d s',x,height/2+67,alpha,foreground,seek_feedback>0 and '+' or '−',math.floor(math.abs(seek_feedback)+.5)))
     end
     local pos,duration=mp.get_property_number('time-pos',0),mp.get_property_number('duration',0)
     local segment,upcoming

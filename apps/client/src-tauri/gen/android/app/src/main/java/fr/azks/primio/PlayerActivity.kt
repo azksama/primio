@@ -60,6 +60,9 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
  private lateinit var loading:LinearLayout
  private lateinit var loadingLabel:TextView
  private lateinit var gestureLabel:TextView
+ private lateinit var seekFeedback:TextView
+ private val watchedChanges=linkedMapOf<String,JSONObject>()
+ private val clearSeekFeedback=Runnable{if(::seekFeedback.isInitialized)seekFeedback.visibility=View.GONE}
  private lateinit var audio:AudioManager
  private lateinit var focus:AudioFocusRequest
  private var duration=0.0
@@ -149,6 +152,8 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   overlay.visibility=View.GONE
   gestureLabel=text("",16f).apply{gravity=Gravity.CENTER;background=PrimioStyle.glass(this@PlayerActivity);setPadding(dp(24),dp(16),dp(24),dp(16));visibility=View.GONE}
   root.addView(gestureLabel,FrameLayout.LayoutParams(-2,-2,Gravity.CENTER))
+  seekFeedback=text("",18f).apply{gravity=Gravity.CENTER;visibility=View.GONE;setShadowLayer(dp(3).toFloat(),0f,dp(1).toFloat(),Color.BLACK);importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO}
+  root.addView(seekFeedback,FrameLayout.LayoutParams(dp(100),dp(44),Gravity.CENTER))
   skipButton=button(tr("Passer l’intro")){currentSegment?.let{command("seek",it.optDouble("end").toString(),"absolute");skipped.add(it.optDouble("start"))}}
   skipButton.visibility=View.GONE
   root.addView(skipButton,FrameLayout.LayoutParams(-2,dp(48),Gravity.BOTTOM or Gravity.END).apply{rightMargin=dp(28);bottomMargin=dp(144)})
@@ -215,7 +220,17 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   command("set","pause",if(scrubWasPaused)"yes" else "no")
   scrubbing=false;dragging=false;top.visibility=View.VISIBLE;center.visibility=View.VISIBLE;playerActions.visibility=View.VISIBLE;remaining.visibility=View.VISIBLE;showControls()
  }
- private fun jump(ahead:Boolean){val amount=if(ahead)forward else -rewind;command("seek",amount.toString(),"relative");showControls()}
+ private fun jump(ahead:Boolean){
+  val amount=if(ahead)forward else -rewind
+  val impacted=if(duration>0)(position+amount).coerceIn(0.0,duration)-position else amount.toDouble()
+  command("seek",amount.toString(),"relative");showControls()
+  seekFeedback.animate().cancel();handler.removeCallbacks(clearSeekFeedback)
+  seekFeedback.text=(if(impacted>=0)"+" else "−")+abs(impacted.roundToInt()).toString()+" s"
+  seekFeedback.layoutParams=FrameLayout.LayoutParams(dp(100),dp(44),Gravity.CENTER).apply{leftMargin=if(ahead)dp(234) else -dp(234);topMargin=dp(90)}
+  seekFeedback.visibility=View.VISIBLE;seekFeedback.alpha=1f
+  if(!options.optBoolean("reduceMotion"))seekFeedback.animate().alpha(.25f).setDuration(180).withEndAction{seekFeedback.animate().alpha(1f).setDuration(180).withEndAction{seekFeedback.animate().alpha(0f).setDuration(350).start()}.start()}.start()
+  handler.postDelayed(clearSeekFeedback,900)
+ }
  override fun onKeyDown(keyCode:Int,event:KeyEvent):Boolean {
   if(sheet==null){when(keyCode){
    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,KeyEvent.KEYCODE_SPACE->{command("cycle","pause");showControls();return true}
@@ -279,11 +294,12 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
  private fun format(seconds:Double):String {val n=seconds.toInt().coerceAtLeast(0);return if(n>=3600)String.format(Locale.ROOT,"%d:%02d:%02d",n/3600,n/60%60,n%60)else String.format(Locale.ROOT,"%02d:%02d",n/60,n%60)}
  private fun showControls(){if(scrubbing||isInPictureInPictureMode||!loaded||last.optBoolean("buffering")||reportedError)return;overlay.visibility=View.VISIBLE;handler.removeCallbacks(hide);handler.postDelayed(hide,4500)}
  private fun emit(closed:Boolean){
-  val payload=JSONObject().put("context",options.optJSONObject("context")?:JSONObject()).put("position",position).put("duration",duration).put("updatedAt",System.currentTimeMillis()).put("closed",closed).put("requestedVideoId",requestedVideoId).put("actionId",actionId).put("autoPlay",autoPlay)
-  if(duration>0&&position.isFinite())try{PrimioStore.write(this,"playerProgress",payload.toString())}catch(e:Exception){android.util.Log.e("PrimioPlayer","Progress persistence failed",e)}
+  val sourceFailed=reportedError||(closed&&!loaded)
+  val payload=JSONObject().put("context",options.optJSONObject("context")?:JSONObject()).put("position",position).put("duration",duration).put("updatedAt",System.currentTimeMillis()).put("closed",closed).put("requestedVideoId",requestedVideoId).put("actionId",actionId).put("autoPlay",autoPlay).put("sourceFailed",sourceFailed).put("watchedChanges",JSONArray(watchedChanges.values.toList()))
+  if((duration>0||sourceFailed||watchedChanges.isNotEmpty())&&position.isFinite())try{PrimioStore.write(this,"playerProgress",payload.toString())}catch(e:Exception){android.util.Log.e("PrimioPlayer","Progress persistence failed",e)}
   nativeProgress(payload.toString())
  }
- private fun showError(message:String){loading.visibility=View.GONE;skipCountdown.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;skipButton.visibility=View.GONE;sheet?.dismiss();sheet=PrimioSheet(this,"Lecture indisponible").apply{section(message);option("Revenir aux sources"){finish()};show()}}
+ private fun showError(message:String){reportedError=true;emit(false);command("set","pause","yes");loading.visibility=View.GONE;skipCountdown.visibility=View.GONE;nextEpisodeButton.visibility=View.GONE;skipButton.visibility=View.GONE;sheet?.dismiss();sheet=PrimioSheet(this,tr("Lecture indisponible")).apply{section(message);option(tr("Revenir aux sources")){requestEpisode(options.optString("currentVideoId"),false)};show()}}
  private fun loadLogo(view:ImageView,url:String){
   if(!url.startsWith("https://"))return
   Thread{
@@ -328,7 +344,19 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   }
   entries.filter{it.optInt("season",1)==season}.forEach{entry->
    val id=entry.optString("id");val number=entry.optInt("episode")
-   dialog.option((if(number>0)"$number. " else "")+entry.optString("title",tr("Épisode")),id==current){dialog.dismiss();requestEpisode(id,false)}
+   val watching=id==current
+   val palette=PrimioStyle.palette(this)
+   val row=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL;background=PrimioStyle.field(this@PlayerActivity,16);setPadding(dp(10),dp(8),dp(10),dp(8))}
+   if(watching)row.background=GradientDrawable().apply{cornerRadius=dp(16).toFloat();setColor((palette.accent and 0x00ffffff) or 0x26000000);setStroke(dp(1),palette.accent)}
+   val episodeButton=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;isClickable=true;isFocusable=true;contentDescription=(if(number>0)"$number. " else "")+entry.optString("title");setPadding(dp(4),dp(4),dp(8),dp(4));setOnClickListener{dialog.dismiss();requestEpisode(id,false)}}
+   episodeButton.addView(text((if(number>0)"$number. " else "")+entry.optString("title",tr("Épisode")),15f).apply{maxLines=2;if(watching)setTextColor(palette.accent)})
+   if(watching)episodeButton.addView(text(tr("En cours de lecture"),11f).apply{setTextColor(palette.accent);setPadding(0,dp(4),0,0)})
+   row.addView(episodeButton,LinearLayout.LayoutParams(0,-2,1f))
+   val watched=watchedChanges[id]?.optBoolean("watched")?:entry.optBoolean("watched")
+   row.addView(button(tr(if(watched)"Vu" else "Non vu"),tr(if(watched)"Marquer comme non vu" else "Marquer comme vu")){
+    entry.put("watched",!watched);watchedChanges[id]=JSONObject().put("videoId",id).put("watched",!watched).put("updatedAt",System.currentTimeMillis()).put("episode",number).put("season",entry.optInt("season",1)).apply{if(id==current){put("position",position);put("duration",duration)}};emit(false);episodes()
+   }.apply{isSelected=watched;textSize=12f;setPadding(dp(8),dp(10),dp(8),dp(10));setTextColor(if(watched)palette.accent else palette.muted)},LinearLayout.LayoutParams(dp(76),-2).apply{leftMargin=dp(10)})
+   dialog.content.addView(row,LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=dp(12)})
   }
   sheet=dialog;dialog.setOnDismissListener{if(sheet===dialog)sheet=null;showControls()};dialog.show()
  }
@@ -438,7 +466,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   if(!unfinished()||!packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE))return false
   return try{sheet?.dismiss();emit(false);enterPictureInPictureMode(pipParams())}catch(e:Exception){false}
  }
- private fun leavePlayer(){if(!enterPip())finish()}
+ private fun leavePlayer(){if(reportedError||!enterPip())finish()}
  @Deprecated("Deprecated in Java") override fun onBackPressed(){if(sheet!=null){sheet?.dismiss();sheet=null}else leavePlayer()}
  override fun onUserLeaveHint(){super.onUserLeaveHint();if(Build.VERSION.SDK_INT<31)enterPip()}
  override fun onPictureInPictureModeChanged(inPip:Boolean,configuration:android.content.res.Configuration){

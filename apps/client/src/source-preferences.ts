@@ -10,6 +10,7 @@ export interface SourcePreference {
   format: string
   audio: string[]
   subtitles: string[]
+  failedAt?: number
 }
 export async function rememberSource(
   settings: Settings,
@@ -98,7 +99,7 @@ export async function previouslyUsedSource(
   const saved = settings.sourcePreferences?.find(
     (p) => p.contentId === meta.type + ':' + meta.id && p.videoId === videoId,
   )
-  if (!saved?.fingerprint) return undefined
+  if (!saved?.fingerprint || saved.failedAt) return undefined
   const candidates = await Promise.all(
     items
       .filter((s) => !!s.url && (s.addonKey ?? s.addonName ?? '') === saved.provider)
@@ -106,4 +107,12 @@ export async function previouslyUsedSource(
   )
   const matches = candidates.filter((c) => c.fingerprint === saved.fingerprint).map((c) => c.stream)
   return matches.length === 1 ? matches[0] : undefined
+}
+
+export function failSavedSource(settings: Settings, meta: Meta, videoId: string, fingerprint?: string, failedAt = Date.now()): Settings {
+  const sourcePreferences = settings.sourcePreferences?.map(p =>
+    p.contentId === meta.type + ':' + meta.id && p.videoId === videoId &&
+    (!fingerprint || p.fingerprint === fingerprint) ? { ...p, failedAt } : p,
+  )
+  return { ...settings, sourcePreferences }
 }

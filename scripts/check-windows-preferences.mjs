@@ -142,7 +142,8 @@ async function run(outro) {
       () => get('speed'),
       (v) => v === 1.5,
     )
-    await command('mouse', Math.round(120 * scale), Math.round((720 - 34) * scale))
+    // Current source icon bounds: x=28..76, y=height-64..height-16.
+    await command('mouse', Math.round(52 * scale), Math.round((720 - 40) * scale))
     await command('keypress', 'mouse_move')
     await delay(150)
     await command('keypress', 'MBTN_LEFT')

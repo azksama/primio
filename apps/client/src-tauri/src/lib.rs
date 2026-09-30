@@ -10,8 +10,8 @@ mod network;
 mod playback_sync;
 #[cfg(target_os = "android")]
 mod player;
-mod updates;
 mod subtitle_fonts;
+mod updates;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::Manager;
@@ -25,12 +25,23 @@ pub struct ApiError {
 }
 #[tauri::command]
 async fn voice_search(app: tauri::AppHandle, language: String) -> Result<String, String> {
-    if language.len()>20 || !language.chars().all(|c|c.is_ascii_alphabetic()||c=='-') {return Err("Invalid language".into())}
-    #[cfg(target_os="android")]
-    return Ok(mobile_call(&app,"voiceSearch",json!({"text":language}))?["text"].as_str().unwrap_or("").to_owned());
-    #[cfg(target_os="windows")]
+    if language.len() > 20
+        || !language
+            .chars()
+            .all(|c| c.is_ascii_alphabetic() || c == '-')
     {
-        let _=app;
+        return Err("Invalid language".into());
+    }
+    #[cfg(target_os = "android")]
+    return Ok(
+        mobile_call(&app, "voiceSearch", json!({"text":language}))?["text"]
+            .as_str()
+            .unwrap_or("")
+            .to_owned(),
+    );
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
         tauri::async_runtime::spawn_blocking(move || {
             use std::os::windows::process::CommandExt;
             let script = r#"$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Add-Type -AssemblyName System.Speech; $info=[System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers() | Where-Object { $_.Culture.Name -like ($env:PRIMIO_SPEECH_LANG+'*') } | Select-Object -First 1; if($info){$engine=[System.Speech.Recognition.SpeechRecognitionEngine]::new($info)}else{$engine=[System.Speech.Recognition.SpeechRecognitionEngine]::new()}; try { $engine.LoadGrammar([System.Speech.Recognition.DictationGrammar]::new()); $engine.SetInputToDefaultAudioDevice(); $engine.InitialSilenceTimeout=[TimeSpan]::FromSeconds(8); $engine.BabbleTimeout=[TimeSpan]::FromSeconds(8); $result=$engine.Recognize([TimeSpan]::FromSeconds(15)); if($result){[Console]::Write($result.Text)} } finally { $engine.Dispose() }"#;
@@ -39,8 +50,11 @@ async fn voice_search(app: tauri::AppHandle, language: String) -> Result<String,
             Ok(String::from_utf8_lossy(&output.stdout).trim().chars().take(500).collect())
         }).await.map_err(|e|e.to_string())?
     }
-    #[cfg(not(any(target_os="android",target_os="windows")))]
-    {let _=(app,language);Err("Voice recognition unavailable".into())}
+    #[cfg(not(any(target_os = "android", target_os = "windows")))]
+    {
+        let _ = (app, language);
+        Err("Voice recognition unavailable".into())
+    }
 }
 #[tauri::command]
 async fn fetch_json(url: String) -> Result<Value, String> {
@@ -301,7 +315,9 @@ async fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
 }
 #[tauri::command]
 fn set_theme(app: tauri::AppHandle, theme: String) -> Result<(), String> {
-    if theme.len() > 4096 { return Err("Theme too large".into()); }
+    if theme.len() > 4096 {
+        return Err("Theme too large".into());
+    }
     let _: Value = serde_json::from_str(&theme).map_err(|_| "Invalid theme")?;
     #[cfg(target_os = "android")]
     mobile_call(&app, "setTheme", json!({"value":theme}))?;

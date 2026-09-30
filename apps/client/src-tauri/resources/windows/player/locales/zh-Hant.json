@@ -588,5 +588,18 @@
   "Animes via AniList. Films et séries avec votre jeton TMDB.": "動畫由 AniList 提供。電影和影集需使用您的 TMDB 權杖。",
   "Configurer TMDB": "設定 TMDB",
   "Connecté": "已連線",
-  "Un graphite doux, des commandes sculptées et des creux délicats. Un thème néomorphique complet.": "柔和的石墨色、立體控制項與細膩的凹陷表面。完整的新擬物主題。"
+  "Un graphite doux, des commandes sculptées et des creux délicats. Un thème néomorphique complet.": "柔和的石墨色、立體控制項與細膩的凹陷表面。完整的新擬物主題。",
+  "Aucun épisode disponible pour ce contenu.": "此作品暫無可用劇集。",
+  "Personnaliser OLED": "自訂 OLED",
+  "Couleur secondaire OLED": "OLED 強調色",
+  "Choisissez votre couleur. L’aperçu s’applique immédiatement.": "選擇顏色後，預覽會立即生效。",
+  "Teinte et saturation": "色相和飽和度",
+  "Couleur hexadécimale": "十六進位色彩",
+  "En cours de lecture": "正在播放",
+  "Lecture indisponible": "無法播放",
+  "Revenir aux sources": "選擇其他來源",
+  "Non vu": "未觀看",
+  "Aperçu": "預覽",
+  "Marquer comme non vu": "標記為未觀看",
+  "Par défaut": "預設"
 }

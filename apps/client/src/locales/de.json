@@ -588,5 +588,18 @@
   "Animes via AniList. Films et séries avec votre jeton TMDB.": "Anime über AniList. Filme und Serien mit deinem TMDB-Token.",
   "Configurer TMDB": "TMDB einrichten",
   "Connecté": "Verbunden",
-  "Un graphite doux, des commandes sculptées et des creux délicats. Un thème néomorphique complet.": "Weiches Graphit, geformte Bedienelemente und dezente Vertiefungen. Ein vollständiges neumorphes Design."
+  "Un graphite doux, des commandes sculptées et des creux délicats. Un thème néomorphique complet.": "Weiches Graphit, geformte Bedienelemente und dezente Vertiefungen. Ein vollständiges neumorphes Design.",
+  "Aucun épisode disponible pour ce contenu.": "Keine Episoden für diesen Titel verfügbar.",
+  "Personnaliser OLED": "OLED anpassen",
+  "Couleur secondaire OLED": "OLED-Akzentfarbe",
+  "Choisissez votre couleur. L’aperçu s’applique immédiatement.": "Wähle deine Farbe. Die Vorschau wird sofort angewendet.",
+  "Teinte et saturation": "Farbton und Sättigung",
+  "Couleur hexadécimale": "Hex-Farbe",
+  "En cours de lecture": "Wird gerade abgespielt",
+  "Lecture indisponible": "Wiedergabe nicht verfügbar",
+  "Revenir aux sources": "Andere Quelle wählen",
+  "Non vu": "Nicht gesehen",
+  "Aperçu": "Vorschau",
+  "Marquer comme non vu": "Als ungesehen markieren",
+  "Par défaut": "Standard"
 }

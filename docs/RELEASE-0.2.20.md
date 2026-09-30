@@ -16,3 +16,5 @@ The final Windows installer was installed and launched; its app version, custom 
 The Android universal release includes ARM64 and x86_64. The new Android player interactions have not been executed on a device in this release: build and signing checks do not establish PiP transitions, touch behavior or thumbnail downloads on hardware. Windows thumbnail rendering used a local fixture; the native HTTPS loader compiled but its network path was not exercised by that playback check. Provider coverage and physical device compatibility remain partial. The Windows preview installer is unsigned; Android retains the existing preview development certificate.
 
 Application and SDK sources are public. Account services, the website and deployment configuration remain private.
+
+The source ZIP includes a follow-up correction to the root project's version number. Application and SDK code remain identical to the release tag; the published binaries and their checksums are unchanged.

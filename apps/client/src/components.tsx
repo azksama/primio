@@ -7,7 +7,7 @@ import { DialogShell } from './dialog-shell'
 import { isDesktop } from './platform'
 import { t, locale, appLanguages, languageName } from './i18n'
 import { ProgressiveList } from './progressive'
-import { findProgress, isWatched } from './progress'
+import { findProgress, isWatched, viewingFraction } from './progress'
 import { MediaImage } from './media-image'
 import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Check, ChevronDown, Puzzle, Play, Plus, Trash2, Pencil, UserRound, Info, X } from './icons'
@@ -525,7 +525,6 @@ export function Episodes({
   onPlay: (id: string) => void
 }) {
   const [revealed, setRevealed] = useState<string[]>([])
-  const [expanded, setExpanded] = useState<string[]>([])
   const [synopsis, setSynopsis] = useState<{ title: string; text: string } | null>(null)
   const available = seasons(meta),
     [season, setSeason] = useState(available.find((s) => s > 0) ?? available[0])
@@ -565,8 +564,12 @@ export function Episodes({
             <div className="episode-entry" key={v.id}>
               <button className="episode-card" onClick={() => onPlay(v.id)}>
                 <div className="episode-image">
-                  {visible && v.thumbnail ? <MediaImage src={v.thumbnail} /> : null}
-                  <Play />
+                  <MediaImage src={visible ? v.thumbnail : undefined} fallback={meta.background ?? meta.poster} />
+                  <span className="episode-play"><Play size={18} /></span>
+                  <span className="episode-progress" role="progressbar" aria-label={t('Progression du visionnage')}
+                    aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(viewingFraction(history) * 100)}>
+                    <span style={{ width: `${viewingFraction(history) * 100}%` }} />
+                  </span>
                 </div>
                 <div className="episode-copy">
                   <strong>
@@ -575,15 +578,7 @@ export function Episodes({
                   </strong>
                   {visible && (v.overview || v.description) && (
                     <p className="episode-synopsis">
-                      {expanded.includes(v.id)
-                        ? cleanDescription(v.overview || v.description || '')
-                        : Array.from(cleanDescription(v.overview || v.description || ''))
-                            .slice(0, 300)
-                            .join('')}
-                      {!expanded.includes(v.id) &&
-                      Array.from(v.overview || v.description || '').length > 300
-                        ? '…'
-                        : ''}
+                      {cleanDescription(v.overview || v.description || '')}
                     </p>
                   )}
                   <small>
@@ -609,24 +604,8 @@ export function Episodes({
                         : t('{n} min regardées', { n: Math.floor(history.position / 60) })}
                     </small>
                   )}
-                  {history && !watched && (
-                    <progress max={history.duration} value={history.position} />
-                  )}
                 </div>
               </button>
-              {visible && Array.from(v.overview || v.description || '').length > 300 && (
-                <button
-                  className="episode-expand text-button"
-                  aria-expanded={expanded.includes(v.id)}
-                  onClick={() =>
-                    setExpanded((s) =>
-                      s.includes(v.id) ? s.filter((id) => id !== v.id) : [...s, v.id],
-                    )
-                  }
-                >
-                  {t(expanded.includes(v.id) ? 'Afficher moins' : 'Afficher la suite')}
-                </button>
-              )}
               <div className="episode-actions">
                 {!spoilers && !watched && (
                   <button

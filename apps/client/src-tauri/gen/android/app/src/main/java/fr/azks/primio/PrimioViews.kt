@@ -93,6 +93,13 @@ class PrimioLevelIndicator(context:Context,private val kind:String,private val l
  override fun onInitializeAccessibilityNodeInfo(info:AccessibilityNodeInfo){super.onInitializeAccessibilityNodeInfo(info);info.className="android.widget.ProgressBar";info.rangeInfo=AccessibilityNodeInfo.RangeInfo.obtain(AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_FLOAT,0f,1f,fraction)}
 }
 
+class PrimioEpisodeProgress(context:Context):View(context) {
+ var fraction=0f;set(value){field=value.coerceIn(0f,1f);contentDescription=PrimioI18n.text(context,"Progression du visionnage")+" · "+(field*100).toInt()+"%";invalidate()}
+ private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
+ init{importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_YES}
+ override fun onDraw(canvas:Canvas){paint.color=0xb0000000.toInt();canvas.drawRoundRect(RectF(0f,0f,width.toFloat(),height.toFloat()),height/2f,height/2f,paint);paint.color=PrimioStyle.palette(context).accent;canvas.drawRoundRect(RectF(0f,0f,width*fraction,height.toFloat()),height/2f,height/2f,paint)}
+}
+
 class PrimioTimeline(context:Context):View(context) {
  var segments:List<Pair<Float,Float>> = emptyList();set(value){field=value;invalidate()}
  var fraction=0f;set(v){field=v.coerceIn(0f,1f);invalidate()}

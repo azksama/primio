@@ -73,6 +73,11 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
  private val clearLevels=Runnable{brightnessIndicator.visibility=View.GONE;volumeIndicator.visibility=View.GONE}
  private val watchedChanges=linkedMapOf<String,JSONObject>()
  private val clearSeekFeedback=Runnable{if(::seekFeedback.isInitialized)seekFeedback.visibility=View.GONE}
+ private val fadeSeekFeedback=Runnable{if(::seekFeedback.isInitialized&&!options.optBoolean("reduceMotion"))seekFeedback.animate().alpha(0f).setDuration(250).start()}
+ private var seekBurstAt=0L
+ private var seekBurstAhead=false
+ private var seekBurstTotal=0
+ private val episodeRows=mutableMapOf<String,Triple<JSONObject,TextView,PrimioEpisodeProgress>>()
  private lateinit var audio:AudioManager
  private lateinit var focus:AudioFocusRequest
  private var duration=0.0
@@ -164,7 +169,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   overlay.visibility=View.GONE
   gestureLabel=text("",16f).apply{gravity=Gravity.CENTER;background=PrimioStyle.glass(this@PlayerActivity);setPadding(dp(24),dp(16),dp(24),dp(16));visibility=View.GONE}
   root.addView(gestureLabel,FrameLayout.LayoutParams(-2,-2,Gravity.CENTER))
-  seekFeedback=text("",30f).apply{gravity=Gravity.CENTER;includeFontPadding=false;visibility=View.GONE;setShadowLayer(dp(3).toFloat(),0f,dp(1).toFloat(),Color.BLACK);importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO}
+  seekFeedback=text("",22f).apply{gravity=Gravity.CENTER;includeFontPadding=false;visibility=View.GONE;setShadowLayer(dp(3).toFloat(),0f,dp(1).toFloat(),Color.BLACK);importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO}
   root.addView(seekFeedback,FrameLayout.LayoutParams(dp(144),dp(64),Gravity.CENTER_VERTICAL or Gravity.START))
   brightnessIndicator=PrimioLevelIndicator(this,"brightness",tr("Luminosité"))
   volumeIndicator=PrimioLevelIndicator(this,"volume",tr("Volume"))
@@ -194,10 +199,11 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   })
   var startVolume=0;var startBrightness=0.5f;var vertical=false
   var downX=0f;var downY=0f;var downTime=0L;var startPosition=0.0
+  var burstTap=false
   val detector=GestureDetector(this,object:GestureDetector.SimpleOnGestureListener(){
    override fun onDown(e:MotionEvent):Boolean {startVolume=audio.getStreamVolume(AudioManager.STREAM_MUSIC);startBrightness=window.attributes.screenBrightness.takeIf{it>=0}?:0.5f;vertical=false;return true}
    override fun onSingleTapConfirmed(e:MotionEvent):Boolean{if(scrubbing)return true;if(overlay.visibility==View.VISIBLE)overlay.visibility=View.GONE else showControls();return true}
-   override fun onDoubleTap(e:MotionEvent):Boolean{jump(e.x>root.width/2);return true}
+   override fun onDoubleTap(e:MotionEvent):Boolean{if(!burstTap)jump(e.x>root.width/2);return true}
    override fun onScroll(first:MotionEvent?,e:MotionEvent,dx:Float,dy:Float):Boolean {
     if(first==null||scrubbing)return false
     val delta=first.y-e.y
@@ -209,9 +215,10 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   })
   detector.setIsLongpressEnabled(false)
   layer.setOnTouchListener{_,event->
-   if(event.actionMasked==MotionEvent.ACTION_DOWN){downX=event.x;downY=event.y;downTime=event.eventTime;startPosition=position}
+   if(event.actionMasked==MotionEvent.ACTION_DOWN){downX=event.x;downY=event.y;downTime=event.eventTime;startPosition=position;burstTap=event.eventTime-seekBurstAt in 0..700&&seekBurstAhead==(event.x>root.width/2)}
    pinch.onTouchEvent(event)
    if(event.pointerCount>1||pinching){
+    burstTap=false;seekBurstAt=0
     if(scrubbing)endScrub(false)
     if(event.actionMasked==MotionEvent.ACTION_UP||event.actionMasked==MotionEvent.ACTION_CANCEL)pinching=false
     true
@@ -229,7 +236,14 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
      seek.fraction=(scrubTarget/duration).toFloat();time.text=format(scrubTarget)+" / "+format(duration)
      if(event.actionMasked==MotionEvent.ACTION_UP||event.actionMasked==MotionEvent.ACTION_CANCEL)endScrub(event.actionMasked==MotionEvent.ACTION_UP)
      true
-    }else{detector.onTouchEvent(event);true}
+    }else{
+     if(abs(dx)>dp(12)||abs(dy)>dp(12)||event.actionMasked==MotionEvent.ACTION_CANCEL)burstTap=false
+     if(burstTap&&event.actionMasked==MotionEvent.ACTION_UP){
+      if(event.eventTime-downTime<300)jump(event.x>root.width/2)
+      val cancel=MotionEvent.obtain(event);cancel.action=MotionEvent.ACTION_CANCEL;detector.onTouchEvent(cancel);cancel.recycle();burstTap=false
+     }else detector.onTouchEvent(event)
+     true
+    }
    }
   }
  }
@@ -243,12 +257,13 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   val amount=if(ahead)forward else -rewind
   val impacted=if(duration>0)(position+amount).coerceIn(0.0,duration)-position else amount.toDouble()
   command("seek",amount.toString(),"relative");showControls()
-  seekFeedback.animate().cancel();handler.removeCallbacks(clearSeekFeedback)
-  seekFeedback.text=(if(impacted>=0)"+" else "−")+abs(impacted.roundToInt()).toString()+" s"
+  val now=SystemClock.uptimeMillis();val continuation=now-seekBurstAt in 0..700&&seekBurstAhead==ahead
+  seekBurstTotal=(if(continuation)seekBurstTotal else 0)+abs(impacted.roundToInt());seekBurstAt=now;seekBurstAhead=ahead
+  seekFeedback.animate().cancel();handler.removeCallbacks(clearSeekFeedback);handler.removeCallbacks(fadeSeekFeedback)
+  seekFeedback.text=(if(ahead)"+" else "−")+seekBurstTotal.toString()+" s"
   seekFeedback.layoutParams=FrameLayout.LayoutParams(dp(144),dp(64),Gravity.CENTER_VERTICAL or Gravity.START).apply{leftMargin=(root.width*(if(ahead).75f else .25f)-dp(72)).roundToInt().coerceIn(dp(16),(root.width-dp(160)).coerceAtLeast(dp(16)))}
   seekFeedback.visibility=View.VISIBLE;seekFeedback.alpha=1f
-  if(!options.optBoolean("reduceMotion"))seekFeedback.animate().alpha(.25f).setDuration(180).withEndAction{seekFeedback.animate().alpha(1f).setDuration(180).withEndAction{seekFeedback.animate().alpha(0f).setDuration(350).start()}.start()}.start()
-  handler.postDelayed(clearSeekFeedback,900)
+  handler.postDelayed(fadeSeekFeedback,500);handler.postDelayed(clearSeekFeedback,750)
  }
  override fun onKeyDown(keyCode:Int,event:KeyEvent):Boolean {
   if(sheet==null){when(keyCode){
@@ -286,6 +301,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
     val id=ep.optString("id");if(!ep.optBoolean("watched")&&!watchedChanges.containsKey(id)){ep.put("watched",true);watchedChanges[id]=JSONObject().put("videoId",id).put("watched",true).put("updatedAt",System.currentTimeMillis()).put("season",ep.optInt("season",1)).put("episode",ep.optInt("episode"))}
    }
   }
+  updateEpisodeRows()
   val now=SystemClock.elapsedRealtime()
   if(!reportedError&&((!loaded&&now-openedAt>45000)||(last.optBoolean("buffering")&&now-stalledAt>60000))){reportedError=true;showError(tr("La source ne répond pas. Essayez une autre source."))}
   val segments=options.optJSONArray("skipSegments")?:JSONArray()
@@ -334,7 +350,17 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   if(!url.startsWith("https://"))return
   Thread{
    try{
-    val connection=java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    var target=java.net.URI(url);var redirects=0
+    var connection:java.net.HttpURLConnection
+    while(true){
+     if(target.scheme!="https"||target.userInfo!=null||target.host.isNullOrBlank())throw java.io.IOException()
+     connection=target.toURL().openConnection() as java.net.HttpURLConnection
+     connection.connectTimeout=4000;connection.readTimeout=4000;connection.instanceFollowRedirects=false
+     if(connection.responseCode !in listOf(301,302,303,307,308))break
+     val location=connection.getHeaderField("Location");connection.disconnect()
+     if(location.isNullOrBlank()||redirects++>=3)throw java.io.IOException()
+     target=target.resolve(location)
+    }
     connection.connectTimeout=4000;connection.readTimeout=4000;connection.instanceFollowRedirects=false
     try{if(BuildConfig.DEBUG)android.util.Log.d("PrimioPlayer","Content logo HTTP ${connection.responseCode}");if(connection.responseCode==200){val bytes=connection.inputStream.use{stream->
       val output=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192)
@@ -360,6 +386,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   requestedVideoId=id;autoPlay=automatic;actionId=java.util.UUID.randomUUID().toString();emit(true);finish()
  }
  private fun episodes(resetSeason:Boolean=true,restoreScroll:Int?=null){
+  episodeRows.clear()
   if(resetSeason)episodeSeason=null
   handler.removeCallbacks(hide);sheet?.dismiss()
   val queue=options.optJSONArray("episodes")?:JSONArray()
@@ -383,8 +410,12 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
    if(watching)row.background=GradientDrawable().apply{cornerRadius=dp(16).toFloat();setColor((palette.accent and 0x00ffffff) or 0x26000000);setStroke(dp(1),palette.accent)}
    val title=(if(number>0)"$number. " else "")+entry.optString("title",tr("Épisode"))
    val episodeButton=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL;isClickable=true;isFocusable=true;contentDescription=title;setOnClickListener{dialog.dismiss();requestEpisode(id,false)}}
-   val image=ImageView(this).apply{scaleType=ImageView.ScaleType.CENTER_CROP;background=GradientDrawable().apply{cornerRadius=dp(8).toFloat();setColor(palette.surface)};clipToOutline=true;setImageDrawable(PrimioIconDrawable(this@PlayerActivity,"play"));importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO}
-   episodeButton.addView(image,LinearLayout.LayoutParams(dp(104),dp(72)))
+   val image=ImageView(this).apply{scaleType=ImageView.ScaleType.CENTER;background=GradientDrawable().apply{cornerRadius=dp(8).toFloat();setColor(palette.surface)};clipToOutline=true;setImageDrawable(PrimioIconDrawable(this@PlayerActivity,"play"));importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO}
+   val artwork=FrameLayout(this).apply{background=GradientDrawable().apply{cornerRadius=dp(8).toFloat();setColor(palette.surface)};clipToOutline=true}
+   artwork.addView(image,FrameLayout.LayoutParams(-1,-1))
+   val viewing=PrimioEpisodeProgress(this).apply{fraction=if(entry.optBoolean("watched"))1f else entry.optDouble("progress",0.0).toFloat()}
+   artwork.addView(viewing,FrameLayout.LayoutParams(-1,dp(3),Gravity.BOTTOM).apply{leftMargin=dp(6);rightMargin=dp(6);bottomMargin=dp(6)})
+   episodeButton.addView(artwork,LinearLayout.LayoutParams(dp(128),dp(72)))
    thumbnails.add(image to entry.optString("thumbnail"))
    val copy=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;clipChildren=true}
    copy.addView(text(title,14f).apply{setSingleLine(true);ellipsize=android.text.TextUtils.TruncateAt.END;includeFontPadding=false;if(watching)setTextColor(palette.accent)},LinearLayout.LayoutParams(-1,dp(20)))
@@ -394,36 +425,59 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
    episodeButton.addView(copy,LinearLayout.LayoutParams(0,dp(72),1f).apply{leftMargin=dp(10)})
    row.addView(episodeButton,LinearLayout.LayoutParams(0,dp(72),1f))
    val watched=watchedChanges[id]?.optBoolean("watched")?:entry.optBoolean("watched")
-   row.addView(button(tr(if(watched)"Vu" else "Non vu"),tr(if(watched)"Marquer comme non vu" else "Marquer comme vu")){
-    entry.put("watched",!watched);watchedChanges[id]=JSONObject().put("videoId",id).put("watched",!watched).put("updatedAt",System.currentTimeMillis()).put("episode",number).put("season",entry.optInt("season",1)).apply{if(id==current){put("position",position);put("duration",duration)}};emit(false);episodes(false,dialog.scroll.scrollY)
-   }.apply{isSelected=watched;textSize=11f;setSingleLine(true);ellipsize=android.text.TextUtils.TruncateAt.END;setPadding(dp(4),dp(10),dp(4),dp(10));setTextColor(if(watched)palette.accent else palette.muted)},LinearLayout.LayoutParams(dp(52),dp(48)).apply{leftMargin=dp(8)})
+   val status=button(tr(if(watched)"Vu" else "Non vu"),tr(if(watched)"Marquer comme non vu" else "Marquer comme vu")){
+    val next=!(watchedChanges[id]?.optBoolean("watched")?:entry.optBoolean("watched"))
+    entry.put("watched",next);watchedChanges[id]=JSONObject().put("videoId",id).put("watched",next).put("updatedAt",System.currentTimeMillis()).put("episode",number).put("season",entry.optInt("season",1)).apply{if(id==current){put("position",position);put("duration",duration)}};updateEpisodeRows();emit(false)
+   }.apply{isSelected=watched;textSize=11f;setSingleLine(true);ellipsize=android.text.TextUtils.TruncateAt.END;setPadding(dp(4),dp(10),dp(4),dp(10));setTextColor(if(watched)palette.accent else palette.muted)}
+   episodeRows[id]=Triple(entry,status,viewing)
+   row.addView(status,LinearLayout.LayoutParams(dp(52),dp(48)).apply{leftMargin=dp(8)})
    dialog.content.addView(row,LinearLayout.LayoutParams(-1,dp(88)).apply{bottomMargin=dp(12)})
    if(watching)currentRow=row
   }
-  sheet=dialog;dialog.setOnDismissListener{if(sheet===dialog)sheet=null;showControls()};dialog.show()
-  fun loadVisibleImages(){thumbnails.forEach{(image,url)->val row=image.parent.parent as View;if(row.bottom>=dialog.scroll.scrollY-dp(100)&&row.top<=dialog.scroll.scrollY+dialog.scroll.height+dp(100))loadEpisodeImage(image,url)}}
+  sheet=dialog;dialog.setOnDismissListener{if(sheet===dialog)sheet=null;episodeRows.clear();showControls()};dialog.show();updateEpisodeRows()
+  fun loadVisibleImages(){thumbnails.forEach{(image,url)->if(image.isShown&&image.getGlobalVisibleRect(android.graphics.Rect()))loadEpisodeImage(image,url)}}
   dialog.scroll.viewTreeObserver.addOnScrollChangedListener{loadVisibleImages()}
+  dialog.scroll.viewTreeObserver.addOnGlobalLayoutListener{loadVisibleImages()}
   dialog.scroll.post{if(restoreScroll!=null)dialog.scroll.scrollTo(0,restoreScroll)else currentRow?.let{dialog.scroll.scrollTo(0,(it.top-(dialog.scroll.height-it.height)/2).coerceAtLeast(0))};loadVisibleImages()}
+ }
+ private fun updateEpisodeRows(){
+  val palette=PrimioStyle.palette(this)
+  episodeRows.forEach{(id,views)->
+   val ep=views.first;val status=views.second;val viewing=views.third
+   val watched=watchedChanges[id]?.optBoolean("watched")?:ep.optBoolean("watched")
+   status.text=tr(if(watched)"Vu" else "Non vu");status.isSelected=watched
+   status.contentDescription=tr(if(watched)"Marquer comme non vu" else "Marquer comme vu")
+   status.setTextColor(if(watched)palette.accent else palette.muted)
+   viewing.fraction=if(watched)1f else if(id==options.optString("currentVideoId")&&duration>0)(position/duration).toFloat().coerceIn(0f,1f) else if(ep.optDouble("duration",0.0)>0)(ep.optDouble("position",0.0)/ep.optDouble("duration")).toFloat().coerceIn(0f,1f) else 0f
+  }
  }
  private fun loadEpisodeImage(view:ImageView,url:String){
   if(isFinishing||isDestroyed||!url.startsWith("https://")||view.tag==url)return
   val uri=try{java.net.URI(url)}catch(_:Exception){return};if(uri.userInfo!=null)return
-  episodeImages.get(url)?.let{view.tag=url;view.setImageBitmap(it);return}
+  episodeImages.get(url)?.let{view.tag=url;view.scaleType=ImageView.ScaleType.CENTER_CROP;view.setImageBitmap(it);return}
   view.tag=url
   pendingImages[url]?.let{it.add(view);return}
   pendingImages[url]=mutableListOf(view)
   imageWorker.execute{
    var bitmap:android.graphics.Bitmap?=null
    try{
-    val connection=java.net.URL(url).openConnection() as java.net.HttpURLConnection
+    var imageUrl=java.net.URL(url)
+    for(redirect in 0..3){
+    val imageUri=imageUrl.toURI();if(imageUri.scheme!="https"||imageUri.userInfo!=null)break
+    val connection=imageUrl.openConnection() as java.net.HttpURLConnection
     connection.connectTimeout=4000;connection.readTimeout=4000;connection.instanceFollowRedirects=false
-    try{if(connection.responseCode==200){val bytes=connection.inputStream.use{stream->val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);while(out.size()<=2_000_000){val n=stream.read(buffer);if(n<0)break;out.write(buffer,0,n)};out.toByteArray()}
+    try{val status=connection.responseCode
+     if(status in listOf(301,302,303,307,308)&&redirect<3){val location=connection.getHeaderField("Location")?:break;imageUrl=java.net.URL(imageUrl,location);continue}
+     if(status==200){val bytes=connection.inputStream.use{stream->val out=java.io.ByteArrayOutputStream();val buffer=ByteArray(8192);while(out.size()<=2_000_000){val n=stream.read(buffer);if(n<0)break;out.write(buffer,0,n)};out.toByteArray()}
      if(bytes.size<=2_000_000){val bounds=android.graphics.BitmapFactory.Options().apply{inJustDecodeBounds=true};android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,bounds)
       if(bounds.outWidth in 1..4096&&bounds.outHeight in 1..4096){val decoding=android.graphics.BitmapFactory.Options().apply{inSampleSize=1};while(max(bounds.outWidth,bounds.outHeight)/decoding.inSampleSize>512)decoding.inSampleSize*=2;bitmap=android.graphics.BitmapFactory.decodeByteArray(bytes,0,bytes.size,decoding)}
      }
-    }}finally{connection.disconnect()}
-   }catch(_:Exception){}
-   handler.post{val views=pendingImages.remove(url)?:emptyList();if(!isFinishing&&!isDestroyed){bitmap?.let{episodeImages.put(url,it);views.forEach{v->v.setImageBitmap(it)}}}}
+    }
+    break
+    }finally{connection.disconnect()}
+    }
+   }catch(e:Exception){if(BuildConfig.DEBUG)android.util.Log.d("PrimioArtwork",e.javaClass.simpleName)}
+   handler.post{val views=pendingImages.remove(url)?:emptyList();if(!isFinishing&&!isDestroyed){bitmap?.let{episodeImages.put(url,it);views.forEach{v->if(v.tag==url){v.scaleType=ImageView.ScaleType.CENTER_CROP;v.setImageBitmap(it)}}}}}
   }
  }
  private fun trackName(track:JSONObject,index:Int):String {

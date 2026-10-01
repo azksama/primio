@@ -397,16 +397,32 @@ async fn prepare_episode_image(
     width: u32,
     height: u32,
 ) -> Result<(), String> {
-    let url = url::Url::parse(url).map_err(|_| "Invalid artwork")?;
+    let mut url = url::Url::parse(url).map_err(|_| "Invalid artwork")?;
     if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
         return Err("Invalid artwork".into());
     }
-    let client = crate::network::client_for(&url).await?;
-    let mut response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|_| "Artwork unavailable")?;
+    let mut redirects = 0;
+    let mut response = loop {
+        let client = crate::network::client_for(&url).await?;
+        let response = client
+            .get(url.clone())
+            .send()
+            .await
+            .map_err(|_| "Artwork unavailable")?;
+        if !response.status().is_redirection() {
+            break response;
+        }
+        if redirects >= 3 {
+            return Err("Artwork unavailable".into());
+        }
+        let location = response
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .ok_or("Invalid artwork")?;
+        url = url.join(location).map_err(|_| "Invalid artwork")?;
+        redirects += 1;
+    };
     if !response.status().is_success() {
         return Err("Artwork unavailable".into());
     }

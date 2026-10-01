@@ -1,7 +1,8 @@
 import { useProfilePin, PinSettings } from './profile-pin'
 import { applyTheme, resolveTheme } from './themes'
 import { useSwipeNavigation } from './swipe-navigation'
-import { useFeatured } from './featured'
+import { useFeatured, useFeaturedSwipe, featuredDuration } from './featured'
+import { genreLabel } from './genres'
 import {
   EmailVerification,
   type VerificationChallenge,
@@ -63,6 +64,7 @@ import {
   useState,
   type FormEvent,
   type ReactNode,
+  type CSSProperties,
 } from 'react'
 import {
   Home,
@@ -137,6 +139,7 @@ type Tab =
   | 'calendar'
   | 'notifications'
   | 'home'
+  | 'continue'
   | 'explore'
   | 'library'
   | 'addons'
@@ -595,7 +598,7 @@ export default function App() {
           s.progress,
           meta,
           videoId,
-          watched ? duration : 0,
+          previous?.position ?? 0,
           duration,
           Date.now(),
           watched,
@@ -651,7 +654,7 @@ export default function App() {
     else {
       const previous = navigationHistory.current.pop()
       if (previous) navigate(previous, false)
-      else if (tab !== 'home') navigate(tab === 'calendar' ? 'library' : ['explore', 'library', 'settings', 'notifications'].includes(tab) ? 'home' : 'settings', false)
+      else if (tab !== 'home') navigate(tab === 'calendar' ? 'library' : ['explore', 'library', 'settings', 'notifications', 'continue'].includes(tab) ? 'home' : 'settings', false)
     }
     setSlideDirection('right')
   }
@@ -1315,7 +1318,7 @@ export default function App() {
     </header>
   )
   const navigationTab =
-    tab === 'notifications'
+    tab === 'notifications' || tab === 'continue'
       ? 'home'
       : tab === 'calendar'
         ? 'library'
@@ -1354,6 +1357,7 @@ export default function App() {
       target.removeEventListener('scroll', remember)
     }
   }, [screenKey])
+  const featuredSwipe = useFeaturedSwipe(featured.index, featured.items.length, featured.setIndex)
   const homePage = (
     <main
       key={state.activeProfileId + ':home'}
@@ -1362,11 +1366,11 @@ export default function App() {
       <section
         className="hero"
         data-category={featured.current?.category}
-        onPointerEnter={(e) => {
-          if (e.pointerType === 'mouse') featured.setInteracting(true)
+        {...featuredSwipe}
+        onPointerDownCapture={() => featured.setInteracting(false)}
+        onFocusCapture={(e) => {
+          if (e.target.matches(':focus-visible')) featured.setInteracting(true)
         }}
-        onPointerLeave={(e) => featured.setInteracting(e.currentTarget.matches(':focus-within'))}
-        onFocusCapture={() => featured.setInteracting(true)}
         onBlurCapture={(e) => {
           if (!e.currentTarget.contains(e.relatedTarget)) featured.setInteracting(false)
         }}
@@ -1407,7 +1411,7 @@ export default function App() {
           <h1 className="serif">{hero?.name ?? t('Votre cinéma, autrement.')}</h1>
           <p>
             {hero
-              ? [hero.releaseInfo, ...(hero.genres ?? []).slice(0, 1)].filter(Boolean).join(' · ')
+              ? [hero.releaseInfo, ...(hero.genres ?? []).slice(0, 1).map(genreLabel)].filter(Boolean).join(' · ')
               : t('Tous vos univers, au même endroit.')}
           </p>
           <div className="hero-actions">
@@ -1443,17 +1447,27 @@ export default function App() {
                       : 'Anime',
                 )}
                 aria-pressed={item === featured.current}
-                onClick={() => featured.setIndex(index)}
+                onClick={() => { featured.setInteracting(false); featured.setIndex(index) }}
               >
                 <span />
               </button>
             ))}
             <button
+              className="featured-pause"
               aria-label={t(
                 featured.paused ? 'Reprendre le défilement' : 'Mettre le défilement en pause',
               )}
-              onClick={() => featured.setPaused(!featured.paused)}
+              onClick={() => { featured.setInteracting(false); featured.setPaused(!featured.paused) }}
             >
+              <svg key={featured.cycle + ':' + featured.running} className="featured-clock" viewBox="0 0 40 40" aria-hidden="true">
+                <circle className="clock-track" cx="20" cy="20" r="17" />
+                <circle className="clock-time" cx="20" cy="20" r="17" pathLength="1"
+                  style={{ '--remaining': featured.remaining / featuredDuration,
+                    '--clock-duration': `${featured.remaining}ms`,
+                    '--clock-animation': featured.running ? 'featured-countdown' : 'none',
+                    animationDuration: `${featured.remaining}ms`,
+                    animationName: featured.running ? 'featured-countdown' : 'none' } as CSSProperties} />
+              </svg>
               {featured.paused ? <Play size={15} /> : <Pause size={15} />}
             </button>
           </div>
@@ -1464,7 +1478,7 @@ export default function App() {
           <section className="shelf">
             <div className="section-head">
               <h2>{t('Reprendre')}</h2>
-              <button onClick={() => navigate('library')}>{t('Tout voir')}</button>
+              <button onClick={() => navigate('continue')}>{t('Tout voir')}</button>
             </div>
             <div className="continue-grid">
               {continuing
@@ -1582,6 +1596,8 @@ export default function App() {
             <VoiceSearch onResult={setQuery} />
           </div>
           <SearchSuggestions
+            category={animeFilter ? 'anime' : kind}
+            filters={{ ...discoveryFilters, ...(genre ? { genre } : {}) }}
             query={query}
             addons={catalogAddons}
             library={searchLibrary}
@@ -1674,8 +1690,8 @@ export default function App() {
                       ),
                     )
                       .filter((g) => !/^\d{4}$/.test(g))
-                      .sort((a, b) => a.localeCompare(b))
-                      .map((g) => [g, g] as [string, string]),
+                      .sort((a, b) => genreLabel(a).localeCompare(genreLabel(b)))
+                      .map((g) => [g, genreLabel(g)] as [string, string]),
                   ]
             }
             onChange={setGenre}
@@ -1741,7 +1757,7 @@ export default function App() {
             library={searchLibrary}
             filters={{
               ...discoveryFilters,
-              ...(!searchQuery ? { type: animeFilter ? 'anime' : kind } : {}),
+              type: animeFilter ? 'anime' : kind,
               ...(genre ? { genre } : {}),
             }}
             renderItem={poster}
@@ -1886,7 +1902,7 @@ export default function App() {
                         setGenre(g)
                       }}
                     >
-                      {g}
+                      {genreLabel(g)}
                     </button>
                   ))}
                 </div>
@@ -2029,7 +2045,21 @@ export default function App() {
                 )}
             </section>
           </main>
-        ) : ['home', 'explore', 'anime'].includes(tab) ? null : tab === 'calendar' ? (
+        ) : ['home', 'explore', 'anime'].includes(tab) ? null : tab === 'continue' ? (
+          <>
+            {heading(t('Reprendre'))}
+            <section className="page-content" aria-label={t('Reprendre')}>
+              {continuing.length ? (
+                <div className="continue-grid continue-all">
+                  {continuing.map(p => (
+                    <ContinueCard key={p.type + ':' + p.videoId} item={p} addons={catalogAddons}
+                      hideSpoilers={hideSpoilers} onPlay={() => chooseSources(p.meta ?? p, p.videoId)} />
+                  ))}
+                </div>
+              ) : <Empty title={t('Aucun contenu en cours')}>{t('Aucun résultat')}</Empty>}
+            </section>
+          </>
+        ) : tab === 'calendar' ? (
           <main>
             {heading(t('Sorties'))}
             <section className="page-content">

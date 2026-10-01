@@ -2960,6 +2960,39 @@ dialog.trailer-dialog {
 
 /* Plugin tokens stay bounded by the SDK and never accept executable CSS. */
 :root { font-family: var(--user-font, var(--plugin-font, Inter, Arial, sans-serif)); }
+
+.hero { touch-action: pan-y; }
+.hero-copy h1.serif { font-family: var(--user-font, var(--plugin-font, Inter, Arial, sans-serif)); }
+.hero-pagination .featured-pause { position: relative; margin-left: 6px; }
+.featured-clock { position: absolute; inset: 2px; width: 40px; height: 40px; transform: rotate(-90deg); pointer-events: none; }
+.featured-clock circle { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.featured-clock .clock-track { opacity: .2; }
+.featured-clock .clock-time { stroke-dasharray: 1; stroke-dashoffset: calc(1 - var(--remaining)); animation-timing-function: linear; animation-fill-mode: forwards; }
+@keyframes featured-countdown { from { stroke-dashoffset: calc(1 - var(--remaining)); } to { stroke-dashoffset: 1; } }
+/* A linear time indicator remains informative with reduced decorative motion. */
+:root[data-motion='reduced'] .featured-clock .clock-time { animation-name: var(--clock-animation) !important; animation-duration: var(--clock-duration) !important; animation-timing-function: linear !important; animation-fill-mode: forwards !important; }
+@media (prefers-reduced-motion: reduce) { .featured-clock .clock-time { animation-name: var(--clock-animation) !important; animation-duration: var(--clock-duration) !important; animation-timing-function: linear !important; animation-fill-mode: forwards !important; } }
+.app .continue-grid.continue-all { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); overflow: visible; }
+.episode-entry { --episode-art-width: clamp(112px, 30vw, 160px); }
+.episode-entry .episode-card { grid-template-columns: var(--episode-art-width) minmax(0, 1fr); gap: 12px; align-items: center; padding-block: 8px; }
+.episode-entry .episode-image { width: 100%; aspect-ratio: 16 / 9; border-radius: 10px; }
+.episode-image > .media-image { position: absolute; inset: 0; height: 100%; width: 100%; }
+.episode-image .episode-play { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #0008; opacity: 0; transition: opacity 150ms; }
+.episode-card:focus-visible .episode-play { opacity: 1; }
+@media (hover: hover) { .episode-card:hover .episode-play { opacity: 1; } }
+.episode-progress { position: absolute; inset: auto 6px 6px; height: 3px; border-radius: 2px; overflow: hidden; background: #0009; }
+.episode-progress > span { display: block; height: 100%; background: var(--accent); }
+.episode-entry .episode-copy { max-height: calc(var(--episode-art-width) * .5625); overflow: hidden; gap: 3px; }
+.episode-entry .episode-copy .episode-synopsis { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 12px; line-height: 1.4; }
+.episode-copy small { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.episode-actions { gap: 4px; }
+.episode-info { display: flex; }
+@media (max-width: 480px) {
+  .episode-entry { align-items: center; padding-block: 0; gap: 8px; }
+  .episode-entry .episode-copy .episode-synopsis { -webkit-line-clamp: 1; }
+  .episode-copy strong { font-size: 13px; }
+  .episode-copy small { font-size: 10px; }
+}
 .glass { background-color: color-mix(in srgb, var(--surface) calc(var(--plugin-glass, .78) * 100%), transparent); }
 .addon-card, .store-entry, .profile-card { border-radius: var(--plugin-radius, 16px); }
 .plugin-store { margin-top: 0; }

@@ -1,5 +1,5 @@
 import { t } from './i18n'
-import { findProgress, isWatched } from './progress'
+import { findProgress, isWatched, viewingFraction } from './progress'
 import { compareEpisodes, isEpisodeAvailable } from './episode-order'
 import { cleanDescription } from './content'
 import type { Meta, Progress } from './types'
@@ -35,6 +35,9 @@ export function episodeQueue(
       season: v.season ?? 1,
       episode: v.episode ?? 0,
       watched: isWatched(findProgress(progress, meta.type, v.id)),
+      progress: viewingFraction(findProgress(progress, meta.type, v.id)),
+      position: findProgress(progress, meta.type, v.id)?.position ?? 0,
+      duration: findProgress(progress, meta.type, v.id)?.duration ?? 0,
       current: v.id === currentId,
     })),
     nextVideoId: current && next ? next.id : '',

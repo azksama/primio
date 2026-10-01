@@ -693,5 +693,9 @@
   "Couleur enregistrée": "保存済みの色",
   "Enregistrer crée ou actualise cette collection.": "保存すると、このコレクションを作成または更新します。",
   "Impossible d’enregistrer. Réessayez.": "保存できませんでした。再試行してください。",
-  "Ce plugin n’est plus installé.": "このプラグインはインストールされていません。"
+  "Ce plugin n’est plus installé.": "このプラグインはインストールされていません。",
+  "Surprenez-moi": "おまかせ",
+  "Une autre idée": "別のおすすめ",
+  "Progression du visionnage": "視聴の進捗",
+  "Aucun contenu en cours": "視聴中の作品はありません"
 }

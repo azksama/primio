@@ -38,6 +38,40 @@ local episode_images={}
 local image_request=''
 for i,ep in ipairs(config.episodes or {})do ep.imageIndex=i-1 end
 local seek_feedback,seek_feedback_at=0,0
+local double_up=false
+local artwork_clipping=false
+local artwork_holes={}
+local rendered_images={}
+local rendered_count=0
+-- mpv bitmap overlays can cover ASS text. Bake the small progress track into
+-- the displayed thumbnail, updating only when its filled pixel count changes.
+local function episode_image(path,w,h,fraction)
+    local inset=math.max(1,math.floor(w*6/128));local track_w=w-inset*2
+    local played=math.floor(track_w*math.max(0,math.min(1,fraction)))
+    local cached=rendered_images[path]
+    if not cached then
+        local file=io.open(path,'rb');if not file then return path end
+        local bytes=file:read('*a');file:close();if #bytes~=w*h*4 then return path end
+        if rendered_count>=24 then rendered_images={};rendered_count=0 end
+        cached={bytes=bytes,played=-1,path=path..'.view.bgra'};rendered_images[path]=cached;rendered_count=rendered_count+1
+    end
+    if cached.played~=played then
+        local rgb=theme.accent or '#26CBA8'
+        if not rgb:match('^#%x%x%x%x%x%x$')then rgb='#26CBA8'end
+        local fill=string.char(tonumber(rgb:sub(6,7),16),tonumber(rgb:sub(4,5),16),tonumber(rgb:sub(2,3),16),255)
+        local pixels=fill:rep(played)..string.char(0,0,0,220):rep(track_w-played)
+        local top=math.floor(h*63/72);local rows={}
+        for y=0,h-1 do
+            local offset=y*w*4
+            if y>=top and y<top+math.max(2,math.floor(h*3/72))then
+                rows[#rows+1]=cached.bytes:sub(offset+1,offset+inset*4)..pixels..cached.bytes:sub(offset+(w-inset)*4+1,offset+w*4)
+            else rows[#rows+1]=cached.bytes:sub(offset+1,offset+w*4)end
+        end
+        local file=io.open(cached.path,'wb');if not file then return path end
+        file:write(table.concat(rows));file:close();cached.played=played
+    end
+    return cached.path
+end
 local season, forced = nil, config.forceSubtitleStyle == true
 local season_picker=false
 local levels={}
@@ -53,6 +87,7 @@ local function time(seconds)
 end
 local function rect(a,x,y,w,h,r,color,alpha,border,blur)
     a:new_event(); a:append(string.format('{\\an7\\pos(0,0)\\bord%s\\shad0\\blur%s\\1c&H%s&\\3c&H888B80&\\alpha&H%s&}',border or 0,blur or 0,color or '30332D',alpha or '20'))
+    if artwork_clipping then a:append('{PRIMIO_ARTWORK_CLIP}')end
     a:draw_start(); a:round_rect_cw(x,y,x+w,y+h,r,r); a:draw_stop()
 end
 local function label(a,x,y,s,size,align,color,font)
@@ -142,10 +177,13 @@ local function open(name) panel=name;season_picker=false;scroll=0;scroll_to_curr
 local function jump(forward)
     local pos=mp.get_property_number('time-pos',0)
     local duration=mp.get_property_number('duration',0)
-    local amount=forward and (config.seekForward or 30) or -(config.seekBackward or 15)
+    local amount=forward and (config.seekForward or 10) or -(config.seekBackward or 10)
     local target=math.max(0,duration>0 and math.min(duration,pos+amount) or pos+amount)
-    seek_feedback=target-pos;seek_feedback_at=mp.get_time();last_move=seek_feedback_at
-    mp.commandv('seek',target,'absolute+exact')
+    local now=mp.get_time()
+    seek_feedback=(now-seek_feedback_at<.7 and (seek_feedback>0)==forward and seek_feedback or 0)+(target-pos)
+    seek_feedback_at=now;last_move=now
+    -- Relative commands retain every click, even before time-pos acknowledges a previous seek.
+    mp.commandv('seek',amount,'relative+exact')
 end
 mp.register_script_message('seek',function(direction)jump(direction=='forward')end)
 local function hide_logo() if logo_visible then mp.commandv('overlay-remove',42);logo_visible=false end end
@@ -166,6 +204,7 @@ local function set_style(name,value)
     mp.set_property_native(name,value);forced=true;mp.set_property('sub-ass-override','force')
 end
 local function render_panel(a)
+    artwork_clipping=panel=='episodes' and not season_picker;artwork_holes={}
     rect(a,0,0,width,height,0,'000000','80')
     local w=panel=='episodes' and math.min(560,width-48) or math.min(860,width-48)
     local x=panel=='episodes' and width-w-24 or (width-w)/2
@@ -245,22 +284,28 @@ local function render_panel(a)
         if scroll_to_current then for i,ep in ipairs(list)do if ep.id==config.currentVideoId then scroll=i-1-math.floor(count/2);break end end;scroll_to_current=false end
         scroll=math.max(0,math.min(scroll,math.max(0,#list-count)))
         local visible_images,requests={},{}
-        local iw,ih=math.max(1,math.floor(104*scale)),math.max(1,math.floor(72*scale))
+        local iw,ih=math.max(1,math.floor(128*scale)),math.max(1,math.floor(72*scale))
         for i=1,count do local ep=list[i+scroll];if ep then
             local row_y=top+(i-1)*100
             local current=ep.id==config.currentVideoId
             local row_w=w-48
             glass(a,x+24,row_y,row_w,88,current)
             local image_loaded=false
+            local fraction=ep.watched and 1 or ep.id==config.currentVideoId and mp.get_property_number('duration',0)>0 and mp.get_property_number('time-pos',0)/mp.get_property_number('duration',1) or (ep.duration or 0)>0 and (ep.position or 0)/ep.duration or 0
             if config.episodeImagePath and ep.thumbnail and ep.thumbnail~='' then
                 local path=config.episodeImagePath..'/episode-'..ep.imageIndex..'-'..iw..'-'..ih..'.bgra'
                 local info=utils.file_info(path)
                 if info and info.size==iw*ih*4 then
-                    local id=16+i;mp.commandv('overlay-add',id,math.floor((x+32)*scale),math.floor((row_y+8)*scale),path,0,'bgra',iw,ih,iw*4);visible_images[id]=true;image_loaded=true
+                    local id=16+i;mp.commandv('overlay-add',id,math.floor((x+32)*scale),math.floor((row_y+8)*scale),episode_image(path,iw,ih,fraction),0,'bgra',iw,ih,iw*4);visible_images[id]=true;image_loaded=true
+                    artwork_holes[#artwork_holes+1]=string.format('m %.1f %.1f l %.1f %.1f %.1f %.1f %.1f %.1f',x+32,row_y+8,x+160,row_y+8,x+160,row_y+80,x+32,row_y+80)
                 else requests[#requests+1]=ep.imageIndex end
             end
-            if not image_loaded then rect(a,x+32,row_y+8,104,72,8,surface,'00');icon(a,x+84,row_y+44,'play')end
-            local tx,available=x+148,row_w-208
+            if not image_loaded then rect(a,x+32,row_y+8,128,72,8,surface,'00');icon(a,x+96,row_y+44,'play')end
+            artwork_clipping=false
+            rect(a,x+38,row_y+71,116,3,1,'000000','40')
+            rect(a,x+38,row_y+71,116*math.max(0,math.min(1,fraction)),3,1,accent,'00')
+            artwork_clipping=true
+            local tx,available=x+172,row_w-232
             local function line(value,offset,size,color)
                 a:new_event();a:append(string.format('{\\an4\\pos(%.1f,%.1f)\\clip(%.1f,%.1f,%.1f,%.1f)\\q2\\fnInter\\fs%d\\bord0\\shad0\\1c&H%s&}%s',tx,row_y+offset,tx,row_y+8,tx+available,row_y+80,size,color or foreground,escape(shorten(value,math.max(1,math.floor(available/(size*.6)))))))
             end
@@ -285,6 +330,7 @@ local function render_panel(a)
         if #requests>0 and request~=image_request then image_request=request;mp.set_property_native('user-data/primio/episode-images',utils.parse_json(request))end
         end
     end
+    artwork_clipping=false
 end
 local pip=false
 local pip_panscan=0
@@ -315,7 +361,11 @@ end
 local function leave_player() if pip or not enter_pip() then mp.commandv('quit') end end
 mp.observe_property('focused','bool',function(_,focused)if focused==false then end_scrub(false);enter_pip()end end)
 mp.observe_property('window-minimized','bool',function(_,minimized)if minimized then enter_pip()end end)
-mp.add_forced_key_binding('MBTN_LEFT_DBL','primio-restore',restore_player)
+mp.add_forced_key_binding('MBTN_LEFT_DBL','primio-double',function()
+    if pip then restore_player();return end
+    if panel or not loaded or scrub then return end
+    local mx=mp.get_mouse_pos();double_up=true;jump(mx/scale>width/2)
+end)
 local function render()
     local rw,rh=mp.get_osd_size();if rw<=0 or rh<=0 then return end
     scale=pip and 1 or rh/720;width=rw/scale;height=pip and rh or 720;hits={}
@@ -375,10 +425,10 @@ local function render()
         end
     end
     local feedback_age=mp.get_time()-seek_feedback_at
-    if seek_feedback~=0 and feedback_age<1.2 and not panel and not pip and not scrub then
-        local alpha=config.reduceMotion and '00' or feedback_age<.65 and (math.floor(feedback_age/.16)%2==0 and '00' or 'A0') or string.format('%02X',math.floor(math.min(255,(feedback_age-.65)/.55*255)))
+    if seek_feedback~=0 and feedback_age<.75 and not panel and not pip and not scrub then
+        local alpha=config.reduceMotion and '00' or string.format('%02X',math.floor(math.max(0,math.min(255,(feedback_age-.5)/.25*255))))
         local x=width*(seek_feedback>0 and .75 or .25)
-        a:new_event();a:append(string.format('{\\an5\\pos(%.1f,%.1f)\\fnInter\\fs32\\bord0\\shad1.2\\alpha&H%s&\\1c&H%s&}%s%d s',x,height/2,alpha,foreground,seek_feedback>0 and '+' or '−',math.floor(math.abs(seek_feedback)+.5)))
+        a:new_event();a:append(string.format('{\\an5\\pos(%.1f,%.1f)\\fnInter\\fs24\\bord0\\shad1.2\\alpha&H%s&\\1c&H%s&}%s%d s',x,height/2,alpha,foreground,seek_feedback>0 and '+' or '−',math.floor(math.abs(seek_feedback)+.5)))
     end
     if loaded and not buffering and not panel and not pip and not scrub then
         for kind,value in pairs(levels)do if mp.get_time()-value.at<1.2 then render_level(a,kind,value)end end
@@ -421,7 +471,8 @@ local function render()
         button(a,width-248,y,220,48,segment.label or (segment.kind=='outro' and tr('Skip credits','Passer le générique') or segment.kind=='recap' and tr('Skip recap','Passer le récap') or tr('Skip intro','Passer l’intro')),function()skipped_segments[segment.start]=true;mp.commandv('seek',segment['end'],'absolute+exact')end)
     end
     mp.set_property_native('user-data/primio/countdown',{key=countdown_key,elapsed=countdown_elapsed,visible=warning,segment=segment and segment.kind or '',position=pos})
-    overlay.res_x=width;overlay.res_y=height;overlay.data=a.text;overlay:update()
+    local clip=#artwork_holes>0 and '{\\iclip(1,'..table.concat(artwork_holes,' ')..')}' or ''
+    overlay.res_x=width;overlay.res_y=height;overlay.data=a.text:gsub('{PRIMIO_ARTWORK_CLIP}',function()return clip end);overlay:update()
 end
 mp.add_forced_key_binding('mouse_move','primio-move',function()
  last_move=mp.get_time()
@@ -456,10 +507,18 @@ mp.add_forced_key_binding('MBTN_LEFT','primio-click',function(event)
         press={x=mx,y=my,at=mp.get_time(),position=mp.get_property_number('time-pos',0),hit=hit_at()}
     elseif event.event=='up' then
         if scrub then end_scrub(true)
-        elseif press then local hit=hit_at();if hit and press.hit and math.abs(mx-press.x)<12 and math.abs(my-press.y)<12 then hit.action(mx,my)end;press=nil end
+        elseif double_up then double_up=false;press=nil
+        elseif press then
+            local hit=hit_at()
+            if math.abs(mx-press.x)<12 and math.abs(my-press.y)<12 then
+                if hit and press.hit then hit.action(mx,my)
+                elseif not panel and not pip and mp.get_time()-seek_feedback_at<.7 and (seek_feedback>0)==(mx>width/2) then jump(mx>width/2)end
+            end
+            press=nil
+        end
         last_move=mp.get_time();render()
     elseif event.event=='press' then
-        local hit=hit_at();if hit then hit.action(mx,my)end;last_move=mp.get_time();render()
+        local hit=hit_at();if hit then hit.action(mx,my)elseif not panel and not pip and mp.get_time()-seek_feedback_at<.7 and (seek_feedback>0)==(mx>width/2)then jump(mx>width/2)end;last_move=mp.get_time();render()
     end
 end,{complex=true})
 mp.add_forced_key_binding('ESC','primio-close',function()if scrub then end_scrub(false)elseif panel then panel=nil else leave_player()end end)

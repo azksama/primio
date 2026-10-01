@@ -11,6 +11,7 @@ import {
   type DiscoveryFilters,
 } from './discovery'
 import { matchesCategory } from './preferences'
+import { genreLabel } from './genres'
 import { t, locale } from './i18n'
 import { discoveryService } from './random-discovery'
 import { tmdbToken } from './metadata-provider'
@@ -97,7 +98,7 @@ export function DiscoveryControls({
               'Thriller',
             ].filter(g => value.type !== 'series' || !['Horror','Romance','Thriller'].includes(g)).map((g) => (
               <option key={g} value={g}>
-                {g || t('Tous')}
+                {g ? genreLabel(g) : t('Tous')}
               </option>
             ))}
           </select>
@@ -221,6 +222,8 @@ export function RandomPick({ onOpen, onConfigure, accountId }: { onOpen: (m: Met
 }
 
 export function SearchSuggestions({
+  category,
+  filters = {},
   query,
   addons,
   library,
@@ -229,6 +232,8 @@ export function SearchSuggestions({
   onCollection,
   onOpen,
 }: {
+  category?: string
+  filters?: DiscoveryFilters
   query: string
   addons: Addon[]
   library: Meta[]
@@ -240,6 +245,8 @@ export function SearchSuggestions({
   const [items, setItems] = useState<Meta[]>([]),
     [open, setOpen] = useState(true)
   const root = useRef<HTMLDivElement>(null)
+  const criteria = { ...filters, ...(category ? { type: category } : {}) }
+  const signature = JSON.stringify(criteria)
   useEffect(() => {
     const close = (event: PointerEvent) => {
       if (!root.current?.parentElement?.contains(event.target as Node)) setOpen(false)
@@ -255,25 +262,25 @@ export function SearchSuggestions({
         setItems([])
         return
       }
-      void discoveryPool(addons, query, library).then((items) => {
+      void discoveryPool(addons, query, library, category).then((items) => {
         if (active)
           setItems(
             items
-              .filter((m) => fuzzyScore(m.name, query) > 0)
+              .filter((m) => fuzzyScore(m.name, query) > 0 && matchesDiscovery(m, criteria))
               .sort((a, b) => fuzzyScore(b.name, query) - fuzzyScore(a.name, query))
               .slice(0, 6),
           )
-      })
+      }).catch(() => { if (active) setItems([]) })
     }, 300)
     return () => {
       active = false
       clearTimeout(timer)
     }
-  }, [query, addons, library])
+  }, [query, addons, library, category, signature])
   if (!open || query.trim().length < 2 || Object.keys(parseDiscoveryQuery(query).filters).length)
     return null
-  const local = library.filter((m) => fuzzyScore(m.name, query) > 0),
-    titles = [...new Map([...local, ...items].map((m) => [m.id, m])).values()].slice(0, 6)
+  const local = library.filter((m) => fuzzyScore(m.name, query) > 0 && matchesDiscovery(m, criteria)),
+    titles = [...new Map([...local, ...items].filter(m => matchesDiscovery(m, criteria)).map((m) => [m.type + ':' + m.id, m])).values()].slice(0, 6)
   const people = [
     ...new Set([...library, ...items].flatMap((m) => [...(m.cast ?? []), ...(m.director ?? [])])),
   ]
@@ -411,7 +418,7 @@ export function UniversalSearch({
         <p className="search-criteria">
           {[
             combined.type,
-            combined.genre,
+            combined.genre && genreLabel(combined.genre),
             combined.country,
             combined.from && `${combined.from}–${combined.to ?? '…'}`,
             combined.rating && `≥ ${combined.rating}`,

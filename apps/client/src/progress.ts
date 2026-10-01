@@ -23,6 +23,11 @@ export const isWatched = (item?: Progress) =>
 export function findProgress(items: Progress[], type: string, videoId: string) {
   return items.find((item) => progressKey(item.type, item.videoId) === progressKey(type, videoId))
 }
+export function viewingFraction(item?: Pick<Progress, 'position' | 'duration' | 'watched'>) {
+  if (item?.watched === true) return 1
+  if (!item || !Number.isFinite(item.duration) || item.duration <= 0 || !Number.isFinite(item.position)) return 0
+  return Math.max(0, Math.min(1, item.position / item.duration))
+}
 export function resumePosition(items: Progress[], type: string, videoId: string) {
   const item = findProgress(items, type, videoId)
   return item && item.duration > 0 && item.position < item.duration * 0.95 ? item.position : 0

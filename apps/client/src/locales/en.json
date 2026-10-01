@@ -848,5 +848,7 @@
   "Couleur enregistrée": "Saved color",
   "Enregistrer crée ou actualise cette collection.": "Saving creates or updates this collection.",
   "Impossible d’enregistrer. Réessayez.": "Could not save. Try again.",
-  "Ce plugin n’est plus installé.": "This plugin is no longer installed."
+  "Ce plugin n’est plus installé.": "This plugin is no longer installed.",
+  "Progression du visionnage": "Viewing progress",
+  "Aucun contenu en cours": "Nothing in progress"
 }

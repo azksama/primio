@@ -2,6 +2,7 @@ import type { Addon, Meta } from './types'
 import { catalog, metadata } from './addons'
 import { catalogTargets } from './catalog-pager'
 import { matchesCategory } from './preferences'
+import { canonicalGenre } from './genres'
 
 export interface DiscoveryFilters {
   type?: string
@@ -31,10 +32,7 @@ const genres: Record<string, string[]> = {
   Animation: ['animation'],
   Adventure: ['adventure', 'aventure'],
 }
-export const genreName = (s: string) =>
-  Object.entries(genres).find(([name, aliases]) =>
-    [name, ...aliases].some((a) => normalize(a) === normalize(s)),
-  )?.[0] ?? s
+export const genreName = canonicalGenre
 export function durationMinutes(runtime?: string): number | undefined {
   if (!runtime) return undefined
   const text = runtime.toLowerCase(),

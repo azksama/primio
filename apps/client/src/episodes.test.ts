@@ -13,6 +13,15 @@ const meta = {
   ],
 }
 describe('episode queue', () => {
+  it('transfers measured progress even when a manual watched status overrides it', () => {
+    const saved = { id: meta.id, name: meta.name, type: meta.type, videoId: 's1e1', position: 45, duration: 100, updatedAt: 1, watched: false }
+    expect(episodeQueue(meta, 's1e1', Date.now(), false, [saved]).episodes.find(v => v.id === 's1e1'))
+      .toMatchObject({ progress: .45, position: 45, duration: 100, watched: false })
+    expect(episodeQueue(meta, 's1e1', Date.now(), false, [{ ...saved, watched: true }]).episodes.find(v => v.id === 's1e1'))
+      .toMatchObject({ progress: 1, position: 45, duration: 100, watched: true })
+    expect(episodeQueue(meta, 's1e1').episodes.find(v => v.id === 's1e1'))
+      .toMatchObject({ progress: 0, position: 0, duration: 0 })
+  })
   it('transfers artwork and synopsis and conceals spoilers for unwatched episodes', () => {
     const rich = { ...meta, videos: [{ id: 's1e1', title: 'Long episode title', season: 1, episode: 1,
       thumbnail: 'https://example.org/episode.jpg', overview: 'Episode synopsis' }] }

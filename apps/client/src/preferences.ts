@@ -1,4 +1,5 @@
 import { t } from './i18n'
+import { canonicalGenre } from './genres'
 import type { Meta, Profile, Settings, UserState } from './types'
 
 export const languages = [
@@ -168,7 +169,7 @@ export function isAnime(meta: Pick<Meta, 'id' | 'type' | 'category'> & Partial<M
   )
 }
 export function isAnimation(meta: Partial<Meta>) {
-  return meta.genres?.some(g => /^(animation|animated|动画|動畫|动画片|動畫片|动漫|動漫|애니메이션|アニメーション)$/i.test(g.trim())) === true
+  return meta.genres?.some(g => canonicalGenre(g.trim()) === 'Animation' || /^(动画片|動畫片|动漫|動漫)$/i.test(g.trim())) === true
 }
 export function matchesCategory(meta: Meta, category: string) {
   return (

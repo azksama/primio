@@ -34,7 +34,7 @@ export function useSwipeNavigation(
       reset()
       const target = event.target
       if (event.touches.length !== 1 || !(target instanceof Element) ||
-        target.closest('input,textarea,select,[contenteditable="true"],[role="slider"],.choice-options,dialog')) return
+        target.closest('input,textarea,select,[contenteditable="true"],[role="slider"],.choice-options,dialog,.hero')) return
       const point = event.touches[0]
       gesture = { id: point.identifier, x: point.clientX, y: point.clientY, target, intent: 'pending' }
     }

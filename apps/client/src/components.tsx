@@ -66,6 +66,14 @@ export function Choice({
   const container = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     if (!open) return
+    const root = container.current
+    const menu = root?.querySelector<HTMLElement>('.choice-options')
+    if (root && menu && (floating || separateLabel)) {
+      const rect = root.getBoundingClientRect()
+      menu.style.minWidth = `${rect.width}px`
+      menu.style.left = `${Math.max(16, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 16)) - rect.left}px`
+      menu.style.right = 'auto'
+    }
     const dismiss = (event: PointerEvent) => {
       if (!container.current?.contains(event.target as Node)) setOpen(false)
     }
@@ -89,7 +97,7 @@ export function Choice({
       document.removeEventListener('keydown', escape, true)
       window.removeEventListener('primio:back', back, true)
     }
-  }, [open])
+  }, [open, floating, separateLabel])
   return (
     <div className={'choice' + (separateLabel ? ' separate-label' : '') + (separateLabel || floating ? ' floating' : '') + (open ? ' is-open' : '') + (above ? ' opens-up' : '')} ref={container}>
       {separateLabel && <span className="filter-label">{label}</span>}

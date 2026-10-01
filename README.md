@@ -8,6 +8,8 @@ Lecteur multimédia pour Android et Windows : catalogues Stremio, profils, bibli
 - [SDK TypeScript](packages/sdk) · [SDK Rust](packages/native-sdk) · [Intro Skipper](packages/intro-skipper)
 - [Compatibilité Stremio](docs/STREMIO-COMPATIBILITY.md)
 
+Version officielle : [Primio 1.0](docs/RELEASE-1.0.0.md). Le [magasin communautaire](https://primio.azks.fr/plugins) alimente aussi le catalogue intégré à l’application.
+
 ## Développement
 
 Node 24+, Rust stable. Android : SDK 36, NDK 29, JDK 21. Windows : outils Visual Studio C++.

@@ -1,249 +1,13 @@
 import { useState } from 'react'
-import { definePlugin, type PrimioPlugin } from '@primio/sdk'
+import { type PrimioPlugin } from '@primio/sdk'
+import { useMarketplace } from './marketplace'
 import { Check, Download, Search, Trash2, Play, Settings, Puzzle, Sparkles, Clapperboard, Bookmark, Eye } from './icons'
 import { configurablePlugin } from './plugin-configuration'
 import { t } from './i18n'
+import { comparePluginVersions } from './marketplace'
 
-const plugin = (id: string, name: string, description: string, features: Partial<PrimioPlugin>) =>
-  definePlugin({
-    schemaVersion: 2,
-    id: 'primio.' + id,
-    name,
-    description,
-    author: 'Primio',
-    version: '1.0.0',
-    permissions: [],
-    ...features,
-  })
-const theme = (
-  id: string,
-  name: string,
-  description: string,
-  background: string,
-  surface: string,
-  accent: string,
-  text: string,
-  muted: string,
-  radius = 16,
-) =>
-  plugin(id, name, description, {
-    category: 'theme',
-    permissions: ['theme'],
-    theme: { background, surface, accent, text, muted, radius },
-  })
-export const storePlugins: PrimioPlugin[] = [
-  plugin('neo-graphite', 'Neo Graphite', 'Un graphite doux, des commandes sculptées et des creux délicats. Un thème néomorphique complet.', {
-    category: 'theme', permissions: ['theme'],
-    theme: {
-      material: 'neumorphic', colorScheme: 'dark',
-      background: '#282B30', surface: '#282B30', accent: '#E6D3AC',
-      text: '#F3F0E8', muted: '#BCC0C8', border: '#646A73',
-      shadowLight: '#383D45', shadowDark: '#191C20',
-      radius: 18, glassOpacity: 1,
-    },
-  }),
-  theme(
-    'graphite',
-    'Graphite',
-    'Le verre fumé et les reflets ivoire de Primio.',
-    '#101110',
-    '#1D1E1C',
-    '#DAD4C5',
-    '#F3F1EB',
-    '#B7B8B1',
-  ),
-  theme(
-    'midnight',
-    'Midnight',
-    'Bleu nuit profond et accents argentés.',
-    '#0B1220',
-    '#172236',
-    '#B7D6FF',
-    '#EEF4FF',
-    '#AABBD2',
-  ),
-  theme(
-    'sakura',
-    'Sakura',
-    'Prune sombre et touches de rose poudré.',
-    '#19121A',
-    '#2B202D',
-    '#F2BCD8',
-    '#FFF0F8',
-    '#CAB5C6',
-    20,
-  ),
-  theme(
-    'forest',
-    'Forest',
-    'Vert forêt, sauge et surfaces douces.',
-    '#0E1713',
-    '#1D2B23',
-    '#B7D8AB',
-    '#EFF6EC',
-    '#AEBDAD',
-  ),
-  theme(
-    'amber',
-    'Amber',
-    'Brun profond et accents ambrés.',
-    '#19130E',
-    '#2B2119',
-    '#F1CA8C',
-    '#FFF4E5',
-    '#C7B6A0',
-  ),
-  theme(
-    'oled',
-    'OLED',
-    'Noir pur et contraste renforcé.',
-    '#000000',
-    '#121212',
-    '#FFFFFF',
-    '#FFFFFF',
-    '#C4C4C4',
-    12,
-  ),
-  plugin(
-    'anime-sources',
-    'Anime VOSTFR',
-    'Privilégier les sources VOSTFR et MULTI, masquer CAM et TS.',
-    {
-      category: 'sources',
-      permissions: ['sources'],
-      sources: { prefer: ['VOSTFR', 'MULTI', 'JAP'], hide: ['CAM', 'TELESYNC'] },
-    },
-  ),
-  plugin('french-sources', 'Cinéma VF', 'Privilégier VFF, TRUEFRENCH puis MULTI.', {
-    category: 'sources',
-    permissions: ['sources'],
-    sources: { prefer: ['VFF', 'TRUEFRENCH', 'MULTI'], hide: ['CAM', 'TELESYNC'] },
-  }),
-  plugin(
-    'quality-sources',
-    'Haute définition',
-    'Classer les sources 2160p puis 1080p en premier.',
-    {
-      category: 'sources',
-      permissions: ['sources'],
-      sources: { prefer: ['2160p', '4K', '1080p'], hide: ['CAM', 'TELESYNC'] },
-    },
-  ),
-  plugin('compact', 'Bibliothèque compacte', 'Cinq colonnes et affiches compactes.', {
-    category: 'library',
-    permissions: ['layout'],
-    layout: { columns: 5, density: 'compact' },
-  }),
-  plugin('posters', 'Galerie d’affiches', 'Quatre colonnes, sans nom ni date sous les affiches.', {
-    category: 'library',
-    permissions: ['layout'],
-    layout: { columns: 4, labels: false },
-  }),
-  plugin(
-    'comfortable',
-    'Lecture confortable',
-    'Trois colonnes, texte agrandi et animations réduites.',
-    {
-      category: 'accessibility',
-      permissions: ['layout', 'accessibility'],
-      layout: { columns: 3, density: 'comfortable' },
-      accessibility: { fontScale: 1.15, reduceMotion: true },
-    },
-  ),
-  plugin('calm', 'Sans animations', 'Réduire les mouvements dans l’interface.', {
-    category: 'accessibility',
-    permissions: ['accessibility'],
-    accessibility: { reduceMotion: true },
-  }),
-  plugin(
-    'anti-spoilers',
-    'Anti-spoilers',
-    'Masquer les titres, images et résumés des épisodes non vus. Dévoilement à la demande.',
-    { category: 'library', permissions: ['spoilers'], spoilers: { hideUnwatched: true } },
-  ),
-  plugin(
-    'middle-earth',
-    'La Terre du Milieu',
-    'Deux parcours : ordre de sortie ou chronologie de l’histoire.',
-    {
-      category: 'library',
-      permissions: ['watchOrder'],
-      watchOrder: [
-        {
-          id: 'release',
-          title: 'La Terre du Milieu · Sortie',
-          order: 'release',
-          entries: [
-            { id: 'tt0120737', type: 'movie', name: 'The Fellowship of the Ring' },
-            { id: 'tt0167261', type: 'movie', name: 'The Two Towers' },
-            { id: 'tt0167260', type: 'movie', name: 'The Return of the King' },
-            { id: 'tt0903624', type: 'movie', name: 'An Unexpected Journey' },
-            { id: 'tt1170358', type: 'movie', name: 'The Desolation of Smaug' },
-            { id: 'tt2310332', type: 'movie', name: 'The Battle of the Five Armies' },
-          ],
-        },
-        {
-          id: 'chronology',
-          title: 'La Terre du Milieu · Chronologie',
-          order: 'chronological',
-          entries: [
-            { id: 'tt0903624', type: 'movie', name: 'An Unexpected Journey' },
-            { id: 'tt1170358', type: 'movie', name: 'The Desolation of Smaug' },
-            { id: 'tt2310332', type: 'movie', name: 'The Battle of the Five Armies' },
-            { id: 'tt0120737', type: 'movie', name: 'The Fellowship of the Ring' },
-            { id: 'tt0167261', type: 'movie', name: 'The Two Towers' },
-            { id: 'tt0167260', type: 'movie', name: 'The Return of the King' },
-          ],
-        },
-      ],
-    },
-  ),
-  plugin('star-wars', 'Star Wars', 'Les films Star Wars dans une collection, en ordre chronologique ou de sortie.', {
-    version: '1.1.0',
-    category: 'library',
-    permissions: ['watchOrder'],
-    watchOrder: [
-      {
-        id: 'chronology', title: 'Star Wars · Chronologie', order: 'chronological',
-        entries: [
-          ['tt0120915', 'The Phantom Menace'],
-          ['tt0121765', 'Attack of the Clones'],
-          ['tt1185834', 'Star Wars: The Clone Wars'],
-          ['tt0121766', 'Revenge of the Sith'],
-          ['tt3778644', 'Solo: A Star Wars Story'],
-          ['tt3748528', 'Rogue One: A Star Wars Story'],
-          ['tt0076759', 'A New Hope'],
-          ['tt0080684', 'The Empire Strikes Back'],
-          ['tt0086190', 'Return of the Jedi'],
-          ['tt30825738', 'The Mandalorian and Grogu'],
-          ['tt2488496', 'The Force Awakens'],
-          ['tt2527336', 'The Last Jedi'],
-          ['tt2527338', 'The Rise of Skywalker'],
-        ].map(([id, name]) => ({ id, name, type: 'movie' as const })),
-      },
-      {
-        id: 'release',
-        title: 'Star Wars · Sortie',
-        order: 'release',
-        entries: [
-          ['tt0076759', 'A New Hope'],
-          ['tt0080684', 'The Empire Strikes Back'],
-          ['tt0086190', 'Return of the Jedi'],
-          ['tt0120915', 'The Phantom Menace'],
-          ['tt0121765', 'Attack of the Clones'],
-          ['tt0121766', 'Revenge of the Sith'],
-          ['tt1185834', 'Star Wars: The Clone Wars'],
-          ['tt2488496', 'The Force Awakens'],
-          ['tt3748528', 'Rogue One: A Star Wars Story'],
-          ['tt2527336', 'The Last Jedi'],
-          ['tt3778644', 'Solo: A Star Wars Story'],
-          ['tt2527338', 'The Rise of Skywalker'],
-          ['tt30825738', 'The Mandalorian and Grogu'],
-        ].map(([id, name]) => ({ id, name, type: 'movie' as const })),
-      },
-    ],
-  }),
-]
+export { officialPlugins as storePlugins } from '@primio/sdk/catalog'
+import { officialPlugins as storePlugins } from '@primio/sdk/catalog'
 
 export function upgradeStorePlugin(p: PrimioPlugin) {
   return p.id === 'primio.star-wars' && p.author === 'Primio' && p.version === '1.0.0'
@@ -260,7 +24,7 @@ export function InstalledPlugins({ installed, onConfigure, onToggle, onRemove, o
   </button>
   return <section className="installed-plugins" aria-label={t('Plugins installés')}>
     <article className="installed-plugin">
-      <div className="installed-plugin-heading"><span className="plugin-art" aria-hidden="true"><Sparkles /></span><div className="store-copy"><h2>Primio Intro Skipper</h2><p>{t('Passer les intros et les génériques.')}</p><small>{t('Plugin intégré')} · 0.2.0</small></div><span className="plugin-enabled"><Check size={16} />{t('Activé')}</span></div>
+      <div className="installed-plugin-heading"><span className="plugin-art" aria-hidden="true"><Sparkles /></span><div className="store-copy"><h2>Primio Intro Skipper</h2><p>{t('Passer les intros et les génériques.')}</p><small>{t('Plugin intégré')} · 0.2.1</small></div><span className="plugin-enabled"><Check size={16} />{t('Activé')}</span></div>
       <div className="store-actions">{configurationButton(null)}</div>
     </article>
     {installed.map(p => <article className="installed-plugin" key={p.id}>
@@ -308,9 +72,15 @@ export function PluginStore({
 }) {
   const [query, setQuery] = useState(''),
     [category, setCategory] = useState('all')
+  const marketplace = useMarketplace()
+  const available = marketplace.entries.map(entry => {
+    const current = installed.find(plugin => plugin.id === entry.manifest.id)
+    // An offline bundled catalog must never offer to downgrade an installed plugin.
+    return current && comparePluginVersions(current.version, entry.manifest.version) >= 0 ? current : entry.manifest
+  })
   const list = [
-    ...storePlugins,
-    ...installed.filter((p) => !storePlugins.some((s) => s.id === p.id)),
+    ...available,
+    ...installed.filter((p) => !available.some((s) => s.id === p.id)),
   ].filter(
     (p) =>
       (category === 'all' ||
@@ -323,6 +93,8 @@ export function PluginStore({
       <p className="muted">
         {t('Des extensions Primio prêtes à installer. Vous gardez le contrôle des permissions.')}
       </p>
+      {marketplace.status === 'offline' && <div className="marketplace-status" role="status"><span>{t('Magasin temporairement indisponible. Le catalogue local reste accessible.')}</span><button className="secondary" onClick={marketplace.refresh}>{t('Réessayer')}</button></div>}
+      {marketplace.status === 'loading' && <p className="muted" role="status">{t('Actualisation du magasin…')}</p>}
       <label className="search-box">
         <Search />
         <input
@@ -350,6 +122,7 @@ export function PluginStore({
         {list.map((p) => {
           const existing = installed.find((i) => i.id === p.id),
             enabled = existing?.enabled !== false
+          const badges = marketplace.entries.find(entry => entry.manifest.id === p.id)
           return (
             <article key={p.id} className="store-entry">
               {p.theme ? (
@@ -374,13 +147,14 @@ export function PluginStore({
               ) : <PluginIcon plugin={p} />}
               <div className="store-copy">
                 <h3>{t(p.name)}</h3>
+                {badges && <div className="plugin-badges">{badges.official && <span>{t('Officiel')}</span>}{badges.verified && <span><Check size={12} />{t('Vérifié')}</span>}{badges.featured && <span>{t('Mis en avant')}</span>}</div>}
                 <p>{t(p.description)}</p>
                 <small>
                   {p.author} · {p.version}
                 </small>
               </div>
               <div className="store-actions">
-                {existing ? (
+                {existing && existing.version === p.version ? (
                   <>
                     <button
                       className="secondary"
@@ -401,7 +175,7 @@ export function PluginStore({
                 ) : (
                   <button className="secondary" onClick={() => onInstall(p)}>
                     <Download size={16} />
-                    {t('Installer')}
+                    {t(existing ? 'Mettre à jour' : 'Installer')}
                   </button>
                 )}
               </div>

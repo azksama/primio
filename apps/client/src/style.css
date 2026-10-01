@@ -2967,11 +2967,30 @@ dialog.trailer-dialog {
 .featured-clock { position: absolute; inset: 2px; width: 40px; height: 40px; transform: rotate(-90deg); pointer-events: none; }
 .featured-clock circle { fill: none; stroke: currentColor; stroke-width: 1.5; }
 .featured-clock .clock-track { opacity: .2; }
-.featured-clock .clock-time { stroke-dasharray: 1; stroke-dashoffset: calc(1 - var(--remaining)); animation-timing-function: linear; animation-fill-mode: forwards; }
-@keyframes featured-countdown { from { stroke-dashoffset: calc(1 - var(--remaining)); } to { stroke-dashoffset: 1; } }
-/* A linear time indicator remains informative with reduced decorative motion. */
-:root[data-motion='reduced'] .featured-clock .clock-time { animation-name: var(--clock-animation) !important; animation-duration: var(--clock-duration) !important; animation-timing-function: linear !important; animation-fill-mode: forwards !important; }
-@media (prefers-reduced-motion: reduce) { .featured-clock .clock-time { animation-name: var(--clock-animation) !important; animation-duration: var(--clock-duration) !important; animation-timing-function: linear !important; animation-fill-mode: forwards !important; } }
+.featured-clock .clock-time { stroke-dasharray: 1; }
+.library-header-actions { display: flex; gap: 4px; margin-left: auto; }
+.update-transfer { margin: 24px 0; padding: 20px; background: var(--surface); border-radius: 16px; }
+.update-transfer-label { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; font-variant-numeric: tabular-nums; }
+.update-transfer progress { appearance: none; display: block; width: 100%; height: 6px; border: 0; border-radius: 8px; overflow: hidden; background: var(--line); }
+.update-transfer progress::-webkit-progress-bar { background: var(--line); }
+.update-transfer progress::-webkit-progress-value { background: var(--accent); border-radius: 8px; }
+.update-transfer small { display: block; margin-top: 12px; color: var(--muted); }
+.crash-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.crash-preview { width: 100%; margin-top: 14px; resize: vertical; }
+.recovery-screen { max-width: 640px; margin: 12vh auto; padding: 24px; }
+.plugin-badges, .addon-health { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 8px; color: var(--muted); font-size: 12px; }
+.plugin-badges > span { display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 6px; }
+.addon-health.online { color: #a9d4b6; }
+.addon-health.slow { color: #ebcb99; }
+.addon-health.offline { color: #f0b1ae; }
+.marketplace-status { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.explorer-filters .choice.floating > .choice-options,
+.discovery-controls .choice.floating > .choice-options { width: max-content; max-width: min(440px, calc(100vw - 32px)); }
+.explorer-filters .choice-options button > span,
+.discovery-controls .choice-options button > span { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; text-align: left; }
+.explorer-filters .choice-options button { min-height: 46px; gap: 20px; }
+.discovery-controls .choice .row { padding: 12px; margin: 0; min-height: 46px; border: 1px solid var(--line); border-radius: 12px; }
+.discovery-controls .choice-value { width: 100%; max-width: 100%; justify-content: space-between; }
 .app .continue-grid.continue-all { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); overflow: visible; }
 .episode-entry { --episode-art-width: clamp(112px, 30vw, 160px); }
 .episode-entry .episode-card { grid-template-columns: var(--episode-art-width) minmax(0, 1fr); gap: 12px; align-items: center; padding-block: 8px; }

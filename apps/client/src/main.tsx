@@ -3,6 +3,7 @@ import { installDiagnostics } from './diagnostics'
 installDiagnostics()
 import { createRoot } from 'react-dom/client'
 import App from './App'
+import { ErrorBoundary } from './error-boundary'
 import { DesktopShell } from './desktop'
 import '@fontsource/inter/latin-400.css'
 import '@fontsource/inter/latin-500.css'
@@ -18,7 +19,7 @@ if (isAndroid()) {
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <DesktopShell>
-      <App />
+      <ErrorBoundary><App /></ErrorBoundary>
     </DesktopShell>
   </React.StrictMode>,
 )

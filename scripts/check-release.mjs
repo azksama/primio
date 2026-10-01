@@ -14,7 +14,7 @@ for (const [platform, extension] of [['android', 'apk'], ['windows', 'exe']]) {
   const artifact = manifest.platforms[platform]
   const url = new URL(artifact.url)
   assert.equal(url.origin, 'https://github.com')
-  assert.ok(url.pathname.startsWith(`/azksama/primio/releases/download/v${expectedVersion}-`))
+  assert.ok(new RegExp(`^/azksama/primio/releases/download/v${expectedVersion.replace(/\./g, '\\.')}(-[a-zA-Z0-9._-]+)?/`).test(url.pathname))
   assert.ok(url.pathname.endsWith(`.${extension}`))
   assert.match(artifact.sha256, /^[a-f0-9]{64}$/)
   const download = await fetch(url, { signal: AbortSignal.timeout(180000) })

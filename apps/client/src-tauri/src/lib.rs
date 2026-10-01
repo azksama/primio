@@ -391,8 +391,9 @@ pub fn run() {
                 let original = std::panic::take_hook();
                 std::panic::set_hook(Box::new(move |info| {
                     let report = format!(
-                        "Primio {} · Rust panic\n{}\n{}",
+                        "Primio {} · Rust panic · {:?}\n{}\n{}",
                         env!("CARGO_PKG_VERSION"),
+                        std::time::SystemTime::now(),
                         info.location()
                             .map(|p| format!("{}:{}", p.file(), p.line()))
                             .unwrap_or_default(),
@@ -431,6 +432,7 @@ pub fn run() {
                         let handle =
                             api.register_android_plugin("fr.azks.primio", "PrimioPlugin")?;
                         app.manage(Mobile(handle));
+                        updates::cleanup(app);
                         player::APP.set(app.clone()).ok();
                     }
                     #[cfg(not(target_os = "android"))]

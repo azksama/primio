@@ -12,6 +12,12 @@ pub struct Update {
     pub sha256: String,
     pub size: u64,
 }
+#[derive(Serialize)]
+pub struct UpdateStatus {
+    #[serde(flatten)]
+    update: Update,
+    downloaded: bool,
+}
 fn version(value: &str) -> Option<Vec<u32>> {
     let parts: Vec<_> = value.split('.').collect();
     if parts.len() != 3
@@ -56,8 +62,7 @@ fn valid(update: &Update, current: &str) -> bool {
             .starts_with("https://github.com/azksama/primio/releases/download/")
         && update.url.ends_with(&format!(".{}", extension()))
 }
-#[tauri::command]
-pub async fn update_check(app: tauri::AppHandle) -> Result<Option<Update>, String> {
+async fn latest_update(app: &tauri::AppHandle) -> Result<Option<Update>, String> {
     let manifest =
         crate::network::fetch_json("https://primio-api.azks.fr/api/v1/app-release").await?;
     let platform = if cfg!(target_os = "android") {
@@ -76,6 +81,79 @@ pub async fn update_check(app: tauri::AppHandle) -> Result<Option<Update>, Strin
     } else {
         Ok(None)
     }
+}
+fn artifact_path(directory: &std::path::Path, update: &Update) -> PathBuf {
+    directory.join(format!("primio-{}.{}", update.version, extension()))
+}
+fn remove_cached(directory: &std::path::Path, update: &Update) {
+    if version(&update.version).is_some() {
+        let _ = std::fs::remove_file(artifact_path(directory, update));
+    }
+    let _ = std::fs::remove_file(directory.join("ready.json"));
+}
+fn prune_artifacts(directory: &std::path::Path, keep: Option<&Update>) {
+    let retained = keep.map(|update| artifact_path(directory, update));
+    if let Ok(entries) = std::fs::read_dir(directory) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let known = name
+                .strip_prefix("primio-")
+                .and_then(|name| name.rsplit_once('.'))
+                .is_some_and(|(candidate, ext)| {
+                    version(candidate).is_some() && (ext == extension() || ext == "partial")
+                });
+            if known
+                && retained.as_ref() != Some(&path)
+                && entry.file_type().is_ok_and(|kind| kind.is_file())
+            {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
+}
+async fn cached_ready(directory: &std::path::Path, current: &str, latest: Option<&Update>) -> bool {
+    let bytes = tokio::fs::read(directory.join("ready.json"))
+        .await
+        .unwrap_or_default();
+    let Ok(cached) = serde_json::from_slice::<Update>(&bytes) else {
+        let _ = std::fs::remove_file(directory.join("ready.json"));
+        prune_artifacts(directory, None);
+        return false;
+    };
+    let matches = valid(&cached, current)
+        && latest.is_some_and(|next| {
+            cached.version == next.version
+                && cached.sha256 == next.sha256
+                && cached.size == next.size
+                && cached.url == next.url
+        });
+    if matches
+        && verify(&artifact_path(directory, &cached), &cached)
+            .await
+            .is_ok()
+    {
+        prune_artifacts(directory, Some(&cached));
+        return true;
+    }
+    remove_cached(directory, &cached);
+    prune_artifacts(directory, None);
+    false
+}
+#[tauri::command]
+pub async fn update_check(app: tauri::AppHandle) -> Result<Option<UpdateStatus>, String> {
+    let _guard = DOWNLOAD
+        .try_lock()
+        .map_err(|_| "Update already downloading")?;
+    cleanup(&app);
+    let next = latest_update(&app).await?;
+    let downloaded = cached_ready(
+        &directory(&app)?,
+        &app.package_info().version.to_string(),
+        next.as_ref(),
+    )
+    .await;
+    Ok(next.map(|update| UpdateStatus { update, downloaded }))
 }
 async fn verify(path: &std::path::Path, update: &Update) -> Result<(), String> {
     use tokio::io::AsyncReadExt;
@@ -114,10 +192,17 @@ pub async fn update_download(app: tauri::AppHandle) -> Result<String, String> {
     let _guard = DOWNLOAD
         .try_lock()
         .map_err(|_| "Update already downloading")?;
-    let update = update_check(app.clone())
-        .await?
-        .ok_or("No update available")?;
+    let update = latest_update(&app).await?.ok_or("No update available")?;
     let directory = directory(&app)?;
+    if cached_ready(
+        &directory,
+        &app.package_info().version.to_string(),
+        Some(&update),
+    )
+    .await
+    {
+        return Ok(update.version);
+    }
     let file = directory.join(format!("primio-{}.{}", update.version, extension()));
     let temporary = file.with_extension("partial");
     let client = reqwest::Client::builder()
@@ -205,7 +290,20 @@ pub async fn update_download(app: tauri::AppHandle) -> Result<String, String> {
 }
 #[tauri::command]
 pub async fn update_install(app: tauri::AppHandle) -> Result<(), String> {
+    let _guard = DOWNLOAD
+        .try_lock()
+        .map_err(|_| "Update already downloading")?;
     let directory = directory(&app)?;
+    let latest = latest_update(&app).await?;
+    if !cached_ready(
+        &directory,
+        &app.package_info().version.to_string(),
+        latest.as_ref(),
+    )
+    .await
+    {
+        return Err("Download the latest update first".into());
+    }
     let update: Update = serde_json::from_slice(
         &tokio::fs::read(directory.join("ready.json"))
             .await
@@ -236,28 +334,20 @@ pub async fn update_install(app: tauri::AppHandle) -> Result<(), String> {
     }
     Ok(())
 }
-#[cfg(target_os = "windows")]
 pub fn cleanup(app: &tauri::AppHandle) {
     let Ok(directory) = directory(app) else {
         return;
     };
-    let Ok(bytes) = std::fs::read(directory.join("ready.json")) else {
-        return;
-    };
-    let Ok(update) = serde_json::from_slice::<Update>(&bytes) else {
-        return;
-    };
-    if let (Some(downloaded), Some(installed)) = (
-        version(&update.version),
-        version(&app.package_info().version.to_string()),
-    ) {
-        if downloaded <= installed {
-            let file = directory.join(format!("primio-{}.{}", update.version, extension()));
-            if std::fs::remove_file(file).is_ok() {
-                let _ = std::fs::remove_file(directory.join("ready.json"));
-            }
-        }
+    let cached = std::fs::read(directory.join("ready.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Update>(&bytes).ok());
+    let retained = cached
+        .as_ref()
+        .filter(|update| valid(update, &app.package_info().version.to_string()));
+    if retained.is_none() {
+        let _ = std::fs::remove_file(directory.join("ready.json"));
     }
+    prune_artifacts(&directory, retained);
 }
 #[cfg(test)]
 mod tests {
@@ -313,5 +403,69 @@ mod tests {
         update.size += 1;
         assert!(verify(&path, &update).await.is_err());
         tokio::fs::remove_file(path).await.unwrap();
+    }
+    #[tokio::test]
+    async fn reuses_verified_installers_and_removes_obsolete_or_corrupt_downloads() {
+        let directory = std::env::temp_dir().join(format!(
+            "primio-update-cache-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        tokio::fs::create_dir_all(&directory).await.unwrap();
+        let bytes = vec![42u8; 100_001];
+        let cached = Update {
+            version: "1.0.0".into(),
+            url: format!(
+                "https://github.com/azksama/primio/releases/download/v1.0.0/Primio.{}",
+                extension()
+            ),
+            size: bytes.len() as u64,
+            sha256: format!("{:x}", Sha256::digest(&bytes)),
+        };
+        async fn save(directory: &std::path::Path, update: &Update, bytes: &[u8]) {
+            tokio::fs::write(artifact_path(directory, update), bytes)
+                .await
+                .unwrap();
+            tokio::fs::write(
+                directory.join("ready.json"),
+                serde_json::to_vec(update).unwrap(),
+            )
+            .await
+            .unwrap();
+        }
+        save(&directory, &cached, &bytes).await;
+        assert!(cached_ready(&directory, "0.2.21", Some(&cached)).await);
+        assert!(artifact_path(&directory, &cached).exists());
+        // Installed version caught up: delete even if the release feed still advertises it.
+        assert!(!cached_ready(&directory, "1.0.0", Some(&cached)).await);
+        assert!(!artifact_path(&directory, &cached).exists());
+        save(&directory, &cached, &bytes).await;
+        let latest = Update {
+            version: "1.0.1".into(),
+            ..cached.clone()
+        };
+        assert!(!cached_ready(&directory, "0.2.21", Some(&latest)).await);
+        assert!(!artifact_path(&directory, &cached).exists());
+        save(&directory, &cached, &vec![0u8; bytes.len()]).await;
+        assert!(!cached_ready(&directory, "0.2.21", Some(&cached)).await);
+        tokio::fs::write(directory.join("primio-1.0.0.partial"), b"partial")
+            .await
+            .unwrap();
+        tokio::fs::write(directory.join("unrelated.txt"), b"keep")
+            .await
+            .unwrap();
+        tokio::fs::write(directory.join("ready.json"), b"invalid")
+            .await
+            .unwrap();
+        assert!(!cached_ready(&directory, "0.2.21", Some(&cached)).await);
+        assert!(!directory.join("primio-1.0.0.partial").exists());
+        assert!(directory.join("unrelated.txt").exists());
+        tokio::fs::remove_file(directory.join("unrelated.txt"))
+            .await
+            .unwrap();
+        tokio::fs::remove_dir(directory).await.unwrap();
     }
 }

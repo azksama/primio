@@ -7,41 +7,31 @@ import type { Addon, Meta } from './types'
 export const featuredDuration = 15_000
 
 export function useFeaturedClock(count: number, active: boolean) {
-  const [index, updateIndex] = useState(0)
+  const [{ index, remaining, cycle }, setClock] = useState({ index: 0, remaining: featuredDuration, cycle: 0 })
   const [paused, setPaused] = useState(false)
-  const [interacting, setInteracting] = useState(false)
   const [visible, setVisible] = useState(() => !document.hidden)
-  const [remaining, setRemaining] = useState(featuredDuration)
-  const remainingTime = useRef(featuredDuration)
-  const [cycle, resetCycle] = useState(0)
-  const previous = useRef({ cycle, count })
-  const running = active && visible && !paused && !interacting && count > 1
+  const running = active && visible && !paused && count > 1
   useEffect(() => {
     const visibility = () => setVisible(!document.hidden)
     document.addEventListener('visibilitychange', visibility)
     return () => document.removeEventListener('visibilitychange', visibility)
   }, [])
   useEffect(() => {
-    if (previous.current.cycle !== cycle || previous.current.count !== count)
-      remainingTime.current = featuredDuration
-    previous.current = { cycle, count }
-    setRemaining(remainingTime.current)
     if (!running) return
-    const started = Date.now()
-    const timer = setTimeout(() => {
-      updateIndex(i => (i + 1) % count)
-      resetCycle(c => c + 1)
-    }, remainingTime.current)
-    return () => {
-      clearTimeout(timer)
-      remainingTime.current = Math.max(0, remainingTime.current - (Date.now() - started))
-    }
-  }, [running, count, cycle])
+    let previous = performance.now()
+    const timer = setInterval(() => {
+      const now = performance.now(), elapsed = now - previous
+      previous = now
+      setClock(clock => clock.remaining > elapsed
+        ? { ...clock, remaining: clock.remaining - elapsed }
+        : { index: (clock.index + 1) % count, remaining: featuredDuration, cycle: clock.cycle + 1 })
+    }, 100)
+    return () => clearInterval(timer)
+  }, [running, count])
   const setIndex = (value: number) => {
-    updateIndex(((value % Math.max(1, count)) + count) % Math.max(1, count))
-    resetCycle(c => c + 1)
+    setClock(clock => ({ index: ((value % Math.max(1, count)) + count) % Math.max(1, count), remaining: featuredDuration, cycle: clock.cycle + 1 }))
   }
-  return { index, setIndex, paused, setPaused, setInteracting, remaining, running, cycle }
+  return { index, setIndex, paused, setPaused, remaining, running, cycle }
 }
 
 export function useFeaturedSwipe(index: number, count: number, select: (index: number) => void) {

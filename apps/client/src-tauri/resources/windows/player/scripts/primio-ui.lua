@@ -443,10 +443,15 @@ local function render()
         end
     end
     local has_next=config.nextVideoId and config.nextVideoId~=''
-    local next_available=has_next and (duration-pos<=30 or (segment and segment.kind=='outro'))
-    local fallback=not cancelled_next and has_next and duration>33 and duration-pos>30 and duration-pos<=33 and not segment
+    local has_outro=false
+    for _,s in ipairs(config.skipSegments or {}) do
+        if s.kind=='outro' and s.start>=0 and s['end']>s.start and s['end']<=duration and
+            (not s.episodeLength or s.episodeLength==0 or math.abs(duration-s.episodeLength)<math.max(10,duration*.03)) then has_outro=true end
+    end
+    local next_available=has_next and duration>0 and (duration-pos<=(has_outro and 30 or 60) or (segment and segment.kind=='outro'))
+    local fallback=not has_outro and not cancelled_next and has_next and duration>63 and duration-pos>60 and duration-pos<=63 and not segment
     countdown_key=upcoming and (upcoming.kind..':'..upcoming.start) or fallback and 'next' or ''
-    countdown_elapsed=upcoming and 3-(upcoming.start-pos) or fallback and 33-(duration-pos) or 3
+    countdown_elapsed=upcoming and 3-(upcoming.start-pos) or fallback and 63-(duration-pos) or 3
     local can_show=not buffering and not panel and not pip and not scrub
     local warning=can_show and countdown_key~='' and not segment
     local x,y=width-76,height-180

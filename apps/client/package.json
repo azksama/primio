@@ -1,6 +1,6 @@
 {
   "name": "@primio/client",
-  "version": "0.2.21",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {

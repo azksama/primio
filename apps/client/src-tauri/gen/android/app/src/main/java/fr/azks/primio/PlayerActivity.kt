@@ -19,6 +19,15 @@ import kotlin.math.*
 class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
  override val primioTheme:JSONObject? get()=if(::options.isInitialized)options.optJSONObject("theme") else null
  companion object {private var active:java.lang.ref.WeakReference<PlayerActivity>?=null}
+ class PipReceiver:android.content.BroadcastReceiver(){
+  override fun onReceive(context:Context,intent:android.content.Intent){
+   val player=active?.get()?:return
+   when(intent.action){
+    "fr.azks.primio.PIP_PLAY"->player.command("set","pause","no")
+    "fr.azks.primio.PIP_PAUSE"->player.command("set","pause","yes")
+   }
+  }
+ }
  private external fun nativeCreate(surface:Surface,context:Context,options:String):Long
  private external fun nativeCommand(handle:Long,command:String)
  private external fun nativeState(handle:Long):String
@@ -282,7 +291,11 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   file.bufferedWriter().use{writer->val aliases=store.aliases();while(aliases.hasMoreElements()){val certificate=store.getCertificate(aliases.nextElement())?:continue;writer.write("-----BEGIN CERTIFICATE-----\n");writer.write(Base64.encodeToString(certificate.encoded,Base64.NO_WRAP).chunked(64).joinToString("\n"));writer.write("\n-----END CERTIFICATE-----\n")}};return file.absolutePath
  }
  override fun surfaceCreated(holder:SurfaceHolder){if(handle!=0L)return;try{loaded=false;reportedError=false;openedAt=SystemClock.elapsedRealtime();stalledAt=openedAt;options.put("position",if(position>0)position else options.optDouble("position",0.0));handle=nativeCreate(holder.surface,applicationContext,options.toString());handler.post(timer);showControls()}catch(e:Exception){showError(tr("Le lecteur n’a pas pu démarrer."))}}
- override fun surfaceChanged(holder:SurfaceHolder,format:Int,width:Int,height:Int){}
+ override fun surfaceChanged(holder:SurfaceHolder,format:Int,width:Int,height:Int){
+  // libmpv keeps its old EGL viewport until the embedding app supplies this size.
+  // A PiP window otherwise scales the landscape frame, including its side bars.
+  if(width>0&&height>0)command("set","android-surface-size","${width}x$height")
+ }
  override fun surfaceDestroyed(holder:SurfaceHolder){release()}
  private fun release(){handler.removeCallbacks(timer);if(handle!=0L){emit(isFinishing);val old=handle;handle=0;nativeDestroy(old)}}
  private fun command(vararg args:String){if(handle==0L)return;try{nativeCommand(handle,JSONArray(args.toList()).toString())}catch(e:Exception){feedback("Commande indisponible")}}
@@ -318,11 +331,13 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
    if(!cancelled&&((options.optBoolean("autoSkipIntro")&&kind=="intro")||(options.optBoolean("autoSkipRecap")&&kind=="recap"))){skipped.add(it.optDouble("start"));command("seek",it.optDouble("end").toString(),"absolute")}
   }
   val hasNext=options.optString("nextVideoId").isNotBlank()
-  val nextAvailable=loaded&&hasNext&&duration>0&&((duration-position).coerceAtLeast(0.0)<=30.0||currentSegment?.optString("kind")=="outro")
+  val hasOutro=validSegments.any{it.optString("kind")=="outro"}
+  val nextThreshold=if(hasOutro)30.0 else 60.0
+  val nextAvailable=loaded&&hasNext&&duration>0&&((duration-position).coerceAtLeast(0.0)<=nextThreshold||currentSegment?.optString("kind")=="outro")
   if(nextAvailable)nextEpisodeOffered=true
-  val fallbackCountdown=!cancelledNext&&hasNext&&duration>33&&duration-position>30&&duration-position<=33&&currentSegment==null
+  val fallbackCountdown=!hasOutro&&!cancelledNext&&hasNext&&duration>63&&duration-position>60&&duration-position<=63&&currentSegment==null
   countdownKey=upcoming?.let{it.optString("kind")+":"+it.optDouble("start")}?:if(fallbackCountdown)"next" else ""
-  countdownElapsed=when{upcoming!=null->(3-(upcoming.optDouble("start")-position)).toFloat();fallbackCountdown->(33-(duration-position)).toFloat();else->3f}.coerceIn(0f,3f)
+  countdownElapsed=when{upcoming!=null->(3-(upcoming.optDouble("start")-position)).toFloat();fallbackCountdown->(63-(duration-position)).toFloat();else->3f}.coerceIn(0f,3f)
   val canShow=loaded&&!scrubbing&&!reportedError&&!last.optBoolean("buffering")&&!isInPictureInPictureMode&&sheet==null&&hasWindowFocus()
   skipCountdown.elapsed=countdownElapsed
   val warning=canShow&&countdownKey.isNotEmpty()&&currentSegment==null
@@ -330,7 +345,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   nextEpisodeButton.visibility=if(canShow&&nextAvailable&&!warning)View.VISIBLE else View.GONE
   skipButton.visibility=if(canShow&&!nextAvailable&&currentSegment!=null)View.VISIBLE else View.GONE
   if(isInPictureInPictureMode){overlay.visibility=View.GONE;gestureLabel.visibility=View.GONE}
-  if(Build.VERSION.SDK_INT>=31)setPictureInPictureParams(pipParams())
+  if(Build.VERSION.SDK_INT>=31||isInPictureInPictureMode)setPictureInPictureParams(pipParams())
   pause.symbol=if(last.optBoolean("paused"))"play" else "pause"
   // mpv's disk cache is append-only. Stop disk writes with headroom for packets in flight.
   if(cacheActive&&(last.optLong("cacheBytes")>=cacheLimit*9/10||cacheDir.usableSpace<256_000_000L)){command("set","cache-on-disk","no");cacheActive=false}
@@ -438,7 +453,17 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   fun loadVisibleImages(){thumbnails.forEach{(image,url)->if(image.isShown&&image.getGlobalVisibleRect(android.graphics.Rect()))loadEpisodeImage(image,url)}}
   dialog.scroll.viewTreeObserver.addOnScrollChangedListener{loadVisibleImages()}
   dialog.scroll.viewTreeObserver.addOnGlobalLayoutListener{loadVisibleImages()}
-  dialog.scroll.post{if(restoreScroll!=null)dialog.scroll.scrollTo(0,restoreScroll)else currentRow?.let{dialog.scroll.scrollTo(0,(it.top-(dialog.scroll.height-it.height)/2).coerceAtLeast(0))};loadVisibleImages()}
+  val rowTops={ (0 until dialog.content.childCount).map{dialog.content.getChildAt(it)}.filter{it is LinearLayout&&it.layoutParams.height==dp(88)}.map{it.top} }
+  var touching=false
+  val snap=Runnable{if(!touching&&sheet===dialog){val top=rowTops().minByOrNull{abs(it-dialog.scroll.scrollY)}?:0;dialog.scroll.smoothScrollTo(0,top)}}
+  dialog.scroll.setOnTouchListener{_,event->when(event.actionMasked){MotionEvent.ACTION_DOWN->touching=true;MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL->{touching=false;handler.postDelayed(snap,180)}};false}
+  dialog.scroll.viewTreeObserver.addOnScrollChangedListener{handler.removeCallbacks(snap);if(!touching)handler.postDelayed(snap,180)}
+  dialog.scroll.post{
+   val maxScroll=(dialog.content.height-dialog.scroll.height).coerceAtLeast(0)
+   val finalTop=rowTops().firstOrNull{it>=maxScroll}?:maxScroll
+   dialog.content.setPadding(dialog.content.paddingLeft,dialog.content.paddingTop,dialog.content.paddingRight,dialog.content.paddingBottom+finalTop-maxScroll)
+   dialog.scroll.scrollTo(0,restoreScroll?:currentRow?.top?:0);loadVisibleImages()
+  }
  }
  private fun updateEpisodeRows(){
   val palette=PrimioStyle.palette(this)
@@ -580,6 +605,11 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
  private fun pipParams():android.app.PictureInPictureParams {
   val aspect=last.optDouble("videoAspect",16.0/9.0).takeIf{it.isFinite()&&it>0}?:16.0/9.0
   val builder=android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational((aspect.coerceIn(1.0/2.39,2.39)*10000).roundToInt(),10000))
+  val paused=last.optBoolean("paused")
+  val action=android.content.Intent(this,PipReceiver::class.java).setAction(if(paused)"fr.azks.primio.PIP_PLAY" else "fr.azks.primio.PIP_PAUSE")
+  val pending=android.app.PendingIntent.getBroadcast(this,if(paused)1 else 2,action,android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+  val label=tr(if(paused)"Lecture" else "Pause")
+  builder.setActions(listOf(android.app.RemoteAction(android.graphics.drawable.Icon.createWithResource(this,if(paused)android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause),label,label,pending)))
   if(::surface.isInitialized&&surface.width>0&&surface.height>0){
    val location=IntArray(2);surface.getLocationInWindow(location)
    val w=surface.width;val h=surface.height

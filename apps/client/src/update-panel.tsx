@@ -7,6 +7,7 @@ import { t } from './i18n'
 interface Update {
   version: string
   size: number
+  downloaded: boolean
 }
 export function UpdatePanel({ ready }: { ready: boolean }) {
   const [update, setUpdate] = useState<Update | null>(null),
@@ -19,8 +20,8 @@ export function UpdatePanel({ ready }: { ready: boolean }) {
     try {
       const next = await invoke<Update | null>('update_check')
       setUpdate(next)
-      setDownloaded(false)
-      setProgress(0)
+      setDownloaded(next?.downloaded ?? false)
+      setProgress(next?.downloaded ? 1 : 0)
       setError('')
       if (next || manual) setOpen(true)
     } catch (e) {
@@ -37,7 +38,7 @@ export function UpdatePanel({ ready }: { ready: boolean }) {
   useEffect(() => {
     if (!isTauri()) return
     const stop = listen<{ received: number; total: number }>('update-progress', (e) =>
-      setProgress(e.payload.received / e.payload.total),
+      setProgress(e.payload.total > 0 ? Math.max(0, Math.min(1, e.payload.received / e.payload.total)) : 0),
     )
     return () => {
       void stop.then((fn) => fn())
@@ -64,7 +65,11 @@ export function UpdatePanel({ ready }: { ready: boolean }) {
             ? ''
             : t('Votre application est à jour.')}
       </p>
-      {busy && <progress value={progress} max={1} aria-label={t('Téléchargement')} />}
+      {update && (busy || downloaded) && <div className="update-transfer" role="status">
+        <div className="update-transfer-label"><strong>{t(downloaded ? 'Prête à installer' : 'Téléchargement…')}</strong><span>{Math.round(progress * 100)} %</span></div>
+        <progress value={progress} max={1} aria-label={t('Téléchargement')} />
+        <small>{downloaded ? t('Le fichier a été vérifié. Vous pouvez reprendre l’installation.') : `${Math.round(progress * update.size / 1e6)} / ${Math.ceil(update.size / 1e6)} MB`}</small>
+      </div>}
       {error && <p role="alert">{error}</p>}
       {update && (
         <button
@@ -89,7 +94,7 @@ export function UpdatePanel({ ready }: { ready: boolean }) {
           {busy ? <RefreshCw /> : <Download />}
           {t(
             busy
-              ? 'Téléchargement…'
+              ? downloaded ? 'Installation…' : 'Téléchargement…'
               : downloaded
                 ? 'Installer et redémarrer'
                 : 'Télécharger la mise à jour',

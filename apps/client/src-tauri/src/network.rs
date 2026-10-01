@@ -20,16 +20,17 @@ pub fn public_ip(ip: IpAddr) -> bool {
                 && v.octets()[0] != 0
                 && v.octets()[0] < 240
                 && !(v.octets()[0] == 100 && (64..=127).contains(&v.octets()[1]))
+                && !(v.octets()[0] == 198 && (18..=19).contains(&v.octets()[1]))
+                && !(v.octets()[0..3] == [192, 0, 0])
         }
         IpAddr::V6(v) => v
             .to_ipv4_mapped()
             .map(|v| public_ip(IpAddr::V4(v)))
             .unwrap_or(
-                !v.is_loopback()
-                    && !v.is_unspecified()
-                    && !v.is_multicast()
-                    && (v.segments()[0] & 0xfe00) != 0xfc00
-                    && (v.segments()[0] & 0xffc0) != 0xfe80,
+                (v.segments()[0] & 0xe000) == 0x2000
+                    && !(v.segments()[0] == 0x2001 && v.segments()[1] < 0x0200)
+                    && !(v.segments()[0] == 0x2001 && v.segments()[1] == 0x0db8)
+                    && v.segments()[0] != 0x2002,
             ),
     }
 }
@@ -67,7 +68,7 @@ pub(crate) async fn client_for(url: &Url) -> Result<Client, String> {
         .timeout(Duration::from_secs(20))
         .redirect(reqwest::redirect::Policy::none())
         .resolve_to_addrs(host, &addresses)
-        .user_agent("Primio/0.1.0")
+        .user_agent(concat!("Primio/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|_| "Impossible d’initialiser le réseau".into())
 }
@@ -120,6 +121,25 @@ pub async fn api_request(
         status,
         data: Value::Null,
     };
+    let route = path.split('?').next().unwrap_or(path);
+    let marketplace_query = route == "/marketplace"
+        && method == "GET"
+        && path.len() <= 64
+        && !path.contains('#')
+        && path.split_once('?').map_or(true, |(_, query)| {
+            query
+                .strip_prefix("page=")
+                .is_some_and(|page| page.parse::<u32>().is_ok_and(|n| (1..=10).contains(&n)))
+        });
+    let marketplace_item = method == "GET"
+        && path.strip_prefix("/marketplace/").is_some_and(|id| {
+            !id.is_empty()
+                && id.len() <= 100
+                && id
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-')
+                && !id.contains("..")
+        });
     if ![
         "/auth/signup",
         "/auth/login",
@@ -135,6 +155,8 @@ pub async fn api_request(
         "/app-release",
     ]
     .contains(&path)
+        && !marketplace_query
+        && !marketplace_item
     {
         return Err(err("Route invalide", 400));
     }
@@ -152,7 +174,7 @@ pub async fn api_request(
     if !body.is_null() {
         request = request.json(&body);
     }
-    let response = request
+    let mut response = request
         .send()
         .await
         .map_err(|_| err("Le compte est temporairement inaccessible.", 0))?;
@@ -160,10 +182,19 @@ pub async fn api_request(
     if status == 204 {
         return Ok(Value::Null);
     }
-    let data: Value = response
-        .json()
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
         .await
-        .map_err(|_| err("Réponse serveur invalide", status))?;
+        .map_err(|_| err("Réponse interrompue", status))?
+    {
+        if bytes.len() + chunk.len() > 5_000_000 {
+            return Err(err("Réponse trop volumineuse", status));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let data: Value =
+        serde_json::from_slice(&bytes).map_err(|_| err("Réponse serveur invalide", status))?;
     if status >= 400 {
         let message = data["errors"][0]["message"]
             .as_str()
@@ -189,14 +220,20 @@ mod tests {
             "10.0.0.1",
             "169.254.169.254",
             "100.64.0.1",
+            "198.18.0.1",
+            "192.0.0.1",
             "::1",
             "::ffff:127.0.0.1",
             "fc00::1",
             "fe80::1",
+            "2001:db8::1",
+            "2002:7f00:1::",
+            "64:ff9b::127.0.0.1",
         ] {
             assert!(!public_ip(ip.parse().unwrap()), "{ip}");
         }
         assert!(public_ip("1.1.1.1".parse().unwrap()));
+        assert!(public_ip("2606:4700:4700::1111".parse().unwrap()));
     }
     #[test]
     fn media_protocols_are_bounded() {

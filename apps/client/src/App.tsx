@@ -38,6 +38,8 @@ import { DialogShell } from './dialog-shell'
 import { trailerUrl } from './content'
 import { TrailerPlayer } from './trailer-player'
 import { ViewingHistory } from './history'
+import { CrashConsent } from './crash-consent'
+import { AddonHealthStatus, useAddonHealth } from './addon-health'
 import { SeasonalAnime, seasonOptions, currentSeason } from './seasonal'
 import { Sources } from './sources'
 import { t } from './i18n'
@@ -151,7 +153,7 @@ type Tab =
   | 'options'
   | 'history'
   | 'downloads'
-type Playback = { meta: Meta; videoId: string; stream: Stream; subs: Subtitle[]; url: string; fingerprint?: string }
+type Playback = { meta: Meta; videoId: string; stream: Stream; subs: Subtitle[]; url: string; fingerprint?: string; startedAt: number }
 const message = (e: unknown) =>
   e instanceof Error
     ? e.message
@@ -208,6 +210,7 @@ function Empty({
 export default function App() {
   const [trailer, setTrailer] = useState<{ url: string; name: string } | null>(null)
   const [playbackSyncPaused, setPlaybackSyncPaused] = useState(false)
+  const [crashPending, setCrashPending] = useState(true)
   const [profileGate, setProfileGate] = useState(false)
   const [startupProfile, setStartupProfile] = useState('ask')
   const startupChecked = useRef('')
@@ -268,8 +271,9 @@ export default function App() {
     [error, setError] = useState(''),
     [toast, setToast] = useState(''),
     [query, setQuery] = useState(''),
-    [kind, setKind] = useState('movie')
+    [kind, setKind] = useState('all')
   const animeFilter = tab === 'anime' || kind === 'anime'
+  const addonHealth = useAddonHealth(state.addons, ready && tab === 'addons')
   const [detailLoading, setDetailLoading] = useState(false)
   const [selected, setSelected] = useState<Meta | null>(null),
     [sourceTarget, setSourceTarget] = useState<{ meta: Meta; id: string } | null>(null)
@@ -481,6 +485,9 @@ export default function App() {
           const event = JSON.parse(raw) as NativeProgress
           if ((event.context?.accountId ?? 'local') === (token ? email : 'local'))
             setState((s) => mergeNativeProgress(s, event))
+          const current = currentPlayback.current
+          if (event.closed && current?.videoId === event.context?.videoId && event.updatedAt >= current.startedAt)
+            setPlayback(null)
         }
       } catch (e) {
         fail(e)
@@ -493,7 +500,7 @@ export default function App() {
       if ((e.payload.context?.accountId ?? 'local') === (token ? email : 'local'))
         setState((s) => mergeNativeProgress(s, e.payload))
       if (e.payload.requestedVideoId) episodeRequest.current(e.payload)
-      if (e.payload.closed && currentPlayback.current?.videoId === e.payload.context?.videoId)
+      if (e.payload.closed && currentPlayback.current?.videoId === e.payload.context?.videoId && e.payload.updatedAt >= currentPlayback.current.startedAt)
         setPlayback(null)
     })
     const unlistenError = listen<string>('player-error', (e) => {
@@ -572,6 +579,11 @@ export default function App() {
         setAddOpen(true)
       } else if (link.kind === 'integrations') {
         setTab('integrations')
+      } else if (link.kind === 'plugin') {
+        const profileId = state.activeProfileId
+        void api<{ manifest: unknown }>('/marketplace/' + link.id).then(row => {
+          if (latestState.current.activeProfileId === profileId) setPluginCandidate(pluginSchema.parse(row.manifest))
+        }).catch(fail)
       } else {
         void details({ id: link.id, type: link.type, name: t('Chargement…') })
       }
@@ -912,7 +924,7 @@ export default function App() {
       const remembered = await rememberSource(state.settings, target.meta, target.id, stream)
       if (sequence !== sourceSequence.current) return
       const fingerprint = remembered.sourcePreferences?.find(p => p.contentId === target.meta.type + ':' + target.meta.id && p.videoId === target.id)?.fingerprint
-      const p = { meta: target.meta, videoId: target.id, stream, url, subs, fingerprint }
+      const p = { meta: target.meta, videoId: target.id, stream, url, subs, fingerprint, startedAt: Date.now() }
       setState(s => ({ ...s, settings: { ...s.settings, sourcePreferences: remembered.sourcePreferences } }))
       currentPlayback.current = p
       setPlayback(p)
@@ -1038,6 +1050,7 @@ export default function App() {
         stream: {},
         url: '',
         subs: [],
+        startedAt: Date.now(),
       }
       setPlayback(p)
       await invoke('play_download', {
@@ -1311,16 +1324,21 @@ export default function App() {
         )}
       </h1>
       {library && (
-        <button className="icon" aria-label={t('Sorties')} onClick={() => navigate('calendar')}>
+          <div className="library-header-actions">
+          <button className="icon" aria-label={t('Historique')} title={t('Historique')} onClick={() => navigate('history')}>
+            <History />
+          </button>
+          <button className="icon" aria-label={t('Sorties')} title={t('Sorties')} onClick={() => navigate('calendar')}>
           <CalendarDays />
         </button>
+          </div>
       )}
     </header>
   )
   const navigationTab =
     tab === 'notifications' || tab === 'continue'
       ? 'home'
-      : tab === 'calendar'
+      : tab === 'calendar' || tab === 'history'
         ? 'library'
         : tab === 'anime'
           ? 'explore'
@@ -1367,13 +1385,6 @@ export default function App() {
         className="hero"
         data-category={featured.current?.category}
         {...featuredSwipe}
-        onPointerDownCapture={() => featured.setInteracting(false)}
-        onFocusCapture={(e) => {
-          if (e.target.matches(':focus-visible')) featured.setInteracting(true)
-        }}
-        onBlurCapture={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget)) featured.setInteracting(false)
-        }}
       >
         <MediaImage src={hero?.background ?? hero?.poster ?? '/art/hero.png'} eager />
         <header className="hero-head">
@@ -1447,7 +1458,7 @@ export default function App() {
                       : 'Anime',
                 )}
                 aria-pressed={item === featured.current}
-                onClick={() => { featured.setInteracting(false); featured.setIndex(index) }}
+                onClick={() => featured.setIndex(index)}
               >
                 <span />
               </button>
@@ -1457,16 +1468,12 @@ export default function App() {
               aria-label={t(
                 featured.paused ? 'Reprendre le défilement' : 'Mettre le défilement en pause',
               )}
-              onClick={() => { featured.setInteracting(false); featured.setPaused(!featured.paused) }}
+              onClick={() => featured.setPaused(!featured.paused)}
             >
               <svg key={featured.cycle + ':' + featured.running} className="featured-clock" viewBox="0 0 40 40" aria-hidden="true">
                 <circle className="clock-track" cx="20" cy="20" r="17" />
                 <circle className="clock-time" cx="20" cy="20" r="17" pathLength="1"
-                  style={{ '--remaining': featured.remaining / featuredDuration,
-                    '--clock-duration': `${featured.remaining}ms`,
-                    '--clock-animation': featured.running ? 'featured-countdown' : 'none',
-                    animationDuration: `${featured.remaining}ms`,
-                    animationName: featured.running ? 'featured-countdown' : 'none' } as CSSProperties} />
+                  style={{ strokeDashoffset: 1 - featured.remaining / featuredDuration }} />
               </svg>
               {featured.paused ? <Play size={15} /> : <Pause size={15} />}
             </button>
@@ -1621,6 +1628,7 @@ export default function App() {
             label={t('Type')}
             value={animeFilter ? 'anime' : kind}
             options={[
+              ['all', t('Tous')],
               ['movie', t('Films')],
               ['anime', t('Animes')],
               ['series', t('Séries')],
@@ -2305,6 +2313,7 @@ export default function App() {
             <div className="management-heading">
               {heading(t('Vos addons'))}
               <div className="management-action">
+                <button className="secondary" disabled={addonHealth.busy || !state.addons.some(a => a.enabled)} onClick={addonHealth.refresh}><RefreshCw size={16} />{t('Vérifier les addons')}</button>
                 <button
                   className="primary"
                   onClick={() => {
@@ -2335,6 +2344,7 @@ export default function App() {
                       <div className="grow">
                         <h3>{a?.manifest.name ?? new URL(item.url).hostname}</h3>
                         <small>{a?.manifest.version ?? t('Indisponible')}</small>
+                        <AddonHealthStatus health={addonHealth.health[item.url]} enabled={item.enabled} />
                       </div>
                       <button
                         role="switch"
@@ -2993,7 +3003,8 @@ export default function App() {
         </Dialog>
       )}
       {profilePins.dialog}
-      <UpdatePanel ready={ready && !onboarding && !profileGate} />
+      <CrashConsent ready={ready && !onboarding && !profileGate} token={token} onPending={setCrashPending} />
+      <UpdatePanel ready={ready && !onboarding && !profileGate && !crashPending} />
       {importOpen && (
         <Dialog title={t('Importer une bibliothèque')} onClose={() => setImportOpen(false)}>
           <ImportPanel

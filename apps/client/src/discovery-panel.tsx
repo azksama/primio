@@ -14,6 +14,7 @@ import { matchesCategory } from './preferences'
 import { genreLabel } from './genres'
 import { t, locale } from './i18n'
 import { discoveryService } from './random-discovery'
+import { Choice } from './components'
 import { tmdbToken } from './metadata-provider'
 import { Shuffle, SlidersHorizontal, ChevronDown, ArrowRight, LoaderCircle, Mic } from './icons'
 
@@ -108,13 +109,9 @@ export function DiscoveryControls({
       {numeric('to', 'Année maximum', 1900, 2100)}
       {numeric('rating', 'Note minimale', 0, 10, 0.5)}
       {numeric('minutes', 'Durée maximum (min)', 1, 600)}
-      <label>
-        {t('Pays')}
-        <select
-          value={value.country ?? ''}
-          onChange={(e) => onChange({ ...value, country: e.target.value })}
-        >
-          {[
+      <Choice separateLabel label={t('Pays')} value={value.country ?? ''}
+        onChange={country => onChange({ ...value, country })}
+        options={[
             ['', 'Tous'],
             ['JP', 'Japon'],
             ['KR', 'Corée du Sud'],
@@ -124,13 +121,7 @@ export function DiscoveryControls({
             ['GB', 'Royaume-Uni'],
             ['DE', 'Allemagne'],
             ['ES', 'Espagne'],
-          ].map(([v, l]) => (
-            <option key={v} value={v}>
-              {t(l)}
-            </option>
-          ))}
-        </select>
-      </label>
+          ].map(([v, l]) => [v, t(l)] as [string, string])} />
       <button className="secondary" onClick={() => onChange({})}>
         {t('Réinitialiser')}
       </button>

@@ -18,7 +18,11 @@ object PrimioUpdate {
   require(archive.packageName==activity.packageName)
   val oldSigners=if(Build.VERSION.SDK_INT>=28)current.signingInfo?.apkContentsSigners else current.signatures
   val newSigners=if(Build.VERSION.SDK_INT>=28)archive.signingInfo?.apkContentsSigners else archive.signatures
-  require(!oldSigners.isNullOrEmpty()&&!newSigners.isNullOrEmpty()&&oldSigners.toSet()==newSigners.toSet())
+  require(!oldSigners.isNullOrEmpty()&&!newSigners.isNullOrEmpty())
+  val sameSigner=oldSigners.toSet()==newSigners.toSet()
+  val validRotation=Build.VERSION.SDK_INT>=28&&oldSigners.size==1&&newSigners.size==1&&
+   archive.signingInfo?.signingCertificateHistory?.contains(oldSigners[0])==true
+  require(sameSigner||validRotation)
   require(if(Build.VERSION.SDK_INT>=28)archive.longVersionCode>current.longVersionCode else archive.versionCode>current.versionCode)
   if(!activity.packageManager.canRequestPackageInstalls()){
    activity.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+activity.packageName)))

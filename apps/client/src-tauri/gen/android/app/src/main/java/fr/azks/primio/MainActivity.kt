@@ -42,6 +42,7 @@ class MainActivity:TauriActivity(),PrimioThemeOwner {
   webView.settings.displayZoomControls=false
  }
  override fun onCreate(savedInstanceState:Bundle?){
+  PrimioDiagnostics.install(applicationContext)
   enableEdgeToEdge();super.onCreate(savedInstanceState)
   onBackPressedDispatcher.addCallback(this,object:OnBackPressedCallback(true){
    override fun handleOnBackPressed(){appWebView?.evaluateJavascript("window.dispatchEvent(new Event('primio:back'))",null)}

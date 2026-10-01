@@ -46,12 +46,13 @@ export function installDiagnostics() {
   window.addEventListener('error', (e) => recordDiagnostic('javascript', e.error ?? e.message))
   window.addEventListener('unhandledrejection', (e) => recordDiagnostic('promise', e.reason))
 }
-export async function sendDiagnostics(token: string, detail: string) {
+export async function sendDiagnostics(token: string, detail: string, kind: 'bug' | 'crash' = 'bug') {
   return api<{ id: string }>(
     '/account/diagnostics',
     'POST',
     {
       version,
+      kind,
       platform: /Android/i.test(navigator.userAgent) ? 'android' : 'windows',
       detail: redactDiagnostic(detail),
     },

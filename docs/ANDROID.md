@@ -1,6 +1,6 @@
 # Android
 
-Cible : Android 8.0 (API 26) et versions suivantes. La préversion embarque ARM64 et x86_64. Les tablettes et le paysage utilisent la mise en page responsive ; leur validation visuelle est distincte du test téléphone.
+Cible : Android 8.0 (API 26) et versions suivantes. Primio 1.0 embarque ARM64 et x86_64. Les tablettes et le paysage utilisent la mise en page responsive ; leur validation visuelle est distincte du test téléphone.
 
 ## Architecture de lecture
 
@@ -36,7 +36,11 @@ $env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'
 & "$env:ANDROID_HOME/build-tools/36.1.0/apksigner.bat" sign --ks "$env:USERPROFILE/.android/debug.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android --out primio-preview.apk app-universal-release-unsigned.apk
 ~~~
 
-Ne pas utiliser cette clé de développement pour Google Play ou une distribution de production. Créer et sauvegarder une clé de signature dédiée avant la première version stable ; une application installée avec une autre clé doit être désinstallée avant son remplacement.
+Primio 1.0 utilise une clé de production RSA 4096 dédiée, avec lignée de rotation depuis le certificat des previews. `apksigner` signe avec `--lineage` et `--rotation-min-sdk-version 28` : Android 8 conserve la signature v2 historique, Android 9+ vérifie la nouvelle signature v3. L’installation en place depuis la preview puis l’APK de transition a été vérifiée sur émulateur Android 36.1. Ne pas désinstaller pour mettre à jour.
+
+Certificat stable SHA-256 : `401392126b7b5db9b43054ad8501af6e43b1b57e6982da32daa5b4449f2ab0fa`. Les clés, la lignée et les mots de passe restent hors dépôt. La sauvegarde du mot de passe est protégée par DPAPI ; elle dépend du compte/machine Windows d’origine et ne constitue pas une récupération hors machine validée.
+
+L’ancien installateur des previews ne compare que le certificat final. Le feed lui propose donc `Primio-1.0.0-android-compat.apk`, même code applicatif signé par l’ancienne clé. Primio 1.0 accepte ensuite l’historique de signature Android pour les prochaines versions. Le téléchargement direct recommandé reste `android-universal.apk`, signé avec la lignée. Un build debug ordinaire ne remplace pas une installation passée à la clé stable : utiliser un émulateur de développement distinct ou un build signé par la lignée appropriée, sans effacer des données utilisateur.
 
 Ne jamais ajouter de keystore ni de mot de passe au dépôt. Les règles .gitignore les excluent.
 
@@ -44,7 +48,7 @@ Ne jamais ajouter de keystore ni de mot de passe au dépôt. Les règles .gitign
 
 L’émulateur choisi dans cette session est Primio_Medium_API_36_1. ARTEMIS doit disposer de sa clé fournisseur pour lancer ses tests autonomes. Les observations directes et ADB permettent les diagnostics ; aucune validation sur téléphone physique n’est implicite.
 
-Les APKs de préversion n’intègrent pas de jeton de compte, de configuration d’addon secrète, ni de clé backend.
+Les APK n’intègrent pas de jeton de compte, de configuration d’addon secrète, ni de clé backend.
 
 
 ### Tests instrumentés du lecteur

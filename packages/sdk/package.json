@@ -1,17 +1,20 @@
 {
   "name": "@primio/sdk",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "license": "MIT",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./catalog": {
+      "types": "./dist/catalog.d.ts",
+      "import": "./dist/catalog.js"
     }
   },
   "files": [
-    "dist/index.js",
-    "dist/index.d.ts",
+    "dist",
     "examples",
     "README.md",
     "LICENSE"

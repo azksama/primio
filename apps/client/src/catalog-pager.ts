@@ -26,7 +26,7 @@ export function catalogTargets(
                 /anime|kitsu|anilist|myanimelist/i.test(
                   [addon.manifest.id, addon.manifest.name, c.id, c.name].join(' '),
                 )
-              : c.type === type) &&
+              : type === 'all' || c.type === type) &&
             (choice === 'all' || choice === addon.url + '|' + c.type + '|' + c.id) &&
             (!query || c.extra?.some((e) => e.name === 'search')) &&
             (!genre ||
@@ -39,7 +39,7 @@ export function catalogTargets(
                   e.isRequired && !(e.name === 'search' && query) && !(e.name === 'genre' && genre),
               )),
         )
-        .map((c) => ({ addon, catalog: c, anime })),
+        .map((c) => ({ addon, catalog: c, anime: anime || c.type === 'anime' || /anime|kitsu|anilist|myanimelist/i.test([addon.manifest.id, addon.manifest.name, c.id, c.name].join(' ')) })),
     )
 }
 

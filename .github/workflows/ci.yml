@@ -12,7 +12,7 @@ jobs:
           node-version: '24'
       - run: npm ci && npm run build && npm test
         working-directory: packages/sdk
-      - run: npm ci && npm run build
+      - run: npm ci && npm test
         working-directory: packages/intro-skipper
       - run: npm ci && npm run build && npm test
         working-directory: apps/client

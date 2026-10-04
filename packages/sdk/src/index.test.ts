@@ -10,6 +10,16 @@ const base = {
   permissions: [],
 }
 describe('permissions', () => {
+  it('returns validation errors instead of throwing for malformed URLs', () => {
+    for (const url of ['', 'not a URL', 'https://[invalid', '/relative/path']) {
+      expect(pluginSchema.safeParse({ ...base, icon: url }).success).toBe(false)
+      expect(pluginSchema.safeParse({
+        ...base,
+        permissions: ['addons'],
+        addons: [{ name: 'Broken', manifest: url }],
+      }).success).toBe(false)
+    }
+  })
   it('accepts declarative HTTPS plugin icons and rejects unsafe image URLs', () => {
     expect(pluginSchema.parse({ ...base, icon: 'https://example.org/icon.png' }).icon).toBe('https://example.org/icon.png')
     for (const icon of ['http://example.org/icon.png', 'javascript:alert(1)', 'https://user:secret@example.org/icon.png']) {

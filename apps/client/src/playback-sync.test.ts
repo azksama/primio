@@ -4,6 +4,14 @@ import { createState } from './preferences'
 import type { Progress } from './types'
 
 describe('playback sync', () => {
+  it('applies deletions before limiting history so deleted entries cannot evict live progress', () => {
+    const state = createState()
+    const live: Progress = { id: 'keep', type: 'movie', videoId: 'keep', name: 'Keep', position: 20, duration: 90, updatedAt: 1 }
+    state.progress = [live]
+    const removed = Array.from({ length: 500 }, (_, index) => ({ ...live, id: String(index), videoId: String(index), updatedAt: index + 2 }))
+    const result = mergePlaybackState(state, [{ id: 'main', progress: removed, deletedProgress: removed.map(p => ({ type: p.type, videoId: p.videoId, updatedAt: 1000 })) }])
+    expect(result.progress).toEqual([live])
+  })
   it('receives an episode on another device and preserves newer local positions and settings', () => {
     const state = createState()
     const episode: Progress = {

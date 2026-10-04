@@ -1,23 +1,76 @@
 use serde_json::{json, Value};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{collections::VecDeque, sync::Mutex};
 
-static BUSY: AtomicBool = AtomicBool::new(false);
+#[derive(Default)]
+struct UploadQueue {
+    running: bool,
+    pending: VecDeque<Value>,
+}
+
+impl UploadQueue {
+    fn enqueue(&mut self, event: &Value) -> bool {
+        // Native players include the cumulative watched changes in each event.
+        // Keep the latest snapshot for a playback while preserving other profiles
+        // and episodes when the user switches before an upload completes.
+        if let Some(pending) = self.pending.iter_mut().find(|pending| {
+            let previous = &pending["context"];
+            let next = &event["context"];
+            ["accountId", "profileId", "videoId", "sourceFingerprint"]
+                .iter()
+                .all(|key| previous[key] == next[key])
+                && previous["meta"]["id"] == next["meta"]["id"]
+                && previous["meta"]["type"] == next["meta"]["type"]
+        }) {
+            if event["updatedAt"].as_u64() >= pending["updatedAt"].as_u64() {
+                *pending = event.clone();
+            }
+        } else {
+            self.pending.push_back(event.clone());
+        }
+        let start_worker = !self.running;
+        self.running = true;
+        start_worker
+    }
+
+    fn next(&mut self) -> Option<Value> {
+        let event = self.pending.pop_front();
+        if event.is_none() {
+            self.running = false;
+        }
+        event
+    }
+}
+
+static UPLOADS: Mutex<UploadQueue> = Mutex::new(UploadQueue {
+    running: false,
+    pending: VecDeque::new(),
+});
 
 // Native playback continues while the Android WebView is suspended.
 pub fn publish(app: &tauri::AppHandle, event: &Value) {
-    if (event["duration"].as_f64().unwrap_or(0.0) <= 0.0
+    if event["duration"].as_f64().unwrap_or(0.0) <= 0.0
         && event["watchedChanges"]
             .as_array()
-            .is_none_or(|changes| changes.is_empty()))
-        || BUSY.swap(true, Ordering::SeqCst)
+            .is_none_or(|changes| changes.is_empty())
     {
         return;
     }
+    let start_worker = UPLOADS
+        .lock()
+        .map(|mut queue| queue.enqueue(event))
+        .unwrap_or(false);
+    if !start_worker {
+        return;
+    }
     let app = app.clone();
-    let event = event.clone();
     tauri::async_runtime::spawn(async move {
-        let _ = upload(app, event).await;
-        BUSY.store(false, Ordering::SeqCst);
+        loop {
+            let event = UPLOADS.lock().ok().and_then(|mut queue| queue.next());
+            let Some(event) = event else { break };
+            // Do not retry an uncertain mutation. Newer queued snapshots still
+            // need their own attempt, including the final player-close event.
+            let _ = upload(app.clone(), event).await;
+        }
     });
 }
 
@@ -42,8 +95,8 @@ async fn upload(app: tauri::AppHandle, event: Value) -> Result<(), String> {
         return Ok(());
     }
     crate::network::api_request(
-        "/account/progress".into(),
-        "POST".into(),
+        "/account/progress",
+        "POST",
         json!({"profiles":[{"id":context["profileId"],"progress":progress}]}),
         Some(token.into()),
     )
@@ -143,6 +196,43 @@ mod tests {
     use super::*;
     fn event() -> Value {
         json!({"context":{"profileId":"one","meta":{"id":"series","type":"series","name":"Series"},"videoId":"s3e5"},"position":980,"duration":1000,"updatedAt":20})
+    }
+    #[test]
+    fn queues_final_progress_while_an_upload_is_running() {
+        let mut queue = UploadQueue::default();
+        let mut event = event();
+        assert!(queue.enqueue(&event));
+        assert_eq!(queue.next().unwrap()["position"], 980);
+        event["position"] = json!(990);
+        event["updatedAt"] = json!(21);
+        assert!(!queue.enqueue(&event));
+        event["position"] = json!(1000);
+        event["updatedAt"] = json!(22);
+        event["closed"] = json!(true);
+        event["watchedChanges"] = json!([{"videoId":"s3e5","watched":true,"updatedAt":22}]);
+        assert!(!queue.enqueue(&event));
+        let final_event = queue.next().unwrap();
+        assert_eq!(final_event["position"], 1000);
+        assert_eq!(final_event["watchedChanges"][0]["watched"], true);
+        assert!(queue.next().is_none());
+        assert!(queue.enqueue(&event));
+    }
+    #[test]
+    fn queued_snapshots_stay_separate_by_account_profile_and_episode() {
+        let mut queue = UploadQueue::default();
+        let initial = event();
+        queue.enqueue(&initial);
+        for key in ["accountId", "profileId", "videoId"] {
+            let mut next = initial.clone();
+            next["context"][key] = json!("different");
+            queue.enqueue(&next);
+        }
+        let mut stale = initial.clone();
+        stale["updatedAt"] = json!(19);
+        stale["position"] = json!(100);
+        queue.enqueue(&stale);
+        assert_eq!(queue.pending.len(), 4);
+        assert_eq!(queue.next().unwrap()["position"], 980);
     }
     #[test]
     fn preserves_manual_unmark_at_completed_playhead() {

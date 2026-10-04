@@ -23,6 +23,8 @@ local language_file = io.open(mp.find_config_file('locales/' .. (config.locale o
 if language_file then translations = utils.parse_json(language_file:read('*a')) or {}; language_file:close() end
 local function tr(en, french) return fr and french or translations[french] or en end
 local overlay = mp.create_osd_overlay('ass-events')
+-- Native window dragging otherwise consumes MBTN_LEFT as soon as the seek pointer moves.
+mp.set_property_native('input-builtin-dragging',false)
 overlay.z = 1000
 local width, height, scale = 1280, 720, 1
 local hits, panel, scroll, last_move, loaded, logo_visible = {}, nil, 0, mp.get_time(), false, false
@@ -167,7 +169,13 @@ local function end_scrub(commit)
         if commit then mp.commandv('seek',scrub.target,'absolute+exact')end
         mp.set_property_native('pause',scrub.paused);scrub=nil
     end
+    mp.commandv('script-message-to','primio_preview','hide');preview_visible=false
     press=nil;last_move=mp.get_time()
+end
+local function request_preview(target,vx)
+    preview_target=target;preview_x=vx;preview_visible=true
+    mp.commandv('script-message-to','primio_preview','preview',target,
+        math.max(0,math.min(width*scale-240,vx*scale-120)),math.max(0,(height-156)*scale-135))
 end
 local function hide_episode_images()
     for id in pairs(episode_images)do mp.commandv('overlay-remove',id)end
@@ -213,10 +221,11 @@ local function render_panel(a)
         local ac,sc=0,1
         for _,track in ipairs(mp.get_property_native('track-list',{}))do if track.type=='audio' then ac=ac+1 elseif track.type=='sub' then sc=sc+1 end end
         h=math.min(h,270+math.max(ac,sc)*52)
-    elseif panel=='style' then h=math.min(h,610) end
+    elseif panel=='style' then h=math.min(h,610)
+    elseif panel=='subtitle-delay' then h=math.min(h,330) end
     local y=(height-h)/2
     if neo then relief(a,x,y,w,h,24,false) else rect(a,x,y,w,h,24,'20231F','14',1) end
-    local title=panel=='episodes' and tr('Episodes','Épisodes') or panel=='style' and tr('Subtitle style','Style des sous-titres') or panel=='speed' and tr('Playback speed','Vitesse de lecture') or tr('Audio and subtitles','Audio et sous-titres')
+    local title=panel=='episodes' and tr('Episodes','Épisodes') or panel=='style' and tr('Subtitle style','Style des sous-titres') or panel=='subtitle-delay' and tr('Subtitle delay','Décalage des sous-titres') or panel=='speed' and tr('Playback speed','Vitesse de lecture') or tr('Audio and subtitles','Audio et sous-titres')
     label(a,x+24,y+35,title,26)
     button(a,x+w-66,y+14,44,44,'×',function()panel=nil end)
     local top=y+84
@@ -242,7 +251,17 @@ local function render_panel(a)
         local bottom=y+h-132
         button(a,x+24,bottom,col,44,tr('Embedded style','Style intégré'),function()forced=false;mp.set_property('sub-ass-override','no')end,not forced)
         button(a,x+40+col,bottom,col,44,tr('Primio style','Style Primio'),function()forced=true;mp.set_property('sub-ass-override','force')end,forced)
-        button(a,x+24,bottom+58,w-48,44,tr('Style settings','Réglages du style'),function()open('style')end)
+        button(a,x+24,bottom+58,col,44,tr('Style settings','Réglages du style'),function()open('style')end)
+        button(a,x+40+col,bottom+58,col,44,tr('Subtitle delay','Décalage des sous-titres'),function()open('subtitle-delay')end)
+    elseif panel=='subtitle-delay' then
+        local delay=mp.get_property_number('sub-delay',0)
+        local function adjust(amount) mp.set_property_number('sub-delay',math.max(-60,math.min(60,math.floor((delay+amount)*10+.5)/10))) end
+        label(a,x+w/2,top+28,string.format('%+.1f s',delay),32,5)
+        local bw=(w-60)/2
+        button(a,x+24,top+68,bw,48,'− 0.5 s · '..tr('Earlier','Plus tôt'),function()adjust(-.5)end)
+        button(a,x+36+bw,top+68,bw,48,'+ 0.5 s · '..tr('Later','Plus tard'),function()adjust(.5)end)
+        button(a,x+24,top+130,w-48,44,tr('Reset','Réinitialiser'),function()mp.set_property_number('sub-delay',0)end)
+        label(a,x+w/2,top+204,tr('A positive delay shows subtitles later.','Un décalage positif affiche les sous-titres plus tard.'),16,5)
     elseif panel=='speed' then
         for i,speed in ipairs({0.5,0.75,1,1.25,1.5,1.75,2}) do button(a,x+24+((i-1)%2)*((w-60)/2+12),top+math.floor((i-1)/2)*52,(w-60)/2,44,tostring(speed)..'×',function()mp.set_property_number('speed',speed);panel=nil end,mp.get_property_number('speed',1)==speed) end
     elseif panel=='style' then
@@ -344,11 +363,12 @@ local function unfinished()
     return true
 end
 local function restore_player()
+    mp.set_property_native('input-builtin-dragging',false)
     pip=false;mp.set_property_number('panscan',pip_panscan);mp.set_property_native('ontop',false);mp.set_property_native('fullscreen',true);last_move=mp.get_time()
 end
 local function enter_pip()
     if pip or not unfinished() then return false end
-    pip=true;panel=nil;hide_logo();mp.set_property_native('fullscreen',false)
+    pip=true;panel=nil;hide_logo();mp.set_property_native('input-builtin-dragging',true);mp.set_property_native('fullscreen',false)
     pip_panscan=mp.get_property_number('panscan',0);mp.set_property_number('panscan',0)
     mp.set_property_native('window-minimized',false);mp.set_property_native('ontop',true)
     local aspect=mp.get_property_number('video-out-params/aspect',mp.get_property_number('video-params/aspect',16/9))
@@ -372,7 +392,7 @@ local function render()
     local a=assdraw.ass_new()
     local buffering=not loaded or (not scrub and mp.get_property_native('paused-for-cache',false))
     if panel~='episodes' or season_picker or pip then hide_episode_images()end
-    if preview_visible and (buffering or panel or pip or scrub or (mp.get_time()-last_move>=3 and not mp.get_property_native('pause'))) then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
+    if preview_visible and (buffering or panel or pip or (mp.get_time()-last_move>=3 and not mp.get_property_native('pause'))) then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
     mp.set_property_native('user-data/primio/ui',{loading=buffering,panel=panel or '',material=neo and 'neumorphic' or 'glass',nextOffered=next_offer,fullscreen=mp.get_property_native('fullscreen'),pip=pip,scrubbing=scrub~=nil,seekTarget=scrub and scrub.target or nil})
     if pip then
         hide_logo()
@@ -411,7 +431,7 @@ local function render()
                 rect(a,15+fill,y-9.5,26,26,13,'EAE8D1','C0')
                 rect(a,19+fill,y-5.5,18,18,9,'FFFFFF','00',1)
             end
-            hits[#hits+1]={x=22,y=y-12,w=w+12,h=30,action=function(mx)if duration>0 then mp.commandv('seek',math.max(0,math.min(1,(mx-28)/w))*duration,'absolute+exact')end end}
+            hits[#hits+1]={x=22,y=y-12,w=w+12,h=30,timeline=true,action=function(mx)if duration>0 then mp.commandv('seek',math.max(0,math.min(1,(mx-28)/w))*duration,'absolute+exact')end end}
             if preview_visible then
                 rect(a,preview_x-4,y-2,8,11,4,'FFFFFF','50')
                 local px=math.max(60,math.min(width-60,preview_x))
@@ -482,6 +502,11 @@ end
 mp.add_forced_key_binding('mouse_move','primio-move',function()
  last_move=mp.get_time()
  local mx,my=mp.get_mouse_pos();local vx,vy=mx/scale,my/scale
+ if scrub and scrub.timeline then
+  scrub.target=math.max(0,math.min(1,(vx-28)/(width-56)))*math.max(0,mp.get_property_number('duration',0)-.001)
+  request_preview(scrub.target,math.max(28,math.min(width-28,vx)))
+  render();return
+ end
  if press and not press.hit and loaded and not panel and not pip then
   local dx,dy=vx-press.x,vy-press.y
   if not scrub and mp.get_time()-press.at>=.35 and math.abs(dx)>12 and math.abs(dx)>math.abs(dy)*1.5 then
@@ -489,7 +514,7 @@ mp.add_forced_key_binding('mouse_move','primio-move',function()
   end
   if scrub then
    scrub.target=math.max(0,math.min(math.max(0,mp.get_property_number('duration',0)-.1),math.floor(scrub.start+dx/8+.5)))
-   if preview_visible then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
+   request_preview(scrub.target,math.max(28,math.min(width-28,vx)))
    render();return
   end
  end
@@ -497,8 +522,7 @@ mp.add_forced_key_binding('mouse_move','primio-move',function()
   local duration=mp.get_property_number('duration',0)
   if duration>0 then
    local target=math.max(0,math.min(1,(vx-28)/(width-56)))*duration
-   mp.commandv('script-message-to','primio_preview','preview',target,math.max(0,math.min(width*scale-240,mx-120)),math.max(0,(height-156)*scale-135))
-   preview_target=target;preview_x=vx;preview_visible=true
+   request_preview(target,vx)
   end
  elseif preview_visible then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
 end)
@@ -510,6 +534,10 @@ mp.add_forced_key_binding('MBTN_LEFT','primio-click',function(event)
     end
     if event.event=='down' then
         press={x=mx,y=my,at=mp.get_time(),position=mp.get_property_number('time-pos',0),hit=hit_at()}
+        if press.hit and press.hit.timeline and mp.get_property_number('duration',0)>0 then
+            scrub={timeline=true,target=math.max(0,math.min(1,(mx-28)/(width-56)))*math.max(0,mp.get_property_number('duration',0)-.001),paused=mp.get_property_native('pause')}
+            mp.set_property_native('pause',true);request_preview(scrub.target,mx);render()
+        end
     elseif event.event=='up' then
         if scrub then end_scrub(true)
         elseif double_up then double_up=false;press=nil
@@ -531,7 +559,7 @@ mp.add_forced_key_binding('WHEEL_UP','primio-wheel-up',function()if panel then s
 mp.add_forced_key_binding('WHEEL_DOWN','primio-wheel-down',function()if panel then scroll=scroll+1 else mp.commandv('add','volume',-5)end end)
 mp.add_key_binding('a','primio-tracks',function()open('tracks')end)
 mp.register_script_message('close',function()panel=nil end)
-mp.register_script_message('open',function(name)open(name=='episodes' and 'episodes' or name=='style' and 'style' or name=='speed' and 'speed' or 'tracks')end)
+mp.register_script_message('open',function(name)open(name=='episodes' and 'episodes' or name=='style' and 'style' or name=='subtitle-delay' and 'subtitle-delay' or name=='speed' and 'speed' or 'tracks')end)
 mp.register_script_message('next-offer',function()next_offer=true end)
 mp.register_script_message('inferred-watched',function(raw)for _,change in ipairs(utils.parse_json(raw) or {})do for _,ep in ipairs(config.episodes or {})do if ep.id==change.videoId then ep.watched=true end end end end)
 mp.register_event('start-file',function()loaded=false end)

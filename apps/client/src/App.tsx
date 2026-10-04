@@ -15,7 +15,8 @@ import { defaultSort } from './catalog-sort'
 import { UpdatePanel } from './update-panel'
 import { ImportPanel } from './import-panel'
 import { useAccountSync } from './account-sync'
-import { PluginStore, InstalledPlugins, installPlugin, enableInstalledPlugin, upgradeStorePlugin } from './plugin-store'
+import { PluginStore, InstalledPlugins, installPlugin, enableInstalledPlugin } from './plugin-store'
+import { restoreLocalState } from './restore-state'
 import { PluginConfigurationDialog } from './plugin-configuration-dialog'
 import { defaultWatchOrder, importWatchCollection, watchCollectionId } from './watch-collections'
 import { viewingStatus, progressSignature, statusLabel, StatusChoice } from './library-status'
@@ -34,7 +35,8 @@ import { useAnimeClassification } from './anime-classification'
 import { equivalentSources, rememberSource, previouslyUsedSource, failSavedSource } from './source-preferences'
 import { PasswordField } from './password-field'
 import { CopyTitle, ContentLogo } from './copy-title'
-import { DialogShell } from './dialog-shell'
+import { Dialog, Empty } from './app-ui'
+import { PluginCatalog } from './plugin-catalog'
 import { trailerUrl } from './content'
 import { TrailerPlayer } from './trailer-player'
 import { ViewingHistory } from './history'
@@ -65,7 +67,6 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type ReactNode,
   type CSSProperties,
 } from 'react'
 import {
@@ -113,7 +114,6 @@ import {
   audioPreference,
   createState,
   avatarUrl,
-  normalizeState,
   switchProfile,
   snapshotState,
   durationLabel,
@@ -129,7 +129,7 @@ import {
   mergeNativeProgress,
   type NativeProgress,
 } from './progress'
-import { CatalogFeed, ProgressiveList, Deferred, useDebounced } from './progressive'
+import { CatalogFeed, ProgressiveList, useDebounced } from './progressive'
 import { catalog, inspectAddon, metadata, streams, subtitles, playbackUrl, type StreamResults } from './addons'
 import { api, openLink, readSecure, writeSecure, isAndroid, scrollToTop } from './platform'
 import type { Addon, Meta, Stream, UserState, Subtitle } from './types'
@@ -153,7 +153,7 @@ type Tab =
   | 'options'
   | 'history'
   | 'downloads'
-type Playback = { meta: Meta; videoId: string; stream: Stream; subs: Subtitle[]; url: string; fingerprint?: string; startedAt: number }
+type Playback = { meta: Meta; videoId: string; stream: Stream; subs: Subtitle[]; url: string; fingerprint?: string; startedAt: number; profileId: string; accountId: string }
 const message = (e: unknown) =>
   e instanceof Error
     ? e.message
@@ -161,55 +161,8 @@ const message = (e: unknown) =>
       ? String(e.message)
       : String(e)
 const minutes = durationLabel
-function Dialog({
-  title,
-  children,
-  onClose,
-  error,
-}: {
-  error?: string
-  title: string
-  children: ReactNode
-  onClose: () => void
-}) {
-  return (
-    <DialogShell title={title} onClose={onClose}>
-      <div className="dialog-head">
-        <h2>{title}</h2>
-        <button className="icon" aria-label={t('Fermer')} onClick={onClose}>
-          <X />
-        </button>
-      </div>
-      {error && (
-        <p className="dialog-error" role="alert">
-          {error}
-        </p>
-      )}
-      {children}
-    </DialogShell>
-  )
-}
-function Empty({
-  title,
-  children,
-  action,
-}: {
-  title: string
-  children: ReactNode
-  action?: ReactNode
-}) {
-  return (
-    <div className="empty">
-      <Clapperboard />
-      <h2>{title}</h2>
-      <p>{children}</p>
-      {action}
-    </div>
-  )
-}
 export default function App() {
   const [trailer, setTrailer] = useState<{ url: string; name: string } | null>(null)
-  const [playbackSyncPaused, setPlaybackSyncPaused] = useState(false)
   const [crashPending, setCrashPending] = useState(true)
   const [profileGate, setProfileGate] = useState(false)
   const [startupProfile, setStartupProfile] = useState('ask')
@@ -218,6 +171,8 @@ export default function App() {
   const handledEpisode = useRef('')
   const episodeRequest = useRef<(event: NativeProgress) => void>(() => {})
   const [onboarding, setOnboarding] = useState(false)
+  const [restoreError, setRestoreError] = useState(false)
+  const [restoreAttempt, setRestoreAttempt] = useState(0)
   const [tab, setTab] = useState<Tab>('home'),
     [state, setState] = useState<UserState>(empty),
     [ready, setReady] = useState(false)
@@ -293,7 +248,6 @@ export default function App() {
     [email, setEmail] = useState(''),
     [authBusy, setAuthBusy] = useState(false)
   const [syncVersion, setSyncVersion] = useState(0),
-    [conflict, setConflict] = useState<{ version: number; state: UserState } | null>(null),
     [syncing, setSyncing] = useState(false)
   const [installedPlugins, setPlugins] = useState<PrimioPlugin[]>([]),
     [pluginCandidate, setPluginCandidate] = useState<PrimioPlugin | null>(null),
@@ -318,6 +272,22 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null),
     sourceSequence = useRef(0),
     detailSequence = useRef(0)
+  const playbackScope = JSON.stringify([token ? email : 'local', state.activeProfileId])
+  const previousPlaybackScope = useRef(playbackScope)
+  useLayoutEffect(() => {
+    if (previousPlaybackScope.current === playbackScope) return
+    previousPlaybackScope.current = playbackScope
+    ++sourceSequence.current
+    ++detailSequence.current
+    sourceResume.current = null
+    setPlayback(null)
+    setSourceTarget(null)
+    setSourceLoading(false)
+    setSelected(null)
+    setDetailLoading(false)
+    setCollectionId('')
+    setPluginConfiguration(null)
+  }, [playbackScope])
   const [discoveryFilters, setDiscoveryFilters] = useState<DiscoveryFilters>({})
   const searchQuery = useDebounced(query)
   const [pendingLink, setPendingLink] = useState('')
@@ -334,7 +304,7 @@ export default function App() {
     [state.library, releases.metas],
   )
   const currentPlayback = useRef<Playback | null>(null)
-  usePlaybackSync(state, setState, token, ready && !conflict && !playbackSyncPaused)
+  usePlaybackSync(state, setState, token, ready)
   const profilePins = useProfilePin(token ? email.toLowerCase() : 'local')
   const activeProfile = state.profiles.find((p) => p.id === state.activeProfileId)!
   const profileLocked = !profilePins.isUnlocked(activeProfile)
@@ -346,7 +316,7 @@ export default function App() {
     setState,
     token,
     email,
-    ready && !conflict && !playbackSyncPaused,
+    ready,
     setSyncVersion,
   )
   const importSync = { syncing: accountSync.syncing, pending: !!state.pendingImports?.length }
@@ -358,28 +328,21 @@ export default function App() {
   }
   const fail = (e: unknown) => setError(t(message(e)))
   useEffect(() => {
-    ;(async () => {
-      try {
-        const saved = await readSecure('state'),
-          session = await readSecure('session'),
-          installed = await readSecure('plugins'),
-          onboarded = await readSecure('onboarding')
-        setOnboarding(onboarded !== 'done')
-        if (saved) setState(normalizeState(JSON.parse(saved)))
-        if (session) {
-          const s = JSON.parse(session)
-          setToken(s.token ?? '')
-          setEmail(s.email ?? '')
-          setSyncVersion(s.version ?? 0)
-        }
-        if (installed) setPlugins(JSON.parse(installed).map((p: unknown) => upgradeStorePlugin(pluginSchema.parse(p))))
-      } catch {
-        setError(t('Impossible de restaurer les données locales.'))
-      } finally {
+    let active = true
+    setRestoreError(false)
+    void restoreLocalState().then(saved => {
+      if (active) {
+        setOnboarding(saved.onboarding)
+        if (saved.state) setState(saved.state)
+        setToken(saved.session.token)
+        setEmail(saved.session.email)
+        setSyncVersion(saved.session.version)
+        setPlugins(saved.plugins)
         setReady(true)
       }
-    })()
-  }, [])
+    }).catch(() => { if (active) setRestoreError(true) })
+    return () => { active = false }
+  }, [restoreAttempt])
   const savedPinSignature = useRef('')
   useEffect(() => {
     if (!ready) return
@@ -594,9 +557,10 @@ export default function App() {
   }, [pendingLink, ready, addons, addonsLoading])
   const [castTarget, setCastTarget] = useState<CastTarget | null>(null)
   function saveProgress(p: Playback, position: number, duration: number) {
-    setState((s) => ({
-      ...s,
-      progress: recordProgress(s.progress, p.meta, p.videoId, position, duration),
+    if (p.accountId !== (token ? email : 'local')) return
+    setState(s => mergeNativeProgress(s, {
+      context: { accountId: p.accountId, profileId: p.profileId, meta: p.meta, videoId: p.videoId },
+      position, duration, updatedAt: Date.now(),
     }))
   }
   function toggleWatched(meta: Meta, videoId: string) {
@@ -924,7 +888,10 @@ export default function App() {
       const remembered = await rememberSource(state.settings, target.meta, target.id, stream)
       if (sequence !== sourceSequence.current) return
       const fingerprint = remembered.sourcePreferences?.find(p => p.contentId === target.meta.type + ':' + target.meta.id && p.videoId === target.id)?.fingerprint
-      const p = { meta: target.meta, videoId: target.id, stream, url, subs, fingerprint, startedAt: Date.now() }
+      const options = isTauri() ? await playerOptions(state.settings) : undefined
+      if (sequence !== sourceSequence.current) return
+      const p = { meta: target.meta, videoId: target.id, stream, url, subs, fingerprint,
+        startedAt: Date.now(), profileId: state.activeProfileId, accountId: token ? email : 'local' }
       setState(s => ({ ...s, settings: { ...s.settings, sourcePreferences: remembered.sourcePreferences } }))
       currentPlayback.current = p
       setPlayback(p)
@@ -943,7 +910,7 @@ export default function App() {
           playerExtra: JSON.stringify({
             theme: resolveTheme(plugins, state.settings.oledAccent),
             ...episodeQueue(target.meta, target.id, Date.now(), hideSpoilers, state.progress),
-            ...(await playerOptions(state.settings)),
+            ...options,
             trackPreferences: state.settings.trackPreferences?.find(
               (p) => p.contentId === target.meta.id,
             ),
@@ -985,6 +952,7 @@ export default function App() {
           skipSegments: segments,
           autoSkipIntro: state.settings.autoSkipIntro,
         })
+        if (sequence !== sourceSequence.current) return
         if (state.settings.player === 'external' && isAndroid()) setPlayback(null)
       } else if (state.settings.player === 'external') {
         setPlayback(null)
@@ -1043,7 +1011,10 @@ export default function App() {
     }
   }
   async function playOffline(item: OfflineItem) {
+    const sequence = sourceSequence.current
     try {
+      const options = await playerOptions(state.settings)
+      if (sequence !== sourceSequence.current) return
       const p: Playback = {
         meta: item.meta.meta,
         videoId: item.meta.videoId,
@@ -1051,13 +1022,15 @@ export default function App() {
         url: '',
         subs: [],
         startedAt: Date.now(),
+        profileId: state.activeProfileId,
+        accountId: token ? email : 'local',
       }
       setPlayback(p)
       await invoke('play_download', {
         id: item.id,
         options: {
           theme: resolveTheme(plugins, state.settings.oledAccent),
-          ...(await playerOptions(state.settings)),
+          ...options,
           trackPreferences: state.settings.trackPreferences?.find(
             (p) => p.contentId === item.meta.meta.id,
           ),
@@ -1124,7 +1097,6 @@ export default function App() {
     (VerificationChallenge & { register: boolean }) | null
   >(null)
   async function finishAuthentication(result: Authenticated, address: string, signup: boolean) {
-    setPlaybackSyncPaused(true)
     setToken(result.token)
     setEmail(address)
     setAuthOpen(false)
@@ -1140,7 +1112,6 @@ export default function App() {
     if (signup) setState(next)
     setSyncVersion(0)
     startupChecked.current = ''
-    setPlaybackSyncPaused(false)
     notify(signup ? t('Compte créé') : t('Connexion réussie'))
   }
 
@@ -1828,7 +1799,10 @@ export default function App() {
         <div className="boot-screen" role="status">
           <img src="/brand/primio.png" alt="Primio" />
           <span className="wordmark">PRIMIO</span>
-          <span className="boot-spinner" />
+          {restoreError ? <>
+            <p role="alert">{t('Impossible de restaurer les données locales.')}</p>
+            <button className="secondary" onClick={() => setRestoreAttempt(attempt => attempt + 1)}>{t('Réessayer')}</button>
+          </> : <span className="boot-spinner" />}
         </div>
       )}
       {!online && (
@@ -1846,7 +1820,7 @@ export default function App() {
       )}
       <div
         ref={pageRef}
-        inert={onboarding || profileGate || profileLocked}
+        inert={!ready || onboarding || profileGate || profileLocked}
         className={'page-slide slide-' + slideDirection}
       >
         {visitedPages.current.has(state.activeProfileId + ':home') && homePage}
@@ -3143,47 +3117,6 @@ export default function App() {
           </p>
         </Dialog>
       )}
-      {conflict && (
-        <Dialog title={t('Bibliothèque synchronisée')} onClose={() => setConflict(null)}>
-          <p>
-            {t(
-              'Le compte contient une autre version de votre bibliothèque. Choisissez celle à conserver sur cet appareil.',
-            )}
-          </p>
-          <button
-            className="primary"
-            onClick={() => {
-              startupChecked.current = ''
-              setState(normalizeState(conflict.state))
-              setSyncVersion(conflict.version)
-              setConflict(null)
-              notify(t('Bibliothèque du compte récupérée'))
-            }}
-          >
-            {t('Récupérer celle du compte')}
-          </button>
-          <button
-            className="secondary"
-            onClick={async () => {
-              try {
-                const r = await api<{ version: number }>(
-                  '/account/sync',
-                  'PUT',
-                  { version: conflict.version, state: snapshotState(state) },
-                  token,
-                )
-                setSyncVersion(r.version)
-                setConflict(null)
-                notify(t('Bibliothèque locale synchronisée'))
-              } catch (e) {
-                fail(e)
-              }
-            }}
-          >
-            {t('Remplacer par celle de cet appareil')}
-          </button>
-        </Dialog>
-      )}
       {pluginCandidate && (
         <Dialog
           title={t('Installer ') + pluginCandidate.name}
@@ -3295,59 +3228,5 @@ export default function App() {
         </div>
       )}
     </div>
-  )
-}
-function PluginCatalog(props: {
-  block: { manifest: string; type: string; catalogId: string; title: string }
-  onSelect: (m: Meta) => void
-}) {
-  return (
-    <Deferred>
-      <PluginCatalogContent {...props} />
-    </Deferred>
-  )
-}
-function PluginCatalogContent({
-  block,
-  onSelect,
-}: {
-  block: { manifest: string; type: string; catalogId: string; title: string }
-  onSelect: (m: Meta) => void
-}) {
-  const [items, setItems] = useState<Meta[]>([]),
-    [error, setError] = useState('')
-  useEffect(() => {
-    let active = true
-    inspectAddon(block.manifest)
-      .then((a) => catalog(a, block.type, block.catalogId))
-      .then((v) => {
-        if (active) setItems(v)
-      })
-      .catch(() => {
-        if (active) setError(t('Ce catalogue est indisponible.'))
-      })
-    return () => {
-      active = false
-    }
-  }, [block])
-  return (
-    <section>
-      <h2>{block.title}</h2>
-      {error ? (
-        <p>{error}</p>
-      ) : (
-        <ProgressiveList
-          items={items}
-          className="poster-grid"
-          renderItem={(m) => (
-            <button className="poster" key={m.id} aria-label={m.name} onClick={() => onSelect(m)}>
-              <MediaImage src={m.poster} />
-
-              <strong>{m.name}</strong>
-            </button>
-          )}
-        />
-      )}
-    </section>
   )
 }

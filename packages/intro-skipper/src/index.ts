@@ -32,9 +32,12 @@ export interface SkipSegment {
   episodeLength?: number
 }
 export function validSegments(segments: SkipSegment[]): SkipSegment[] {
-  return segments
+  return (Array.isArray(segments) ? segments : [])
     .filter(
       (s) =>
+        s !== null && typeof s === 'object' &&
+        ['intro', 'outro', 'recap'].includes(s.kind) &&
+        typeof s.label === 'string' && typeof s.provider === 'string' &&
         Number.isFinite(s.start) &&
         Number.isFinite(s.end) &&
         s.start >= 0 &&
@@ -45,6 +48,7 @@ export function validSegments(segments: SkipSegment[]): SkipSegment[] {
     .slice(0, 12)
 }
 export function createIntroSkipper(json: JsonFetcher, providers: SkipProvider[] = []) {
+  let generation = 0
   const cache = new Map<string, { at: number; segments: SkipSegment[] }>()
   const pending = new Map<string, Promise<SkipSegment[]>>()
   const mappings = new Map<string, { at: number; promise: Promise<string | undefined> }>()
@@ -85,7 +89,10 @@ export function createIntroSkipper(json: JsonFetcher, providers: SkipProvider[] 
       const data = await json<{ data: { attributes: { externalSite: string; externalId: string } }[] }>(
         `https://kitsu.io/api/edge/anime/${kitsuId}/mappings`,
       )
-      return data.data.find(m => m.attributes.externalSite === 'myanimelist/anime' && /^\d+$/.test(m.attributes.externalId))?.attributes.externalId
+      const ids = [...new Set(data.data
+        .filter(m => m.attributes.externalSite === 'myanimelist/anime' && /^\d+$/.test(m.attributes.externalId))
+        .map(m => m.attributes.externalId))]
+      return ids.length === 1 ? ids[0] : undefined
     })().catch(() => undefined)
     if (mappings.size >= 200) mappings.clear()
     mappings.set(key, { at: Date.now(), promise })
@@ -96,12 +103,13 @@ export function createIntroSkipper(json: JsonFetcher, providers: SkipProvider[] 
     videoId: string,
     settings: SkipPreferences,
   ): Promise<SkipSegment[]> {
-    const key = JSON.stringify([meta.id, meta.type, meta.name, meta.releaseInfo, meta.malId, meta.idMal,
+    const key = JSON.stringify([meta.id, meta.type, meta.category, meta.name, meta.releaseInfo, meta.malId, meta.idMal,
       meta.videos?.find(v => v.id === videoId), videoId, settings.aniSkip, settings.skipIntro, settings.skipRecaps]),
       cached = cache.get(key)
     if (cached && Date.now() - cached.at < (cached.segments.length ? 600000 : 120000)) return cached.segments
     const running = pending.get(key)
     if (running) return running
+    const requestGeneration = generation
     const request = async () => {
       const video = meta.videos?.find((v) => v.id === videoId),
         parts = videoId.split(':')
@@ -182,20 +190,29 @@ export function createIntroSkipper(json: JsonFetcher, providers: SkipProvider[] 
     const result = (async () => {
       const contributions = await Promise.allSettled([
         request(),
-        ...providers.map((p) => p.resolve(meta, videoId, settings, json)),
+        ...providers.map((p) => Promise.resolve().then(() => p.resolve(meta, videoId, settings, json))),
       ])
       const segments = validSegments(
         contributions
-          .flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+          .flatMap((r) => (r.status === 'fulfilled' ? validSegments(r.value) : []))
           .filter((s) => settings.skipRecaps !== false || s.kind !== 'recap'),
       )
-      if (cache.size > 200) cache.clear()
-      cache.set(key, { at: Date.now(), segments })
+      if (generation === requestGeneration) {
+        if (cache.size >= 200) cache.clear()
+        cache.set(key, { at: Date.now(), segments })
+      }
       return segments
     })()
     pending.set(key, result)
-    try { return await result } finally { pending.delete(key) }
+    try { return await result } finally {
+      if (pending.get(key) === result) pending.delete(key)
+    }
   }
 
-  return { resolve, clearCache: () => { cache.clear(); mappings.clear() } }
+  return { resolve, clearCache: () => {
+    generation += 1
+    cache.clear()
+    mappings.clear()
+    pending.clear()
+  } }
 }

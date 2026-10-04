@@ -79,10 +79,11 @@ export function createCatalogPager(
         target.seen.add(key)
         if (!items.has(key)) items.set(key, target.anime ? { ...meta, category: 'anime' } : meta)
       }
-      target.offset += response.value.length
+      const receivedCount = response.value.receivedCount ?? response.value.length
+      target.offset += receivedCount
       // Stremio defines pages of 100. A repeated page also ends a broken provider's feed.
       if (
-        response.value.length >= 100 &&
+        receivedCount >= 100 &&
         fresh > 0 &&
         target.catalog.extra?.some((e) => e.name === 'skip')
       )

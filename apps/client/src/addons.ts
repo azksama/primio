@@ -1,4 +1,5 @@
 import { correctAnimeDates } from './anime-dates'
+import { parseAddonMeta, parseAddonStream, parseAddonSubtitles, validManifest } from './addon-responses'
 import { isAnime, isAnimation } from './preferences'
 const animeIds = new Set<string>()
 const classify = (meta: Meta): Meta => {
@@ -37,13 +38,7 @@ export async function json<T>(url: string): Promise<T> {
 export async function inspectAddon(input: string): Promise<Addon> {
   const url = manifestUrl(input),
     m = await json<Manifest>(url)
-  if (
-    !m ||
-    typeof m.id !== 'string' ||
-    typeof m.name !== 'string' ||
-    !Array.isArray(m.resources) ||
-    !Array.isArray(m.types)
-  )
+  if (!validManifest(m))
     throw Error(t('Ce lien ne contient pas un manifeste Stremio valide.'))
   return { url, manifest: m, enabled: true }
 }
@@ -91,10 +86,14 @@ export function resourceUrl(
     '.json'
   )
 }
-export async function catalog(a: Addon, type: string, id: string, extra?: Record<string, string>) {
-  const metas = (
-    (await json<{ metas: Meta[] }>(resourceUrl(a, 'catalog', type, id, extra))).metas ?? []
-  ).map(classify)
+export type CatalogPage = Meta[] & { receivedCount?: number }
+export async function catalog(a: Addon, type: string, id: string, extra?: Record<string, string>): Promise<CatalogPage> {
+  const result = await json<{ metas?: unknown }>(resourceUrl(a, 'catalog', type, id, extra))
+  if (!result || !Array.isArray(result.metas)) throw Error('Invalid catalog response')
+  const metas = result.metas.flatMap(value => {
+    const meta = parseAddonMeta(value)
+    return meta ? [classify(meta)] : []
+  })
   const candidates = metas
     .filter(
       (m) =>
@@ -113,14 +112,16 @@ export async function catalog(a: Addon, type: string, id: string, extra?: Record
         const meta = candidates[index++]
         try {
           const result = await json<{ meta: Meta }>(resourceUrl(a, 'meta', meta.type, meta.id))
-          if (result.meta) classify({ ...meta, ...result.meta })
+          const enriched = parseAddonMeta(result.meta, meta)
+          if (enriched) classify({ ...meta, ...enriched })
         } catch {
           /* Keep the provider's category when origin is unavailable. */
         }
       }
     }),
   )
-  return metas.map(classify)
+  // Keep raw provider offsets when malformed entries were discarded.
+  return Object.defineProperty(metas.map(classify), 'receivedCount', { value: result.metas.length })
 }
 async function datedMetadata(meta: Meta): Promise<Meta> {
   meta = classify(meta)
@@ -247,63 +248,8 @@ export async function metadata(
         await Promise.allSettled(
           urls.slice(offset, offset + 4).map(async (url, i) => {
             const r = await json<{ meta: Meta }>(url)
-            if (
-              !r.meta ||
-              typeof r.meta !== 'object' ||
-              Array.isArray(r.meta) ||
-              (r.meta.id && r.meta.id !== meta.id) ||
-              (r.meta.type && r.meta.type !== meta.type)
-            )
-              return
-            const clean = {
-              ...r.meta,
-              id: meta.id,
-              type: meta.type,
-              name: typeof r.meta.name === 'string' ? r.meta.name : meta.name,
-            }
-            for (const field of [
-              'poster',
-              'logo',
-              'background',
-              'description',
-              'releaseInfo',
-              'imdbRating',
-              'runtime',
-              'originalLanguage',
-              'original_language',
-            ] as const)
-              if (typeof clean[field] !== 'string') delete clean[field]
-            for (const field of ['genres', 'cast', 'director'] as const)
-              clean[field] = Array.isArray(clean[field])
-                ? clean[field]!.filter((v) => typeof v === 'string')
-                : []
-            if (Array.isArray(clean.country))
-              clean.country = clean.country.filter((v) => typeof v === 'string')
-            else if (typeof clean.country !== 'string') delete clean.country
-            clean.origin_country = Array.isArray(clean.origin_country)
-              ? clean.origin_country.filter((v) => typeof v === 'string')
-              : undefined
-            clean.production_countries = Array.isArray(clean.production_countries)
-              ? clean.production_countries
-                  .filter((v) => v && typeof v === 'object')
-                  .map((v) => ({
-                    iso_3166_1: typeof v.iso_3166_1 === 'string' ? v.iso_3166_1 : undefined,
-                    name: typeof v.name === 'string' ? v.name : undefined,
-                  }))
-              : undefined
-            clean.videos = Array.isArray(clean.videos)
-              ? clean.videos
-                  .filter((v) => v && typeof v.id === 'string')
-                  .map((v) => ({
-                    ...v,
-                    title:
-                      typeof v.title === 'string'
-                        ? v.title
-                        : typeof v.name === 'string'
-                          ? v.name
-                          : '',
-                  }))
-              : undefined
+            const clean = parseAddonMeta(r?.meta, meta)
+            if (!clean) return
             results[offset + i] = clean
             received = true
             const updated = combine()
@@ -354,7 +300,10 @@ export async function streams(addons: Addon[], type: string, id: string, onUpdat
     try {
       const result = await json<{ streams?: Stream[] }>(resourceUrl(eligible[index], 'stream', type, id))
       if (!Array.isArray(result.streams)) throw Error('Invalid stream response')
-      slot.items = result.streams.filter(s => s && typeof s === 'object').map((s, i) => ({ ...s, addonName: slot.name, addonKey: slot.key, sourceKey: slot.key + ":" + i }))
+      slot.items = result.streams.flatMap((value, i) => {
+        const stream = parseAddonStream(value)
+        return stream ? [{ ...stream, addonName: slot.name, addonKey: slot.key, sourceKey: slot.key + ':' + i }] : []
+      })
     } catch { slot.failed = true }
     finally { slot.pending = false; onUpdate?.(snapshot()) }
   }))
@@ -366,7 +315,7 @@ export async function subtitles(addons: Addon[], type: string, id: string): Prom
       .filter((x) => supports(x, 'subtitles', type, id))
       .map((a) => json<{ subtitles: Subtitle[] }>(resourceUrl(a, 'subtitles', type, id))),
   )
-  return results.flatMap((r) => (r.status === 'fulfilled' ? (r.value.subtitles ?? []) : []))
+  return results.flatMap(r => r.status === 'fulfilled' ? parseAddonSubtitles(r.value?.subtitles) : [])
 }
 export function playbackUrl(stream: Stream): string {
   const raw = stream.url ?? stream.externalUrl

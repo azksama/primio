@@ -15,7 +15,15 @@ const https = z
   .string()
   .url()
   .refine(
-    (v) => new URL(v).protocol === 'https:' && !new URL(v).username && !new URL(v).password,
+    (v) => {
+      // Zod runs refinements even when the preceding URL check failed.
+      try {
+        const url = new URL(v)
+        return url.protocol === 'https:' && !url.username && !url.password
+      } catch {
+        return false
+      }
+    },
     'HTTPS requis',
   )
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/)

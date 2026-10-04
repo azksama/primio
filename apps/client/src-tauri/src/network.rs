@@ -7,6 +7,45 @@ use std::{
 };
 use url::Url;
 
+pub(crate) fn validate_headers(
+    headers: &std::collections::HashMap<String, String>,
+) -> Result<(), String> {
+    if headers.len() > 20
+        || headers.iter().any(|(name, value)| {
+            name.len() > 100
+                || value.len() > 4096
+                || reqwest::header::HeaderName::from_bytes(name.as_bytes()).is_err()
+                || reqwest::header::HeaderValue::from_str(value).is_err()
+        })
+    {
+        return Err("En-têtes invalides".into());
+    }
+    Ok(())
+}
+
+/// Read streamed bodies with the same limit even when Content-Length is absent.
+pub(crate) async fn read_body(
+    mut response: reqwest::Response,
+    limit: usize,
+    interrupted: &str,
+    too_large: &str,
+) -> Result<Vec<u8>, String> {
+    if response
+        .content_length()
+        .is_some_and(|size| size > limit as u64)
+    {
+        return Err(too_large.into());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| interrupted)? {
+        if chunk.len() > limit.saturating_sub(bytes.len()) {
+            return Err(too_large.into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
 pub fn public_ip(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v) => {
@@ -21,7 +60,7 @@ pub fn public_ip(ip: IpAddr) -> bool {
                 && v.octets()[0] < 240
                 && !(v.octets()[0] == 100 && (64..=127).contains(&v.octets()[1]))
                 && !(v.octets()[0] == 198 && (18..=19).contains(&v.octets()[1]))
-                && !(v.octets()[0..3] == [192, 0, 0])
+                && v.octets()[0..3] != [192, 0, 0]
         }
         IpAddr::V6(v) => v
             .to_ipv4_mapped()
@@ -76,7 +115,7 @@ pub async fn fetch_json(raw: &str) -> Result<Value, String> {
     let mut url = Url::parse(raw).map_err(|_| "URL invalide")?;
     for _ in 0..4 {
         let client = client_for(&url).await?;
-        let mut response = client
+        let response = client
             .get(url.clone())
             .send()
             .await
@@ -96,13 +135,13 @@ pub async fn fetch_json(raw: &str) -> Result<Value, String> {
                 response.status().as_u16()
             ));
         }
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(|_| "Réponse interrompue")? {
-            if bytes.len() + chunk.len() > 5_000_000 {
-                return Err("Réponse trop volumineuse".into());
-            }
-            bytes.extend_from_slice(&chunk);
-        }
+        let bytes = read_body(
+            response,
+            5_000_000,
+            "Réponse interrompue",
+            "Réponse trop volumineuse",
+        )
+        .await?;
         return serde_json::from_slice(&bytes).map_err(|_| "Réponse JSON invalide".into());
     }
     Err("Trop de redirections".into())
@@ -113,20 +152,23 @@ pub async fn api_request(
     mut body: Value,
     token: Option<String>,
 ) -> Result<Value, ApiError> {
-    if path == "/auth/signup" || path == "/auth/login" {
-        body["emailVerification"] = Value::Bool(true);
-    }
     let err = |message: &str, status| ApiError {
         message: message.into(),
         status,
         data: Value::Null,
     };
+    if path == "/auth/signup" || path == "/auth/login" {
+        let fields = body
+            .as_object_mut()
+            .ok_or_else(|| err("Données invalides", 400))?;
+        fields.insert("emailVerification".into(), Value::Bool(true));
+    }
     let route = path.split('?').next().unwrap_or(path);
     let marketplace_query = route == "/marketplace"
         && method == "GET"
         && path.len() <= 64
         && !path.contains('#')
-        && path.split_once('?').map_or(true, |(_, query)| {
+        && path.split_once('?').is_none_or(|(_, query)| {
             query
                 .strip_prefix("page=")
                 .is_some_and(|page| page.parse::<u32>().is_ok_and(|n| (1..=10).contains(&n)))
@@ -174,7 +216,7 @@ pub async fn api_request(
     if !body.is_null() {
         request = request.json(&body);
     }
-    let mut response = request
+    let response = request
         .send()
         .await
         .map_err(|_| err("Le compte est temporairement inaccessible.", 0))?;
@@ -182,20 +224,17 @@ pub async fn api_request(
     if status == 204 {
         return Ok(Value::Null);
     }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| err("Réponse interrompue", status))?
-    {
-        if bytes.len() + chunk.len() > 5_000_000 {
-            return Err(err("Réponse trop volumineuse", status));
-        }
-        bytes.extend_from_slice(&chunk);
-    }
+    let bytes = read_body(
+        response,
+        5_000_000,
+        "Réponse interrompue",
+        "Réponse trop volumineuse",
+    )
+    .await
+    .map_err(|message| err(&message, status))?;
     let data: Value =
         serde_json::from_slice(&bytes).map_err(|_| err("Réponse serveur invalide", status))?;
-    if status >= 400 {
+    if !(200..300).contains(&status) {
         let message = data["errors"][0]["message"]
             .as_str()
             .or_else(|| data["message"].as_str())
@@ -212,6 +251,98 @@ pub async fn api_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn validates_header_syntax_for_playback_and_downloads() {
+        use std::collections::HashMap;
+        assert!(validate_headers(&HashMap::from([(
+            "Referer".into(),
+            "https://example.org/".into()
+        )]))
+        .is_ok());
+        for (name, value) in [
+            ("", "value"),
+            ("Bad:Name", "value"),
+            ("Two Words", "value"),
+            ("X-Test", "line\r\nInjected: true"),
+            ("X-Test", "null\0byte"),
+        ] {
+            assert!(validate_headers(&HashMap::from([(name.into(), value.into())])).is_err());
+        }
+        assert!(validate_headers(&HashMap::from([("X-Test".into(), "x".repeat(4097))])).is_err());
+        assert!(
+            validate_headers(&(0..21).map(|i| (format!("x-{i}"), "x".into())).collect()).is_err()
+        );
+    }
+    #[tokio::test]
+    async fn malformed_auth_payloads_return_errors_without_panicking_or_using_network() {
+        for body in [
+            Value::Null,
+            Value::Array(Vec::new()),
+            Value::Bool(false),
+            Value::String("invalid".into()),
+        ] {
+            assert_eq!(
+                api_request("/auth/login", "POST", body, None)
+                    .await
+                    .unwrap_err()
+                    .status,
+                400
+            );
+        }
+    }
+    #[tokio::test]
+    async fn response_limits_cover_fixed_and_chunked_bodies_and_truncation() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        async fn response(raw: &'static [u8]) -> reqwest::Response {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = [0; 2048];
+                let _ = stream.read(&mut request).await;
+                stream.write_all(raw).await.unwrap();
+            });
+            Client::builder()
+                .no_proxy()
+                .build()
+                .unwrap()
+                .get(format!("http://{address}/fixture"))
+                .send()
+                .await
+                .unwrap()
+        }
+        let exact =
+            response(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\ntest")
+                .await;
+        assert_eq!(
+            read_body(exact, 4, "interrupted", "large").await.unwrap(),
+            b"test"
+        );
+        let fixed =
+            response(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\ntests")
+                .await;
+        assert_eq!(
+            read_body(fixed, 4, "interrupted", "large")
+                .await
+                .unwrap_err(),
+            "large"
+        );
+        let chunked = response(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n3\r\nabc\r\n2\r\nde\r\n0\r\n\r\n").await;
+        assert_eq!(
+            read_body(chunked, 4, "interrupted", "large")
+                .await
+                .unwrap_err(),
+            "large"
+        );
+        let truncated =
+            response(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: close\r\n\r\nab").await;
+        assert_eq!(
+            read_body(truncated, 4, "interrupted", "large")
+                .await
+                .unwrap_err(),
+            "interrupted"
+        );
+    }
     #[test]
     fn blocks_private_networks() {
         for ip in [
@@ -312,7 +443,7 @@ pub async fn provider_request(operation: &str, body: Value) -> Result<Value, Str
     } else {
         client.post(url).json(&body)
     };
-    let mut response = request
+    let response = request
         .send()
         .await
         .map_err(|_| "Import provider unavailable")?;
@@ -322,13 +453,13 @@ pub async fn provider_request(operation: &str, body: Value) -> Result<Value, Str
             response.status().as_u16()
         ));
     }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| "Import interrupted")? {
-        if bytes.len() + chunk.len() > 5_000_000 {
-            return Err("Import response too large".into());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
+    let bytes = read_body(
+        response,
+        5_000_000,
+        "Import interrupted",
+        "Import response too large",
+    )
+    .await?;
     serde_json::from_slice(&bytes).map_err(|_| "Invalid import response".into())
 }
 

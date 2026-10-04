@@ -44,10 +44,13 @@ class PrimioSheet(context:Context,title:String,private val lateral:Boolean=false
   super.onStart()
   val manager=context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
   val metrics=context.resources.displayMetrics
-  val bounds=if(android.os.Build.VERSION.SDK_INT>=30)manager.currentWindowMetrics.bounds else Rect(0,0,metrics.widthPixels,metrics.heightPixels)
-  val insets=if(android.os.Build.VERSION.SDK_INT>=30)manager.currentWindowMetrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()) else null
-  val height=(bounds.height()-(insets?.top?:0)-(insets?.bottom?:0)-32.dp).coerceAtLeast(120.dp)
-  val width=min(bounds.width()-(insets?.left?:0)-(insets?.right?:0)-32.dp,if(lateral)380.dp else 800.dp).coerceAtLeast(160.dp)
+  val bounds=if(android.os.Build.VERSION.SDK_INT>=30){
+   val windowMetrics=manager.currentWindowMetrics
+   val insets=windowMetrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+   Rect(windowMetrics.bounds).apply{left+=insets.left;top+=insets.top;right-=insets.right;bottom-=insets.bottom}
+  }else Rect(0,0,metrics.widthPixels,metrics.heightPixels)
+  val height=(bounds.height()-32.dp).coerceAtLeast(120.dp)
+  val width=min(bounds.width()-32.dp,if(lateral)380.dp else 800.dp).coerceAtLeast(160.dp)
   content.measure(View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
   window?.decorView?.setPadding(0,0,0,0)
   window?.setGravity(if(lateral)Gravity.END or Gravity.CENTER_VERTICAL else Gravity.CENTER)
@@ -172,11 +175,6 @@ class PrimioTimeline(context:Context):View(context) {
  override fun onKeyDown(keyCode:Int,event:KeyEvent):Boolean {if(keyCode==KeyEvent.KEYCODE_DPAD_LEFT||keyCode==KeyEvent.KEYCODE_DPAD_RIGHT){fraction+=if(keyCode==KeyEvent.KEYCODE_DPAD_RIGHT).02f else -.02f;onSeek(fraction,true);return true};return super.onKeyDown(keyCode,event)}
  override fun onInitializeAccessibilityNodeInfo(info:AccessibilityNodeInfo){super.onInitializeAccessibilityNodeInfo(info);info.className="android.widget.SeekBar";info.rangeInfo=AccessibilityNodeInfo.RangeInfo.obtain(AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_FLOAT,0f,1f,fraction);info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD);info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD)}
  override fun performAccessibilityAction(action:Int,args:Bundle?):Boolean {if(action==AccessibilityNodeInfo.ACTION_SCROLL_FORWARD||action==AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD){fraction+=(if(action==AccessibilityNodeInfo.ACTION_SCROLL_FORWARD).02f else -.02f);onSeek(fraction,true);return true};return super.performAccessibilityAction(action,args)}
-}
-
-class PrimioSpinner(context:Context):View(context) {
- private val paint=Paint(Paint.ANTI_ALIAS_FLAG).apply{style=Paint.Style.STROKE;strokeWidth=3*resources.displayMetrics.density;strokeCap=Paint.Cap.ROUND}
- override fun onDraw(canvas:Canvas){val inset=8*resources.displayMetrics.density;val bounds=RectF(inset,inset,width-inset,height-inset);paint.color=0x33dad4c5;canvas.drawOval(bounds,paint);paint.color=PrimioStyle.ivory;canvas.drawArc(bounds,(android.os.SystemClock.uptimeMillis()%1200)/1200f*360,95f,false,paint);if(isShown)postInvalidateOnAnimation()}
 }
 
 class PrimioIconButton(context:Context,symbol:String,description:String,action:()->Unit):View(context) {

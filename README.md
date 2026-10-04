@@ -8,7 +8,7 @@ Lecteur multimédia pour Android et Windows : catalogues Stremio, profils, bibli
 - [SDK TypeScript](packages/sdk) · [SDK Rust](packages/native-sdk) · [Intro Skipper](packages/intro-skipper)
 - [Compatibilité Stremio](docs/STREMIO-COMPATIBILITY.md)
 
-Version officielle : [Primio 1.0](docs/RELEASE-1.0.0.md). Le [magasin communautaire](https://primio.azks.fr/plugins) alimente aussi le catalogue intégré à l’application.
+Version officielle : [Primio 1.0.1](docs/RELEASE-1.0.1.md). Le [magasin communautaire](https://primio.azks.fr/plugins) alimente aussi le catalogue intégré à l’application.
 
 ## Développement
 

@@ -1,4 +1,5 @@
 use crate::desktop;
+use crate::desktop_artwork::{prepare_episode_image, prepare_logo};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::os::windows::process::CommandExt;
@@ -14,13 +15,18 @@ use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::windows::named_pipe::ClientOptions;
 
-static PLAYER: Mutex<Option<Arc<Mutex<Child>>>> = Mutex::new(None);
+struct ActivePlayer {
+    child: Arc<Mutex<Child>>,
+    download_id: Option<String>,
+}
+
+static PLAYER: Mutex<Option<ActivePlayer>> = Mutex::new(None);
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 
 pub fn stop() {
     if let Ok(mut current) = PLAYER.lock() {
-        if let Some(child) = current.take() {
-            if let Ok(mut child) = child.lock() {
+        if let Some(player) = current.take() {
+            if let Ok(mut child) = player.child.lock() {
                 let _ = child.kill();
                 let _ = child.wait();
             }
@@ -28,11 +34,52 @@ pub fn stop() {
     }
 }
 
-fn decoded(value: &Value) -> Value {
-    value
-        .as_str()
-        .and_then(|s| serde_json::from_str(s).ok())
-        .unwrap_or_else(|| value.clone())
+pub fn playing_download(id: &str) -> bool {
+    PLAYER.lock().ok().is_some_and(|player| {
+        player.as_ref().is_some_and(|player| {
+            player.download_id.as_deref() == Some(id)
+                && player
+                    .child
+                    .lock()
+                    .ok()
+                    .is_some_and(|mut child| child.try_wait().is_ok_and(|status| status.is_none()))
+        })
+    })
+}
+
+fn decoded(value: &Value) -> Result<Value, String> {
+    let value = match value {
+        Value::String(raw) => serde_json::from_str(raw).map_err(|_| "Invalid player options")?,
+        Value::Null => json!({}),
+        value => value.clone(),
+    };
+    if value.is_object() {
+        Ok(value)
+    } else {
+        Err("Invalid player options".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn player_options_reject_invalid_shapes_without_panicking() {
+        assert_eq!(decoded(&Value::Null).unwrap(), json!({}));
+        assert_eq!(
+            decoded(&json!("{\"locale\":\"en\"}")).unwrap(),
+            json!({"locale":"en"})
+        );
+        for invalid in [
+            json!([]),
+            json!(true),
+            json!(42),
+            json!("[]"),
+            json!("malformed"),
+        ] {
+            assert!(decoded(&invalid).is_err());
+        }
+    }
 }
 
 // mpv's Lua runtime cannot resolve Windows extended-length path prefixes.
@@ -48,8 +95,8 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
     let executable = desktop::resource(app, "mpv/primio-player.exe")?;
     let config_dir = desktop::resource(app, "player")?;
     let url = args["url"].as_str().ok_or("Missing media")?.to_owned();
-    let extra = decoded(&args["playerExtra"]);
-    let context = decoded(&args["progressContext"]);
+    let extra = decoded(&args["playerExtra"])?;
+    let context = decoded(&args["progressContext"])?;
     stop();
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
     let pipe_name = format!(
@@ -178,7 +225,10 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
             return Err(format!("Could not open the player: {e}"));
         }
     };
-    *PLAYER.lock().map_err(|e| e.to_string())? = Some(child.clone());
+    *PLAYER.lock().map_err(|e| e.to_string())? = Some(ActivePlayer {
+        child: child.clone(),
+        download_id: args["downloadId"].as_str().map(str::to_owned),
+    });
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut context = context;
@@ -186,15 +236,17 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
         let mut duration = 0.0;
         let result = run(
             &app,
-            &pipe_name,
-            &url,
-            &args,
+            PlayerConnection {
+                name: &pipe_name,
+                url: &url,
+                args: &args,
+                generation,
+                child: &child,
+                episode_image_dir: &episode_image_dir,
+            },
             &mut context,
-            generation,
-            &child,
             &mut position,
             &mut duration,
-            &episode_image_dir,
         )
         .await;
         if let Ok(mut child) = child.lock() {
@@ -255,18 +307,30 @@ async fn send(
         .map_err(|e| e.to_string())
 }
 
+struct PlayerConnection<'a> {
+    name: &'a str,
+    url: &'a str,
+    args: &'a Value,
+    generation: u64,
+    child: &'a Arc<Mutex<Child>>,
+    episode_image_dir: &'a std::path::Path,
+}
+
 async fn run(
     app: &tauri::AppHandle,
-    name: &str,
-    url: &str,
-    args: &Value,
+    connection: PlayerConnection<'_>,
     context: &mut Value,
-    generation: u64,
-    child: &Arc<Mutex<Child>>,
     position: &mut f64,
     duration: &mut f64,
-    episode_image_dir: &std::path::Path,
 ) -> Result<(), String> {
+    let PlayerConnection {
+        name,
+        url,
+        args,
+        generation,
+        child,
+        episode_image_dir,
+    } = connection;
     let mut connected = None;
     for _ in 0..100 {
         if generation != GENERATION.load(Ordering::SeqCst) {
@@ -319,7 +383,7 @@ async fn run(
     let opened_at = std::time::Instant::now();
     let mut last_advance = opened_at;
     let mut buffering = false;
-    let extra = decoded(&args["playerExtra"]);
+    let extra = decoded(&args["playerExtra"])?;
     let mut image_jobs = tokio::task::JoinSet::new();
     let image_limit = Arc::new(tokio::sync::Semaphore::new(2));
     let mut requested_images = HashSet::new();
@@ -333,7 +397,7 @@ async fn run(
                     "property-change"=>match event["name"].as_str().unwrap_or("") {
                         "time-pos"=>if let Some(v)=event["data"].as_f64(){if v != *position {last_advance=std::time::Instant::now();} *position=v},
                         "duration"=>if let Some(v)=event["data"].as_f64(){*duration=v},
-                        "user-data/primio/request"=>if event["data"]["id"].as_str().is_some(){if event["data"]["completed"]==true && *duration>0.0 {*position=*duration;}publish(app,context,*position,*duration,true,Some(&event["data"]));break},
+                        "user-data/primio/request"=>if event["data"]["id"].as_str().is_some(){if event["data"]["completed"]==true && *duration>0.0 {*position = *duration;}publish(app,context,*position,*duration,true,Some(&event["data"]));break},
                         "user-data/primio/track-preferences"=>if event["data"].is_object(){context["trackPreferences"]=event["data"].clone();publish(app,context,*position,*duration,false,None);},
                         "user-data/primio/watched"=>if event["data"]["videoId"].is_string() && event["data"]["watched"].is_boolean() {
                             let mut change=event["data"].clone();change["updatedAt"]=json!(desktop::now());
@@ -370,7 +434,9 @@ async fn run(
                     },
                     "file-loaded"=>{loaded=true;for sub in args["subtitles"].as_array().into_iter().flatten(){if let Some(url)=sub["url"].as_str(){send(&mut writer,json!(["sub-add",url,"auto",sub["lang"].as_str().unwrap_or(""),sub["lang"].as_str().unwrap_or("")])).await?;}}},
                     "playback-restart"=>{context["playbackReady"]=json!(true);last_advance=std::time::Instant::now();},
-                    "end-file"=>{if event["reason"]=="error" {return Err("This source could not be played. Please choose another source.".into())} if event["reason"]=="eof" && *duration>0.0 {*position=*duration;} if loaded {break}},
+                    "end-file"=>{if event["reason"]=="error" {return Err("This source could not be played. Please choose another source.".into())}
+                        if event["reason"]=="eof" && *duration>0.0 {*position = *duration;}
+                        if loaded {break}},
                     "shutdown"=>break,
                     _=>{}
                 }
@@ -387,155 +453,5 @@ async fn run(
     }
     image_jobs.abort_all();
     while image_jobs.join_next().await.is_some() {}
-    Ok(())
-}
-
-async fn prepare_episode_image(
-    url: &str,
-    directory: &std::path::Path,
-    index: u64,
-    width: u32,
-    height: u32,
-) -> Result<(), String> {
-    let mut url = url::Url::parse(url).map_err(|_| "Invalid artwork")?;
-    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
-        return Err("Invalid artwork".into());
-    }
-    let mut redirects = 0;
-    let mut response = loop {
-        let client = crate::network::client_for(&url).await?;
-        let response = client
-            .get(url.clone())
-            .send()
-            .await
-            .map_err(|_| "Artwork unavailable")?;
-        if !response.status().is_redirection() {
-            break response;
-        }
-        if redirects >= 3 {
-            return Err("Artwork unavailable".into());
-        }
-        let location = response
-            .headers()
-            .get(reqwest::header::LOCATION)
-            .and_then(|v| v.to_str().ok())
-            .ok_or("Invalid artwork")?;
-        url = url.join(location).map_err(|_| "Invalid artwork")?;
-        redirects += 1;
-    };
-    if !response.status().is_success() {
-        return Err("Artwork unavailable".into());
-    }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| "Artwork unavailable")? {
-        if bytes.len() + chunk.len() > 2_000_000 {
-            return Err("Artwork too large".into());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
-        .with_guessed_format()
-        .map_err(|_| "Invalid artwork")?;
-    let mut limits = image::Limits::default();
-    limits.max_image_width = Some(4096);
-    limits.max_image_height = Some(4096);
-    limits.max_alloc = Some(64_000_000);
-    reader.limits(limits);
-    let image = reader
-        .decode()
-        .map_err(|_| "Invalid artwork")?
-        .resize_to_fill(width, height, image::imageops::FilterType::Lanczos3)
-        .to_rgba8();
-    let mut data = Vec::with_capacity((width * height * 4) as usize);
-    for pixel in image.pixels() {
-        let alpha = pixel[3] as f32 / 255.0;
-        data.extend_from_slice(&[
-            (pixel[2] as f32 * alpha) as u8,
-            (pixel[1] as f32 * alpha) as u8,
-            (pixel[0] as f32 * alpha) as u8,
-            pixel[3],
-        ]);
-    }
-    tokio::fs::create_dir_all(directory)
-        .await
-        .map_err(|_| "Artwork cache unavailable")?;
-    tokio::fs::write(
-        directory.join(format!("episode-{index}-{width}-{height}.bgra")),
-        data,
-    )
-    .await
-    .map_err(|_| "Artwork cache unavailable")?;
-    Ok(())
-}
-
-async fn prepare_logo(url: &str, directory: &std::path::Path) -> Result<(), String> {
-    let url = url::Url::parse(url).map_err(|_| "No logo")?;
-    let client = crate::network::client_for(&url).await?;
-    let mut response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|_| "Logo unavailable")?;
-    if !response.status().is_success() {
-        return Err("Logo unavailable".into());
-    }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| "Logo unavailable")? {
-        if bytes.len() + chunk.len() > 4_000_000 {
-            return Err("Logo too large".into());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
-        .with_guessed_format()
-        .map_err(|_| "Invalid logo")?;
-    let mut limits = image::Limits::default();
-    limits.max_image_width = Some(4096);
-    limits.max_image_height = Some(4096);
-    limits.max_alloc = Some(64_000_000);
-    reader.limits(limits);
-    let image = reader.decode().map_err(|_| "Invalid logo")?.to_rgba8();
-    let (mut left, mut top, mut right, mut bottom) = (image.width(), image.height(), 0, 0);
-    for (x, y, pixel) in image.enumerate_pixels() {
-        if pixel[3] > 16 {
-            left = left.min(x);
-            top = top.min(y);
-            right = right.max(x);
-            bottom = bottom.max(y);
-        }
-    }
-    let image = if left <= right && top <= bottom {
-        image::imageops::crop_imm(&image, left, top, right - left + 1, bottom - top + 1).to_image()
-    } else {
-        image
-    };
-    let image = image::DynamicImage::ImageRgba8(image)
-        .resize(640, 256, image::imageops::FilterType::Lanczos3)
-        .to_rgba8();
-    let mut canvas = image::RgbaImage::new(640, 256);
-    image::imageops::overlay(
-        &mut canvas,
-        &image,
-        ((640 - image.width()) / 2) as i64,
-        ((256 - image.height()) / 2) as i64,
-    );
-    std::fs::create_dir_all(directory).map_err(|_| "Logo cache unavailable")?;
-    for frame in 0..12 {
-        let opacity = 0.4 + frame as f32 / 11.0 * 0.6;
-        let mut data = Vec::with_capacity(640 * 256 * 4);
-        for pixel in canvas.pixels() {
-            let alpha = pixel[3] as f32 / 255.0 * opacity;
-            data.extend_from_slice(&[
-                (pixel[2] as f32 * alpha) as u8,
-                (pixel[1] as f32 * alpha) as u8,
-                (pixel[0] as f32 * alpha) as u8,
-                (alpha * 255.0) as u8,
-            ]);
-        }
-        let partial = directory.join(format!("{frame}.partial"));
-        std::fs::write(&partial, data).map_err(|_| "Logo cache unavailable")?;
-        std::fs::rename(partial, directory.join(format!("{frame}.bgra")))
-            .map_err(|_| "Logo cache unavailable")?;
-    }
     Ok(())
 }

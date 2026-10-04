@@ -710,7 +710,7 @@
   "Aidez-nous à comprendre ce problème. Le rapport masque les adresses, liens et identifiants privés. Il sera envoyé uniquement avec votre accord.": "協助我們了解此問題。報告會隱藏私人地址、連結和憑證，僅在你同意後傳送。",
   "Consulter le rapport": "查看報告",
   "Ne pas envoyer": "不傳送",
-  "Plus tard": "稍後",
+  "Plus tard": "延後",
   "Primio a rencontré un problème": "Primio 遇到了問題",
   "Relancez l’interface pour retrouver votre bibliothèque.": "請重新載入以返回媒體庫。",
   "Relancer": "重新載入",
@@ -729,5 +729,9 @@
   "Version originale": "原聲版本",
   "Faire remonter les sources en langue originale et les éditions multilingues.": "優先顯示原聲和多語言來源。",
   "Les débuts de Pixar": "皮克斯早期作品",
-  "Un parcours des premiers longs métrages Pixar, dans leur ordre de sortie.": "按上映順序探索皮克斯早期長篇電影。"
+  "Un parcours des premiers longs métrages Pixar, dans leur ordre de sortie.": "按上映順序探索皮克斯早期長篇電影。",
+  "Décalage des sous-titres": "字幕延遲",
+  "Plus tôt": "提前",
+  "Réinitialiser": "重設",
+  "Un décalage positif affiche les sous-titres plus tard.": "正值會讓字幕更晚顯示。"
 }

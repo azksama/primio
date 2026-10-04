@@ -5,14 +5,14 @@ import { snapshotState } from './preferences'
 import { progressKey } from './progress'
 import type { Progress, UserState } from './types'
 
-export function mergePlayback(local: Progress[], remote: Progress[]) {
+function mergePlayback(local: Progress[], remote: Progress[]) {
   const items = new Map<string, Progress>()
   for (const item of [...local, ...remote]) {
     const key = progressKey(item.type, item.videoId),
       previous = items.get(key)
     if (!previous || item.updatedAt > previous.updatedAt) items.set(key, item)
   }
-  return [...items.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 500)
+  return [...items.values()].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
 export function mergePlaybackState(
@@ -26,7 +26,7 @@ export function mergePlaybackState(
     return {
       ...p,
       deletedProgress,
-      progress: withoutDeleted(mergePlayback(p.progress, other?.progress ?? []), deletedProgress),
+      progress: withoutDeleted(mergePlayback(p.progress, other?.progress ?? []), deletedProgress).slice(0, 500),
     }
   })
   return {

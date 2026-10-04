@@ -203,17 +203,19 @@ pub fn check_notifications(app: &tauri::AppHandle) {
     for entry in config["entries"].as_array().into_iter().flatten() {
         let at = entry["at"].as_u64().unwrap_or(0);
         let id = format!("{}:{}", scope, entry["id"].as_str().unwrap_or(""));
-        if at >= since && at <= time && time - at < 86400000 && !seen.contains(&id) {
-            if app
+        if at >= since
+            && at <= time
+            && time - at < 86400000
+            && !seen.contains(&id)
+            && app
                 .notification()
                 .builder()
                 .title(entry["title"].as_str().unwrap_or("Primio"))
                 .body(entry["body"].as_str().unwrap_or(""))
                 .show()
                 .is_ok()
-            {
-                seen.push(id);
-            }
+        {
+            seen.push(id);
         }
     }
     if seen.len() > 2000 {

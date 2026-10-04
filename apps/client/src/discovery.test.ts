@@ -1,12 +1,15 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   affinity,
   durationMinutes,
+  discoveryPool,
   fuzzyScore,
   matchesDiscovery,
   parseDiscoveryQuery,
 } from './discovery'
 import { createPin, hashPin } from './profile-pin'
+import type { Addon } from './types'
+afterEach(() => vi.unstubAllGlobals())
 const movie = {
   id: 'm',
   type: 'movie',
@@ -20,6 +23,21 @@ const movie = {
   director: ['Director'],
 }
 describe('discovery', () => {
+  it('searches all categories when the visible category is all, including addon-only anime', async () => {
+    const types = ['movie', 'series', 'anime']
+    const addon: Addon = {
+      url: 'https://discovery.invalid/manifest.json', enabled: true,
+      manifest: { id: 'discovery', name: 'Discovery', version: '1', types, resources: ['catalog'],
+        catalogs: types.map(type => ({ type, id: type, extra: [{ name: 'search' }] })) },
+    }
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const type = new URL(url).pathname.split('/')[2]
+      return new Response(JSON.stringify({ metas: [{ id: type + '-result', type, name: 'Result ' + type }] }))
+    }))
+    const result = await discoveryPool([addon], 'result', [], 'all')
+    expect(result.map(meta => meta.type)).toEqual(types)
+    expect(result.find(meta => meta.type === 'anime')).toMatchObject({ id: 'anime-result', category: 'anime' })
+  })
   it('combines natural Japanese 90s SF criteria', () => {
     const parsed = parseDiscoveryQuery('films de SF japonais des années 90')
     expect(parsed.filters).toEqual({

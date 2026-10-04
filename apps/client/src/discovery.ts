@@ -180,7 +180,7 @@ export async function discoveryPool(
   choice = 'all',
   requireSuccess = false,
 ): Promise<Meta[]> {
-  const types = type ? [type] : ['movie', 'series', 'anime']
+  const types = type && type !== 'all' ? [type] : ['movie', 'series', 'anime']
   const targets = types.flatMap((kind) =>
     catalogTargets(addons, kind, choice, query, kind === 'anime', '').slice(0, 2),
   )

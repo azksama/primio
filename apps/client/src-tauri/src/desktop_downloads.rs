@@ -47,6 +47,9 @@ fn update(app: &tauri::AppHandle, id: &str, status: &str, bytes: u64, total: u64
             item["status"] = json!(status);
             item["bytes"] = json!(bytes);
             item["total"] = json!(total);
+            if status == "complete" && item["completedAt"].as_u64().unwrap_or(0) == 0 {
+                item["completedAt"] = json!(desktop::now());
+            }
             let _ = save(app, &items);
         }
     }
@@ -65,6 +68,11 @@ pub fn recover(app: &tauri::AppHandle) {
                     .unwrap_or(false)
             {
                 item["status"] = json!("missing");
+            }
+            // Older Windows records did not retain completion time. Start their
+            // retention window once instead of expiring a newly finished file.
+            if item["status"] == "complete" && item["completedAt"].as_u64().unwrap_or(0) == 0 {
+                item["completedAt"] = json!(desktop::now());
             }
         }
         let _ = save(app, &items);
@@ -90,15 +98,15 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
     let id = format!("{}-{}", desktop::now(), IDS.fetch_add(1, Ordering::Relaxed));
     let destination = path(app, &id)?;
     let cancel = Arc::new(AtomicBool::new(false));
-    JOBS.lock()
-        .map_err(|e| e.to_string())?
-        .insert(id.clone(), cancel.clone());
     {
         let _lock = LOCK.lock().map_err(|e| e.to_string())?;
         let mut items = records(app);
         items.push(json!({"id":id,"title":args["title"],"status":"queued","bytes":0,"total":0,"createdAt":desktop::now(),"meta":meta}));
         save(app, &items)?;
     }
+    JOBS.lock()
+        .map_err(|e| e.to_string())?
+        .insert(id.clone(), cancel.clone());
     let handle = app.clone();
     let job_id = id.clone();
     tauri::async_runtime::spawn(async move {
@@ -246,15 +254,27 @@ pub fn list(app: &tauri::AppHandle) -> Result<Value, String> {
                     p["videoId"] == item["meta"]["videoId"]
                         && p["type"] == item["meta"]["meta"]["type"]
                 });
-            if !watched
-                && desktop::now().saturating_sub(item["createdAt"].as_u64().unwrap_or(u64::MAX))
-                    >= days.saturating_mul(86_400_000)
-            {
+            if should_expire(
+                &item,
+                days,
+                watched,
+                crate::desktop_player::playing_download(item["id"].as_str().unwrap_or("")),
+                desktop::now(),
+            ) {
                 let _ = remove(app, item["id"].as_str().unwrap_or(""));
             }
         }
     }
     Ok(json!({"items":records(app)}))
+}
+fn should_expire(item: &Value, days: u64, watched: bool, playing: bool, now: u64) -> bool {
+    let completed = item["completedAt"].as_u64().unwrap_or(0);
+    item["status"] == "complete"
+        && completed > 0
+        && (1..=365).contains(&days)
+        && !watched
+        && !playing
+        && now.saturating_sub(completed) >= days * 86_400_000
 }
 pub fn remove_watched(app: &tauri::AppHandle, context: &Value) {
     for item in records(app) {
@@ -283,6 +303,7 @@ pub fn play(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
     options["progressContext"] = options["context"].clone();
     options["url"] = json!(file.to_string_lossy());
     options["title"] = item["title"].clone();
+    options["downloadId"] = json!(id);
     crate::desktop_player::start(app, options)
 }
 
@@ -295,5 +316,31 @@ mod tests {
             assert!(!valid_id(bad));
         }
         assert!(valid_id("172222222-3"));
+    }
+    #[test]
+    fn retention_starts_at_completion_and_preserves_playing_or_watched_files() {
+        let day = 86_400_000;
+        let item = json!({"status":"complete","createdAt":1,"completedAt":day * 3});
+        assert!(!should_expire(&item, 1, false, false, day * 3 + 1));
+        assert!(should_expire(&item, 1, false, false, day * 4));
+        assert!(!should_expire(&item, 1, false, true, day * 4));
+        assert!(!should_expire(&item, 1, true, false, day * 4));
+        assert!(!should_expire(&item, 0, false, false, day * 4));
+        assert!(!should_expire(&item, u64::MAX, false, false, u64::MAX));
+        assert!(!should_expire(&item, 1, false, false, day * 2));
+        assert!(!should_expire(
+            &json!({"status":"complete"}),
+            1,
+            false,
+            false,
+            day * 4
+        ));
+        assert!(!should_expire(
+            &json!({"status":"downloading","completedAt":1}),
+            1,
+            false,
+            false,
+            day * 4
+        ));
     }
 }

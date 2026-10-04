@@ -2,6 +2,8 @@ mod casting;
 #[cfg(target_os = "windows")]
 mod desktop;
 #[cfg(target_os = "windows")]
+mod desktop_artwork;
+#[cfg(target_os = "windows")]
 mod desktop_downloads;
 #[cfg(target_os = "windows")]
 mod desktop_player;
@@ -160,7 +162,7 @@ async fn native_auth(app: tauri::AppHandle, register: bool) -> Result<Value, Str
         } else {
             "/auth/login"
         };
-        match network::api_request(path.into(), "POST".into(), input.clone(), None).await {
+        match network::api_request(path, "POST", input.clone(), None).await {
             Ok(mut result) => {
                 mobile_call(&app, "authComplete", json!({"success": true}))?;
                 result["email"] = input["email"].clone();
@@ -251,6 +253,8 @@ pub struct Subtitle {
     pub lang: String,
 }
 #[tauri::command]
+// Preserve the existing named IPC arguments used by released clients.
+#[allow(clippy::too_many_arguments)]
 async fn play_media(
     app: tauri::AppHandle,
     url: String,
@@ -287,13 +291,7 @@ async fn play_media(
         headers,
     } = request;
     network::validate_media(&url)?;
-    if headers.len() > 20
-        || headers.iter().any(|(k, v)| {
-            k.len() > 100 || v.len() > 4096 || k.contains(['\r', '\n']) || v.contains(['\r', '\n'])
-        })
-    {
-        return Err("En-têtes invalides".into());
-    }
+    network::validate_headers(&headers)?;
     for s in &subtitles {
         network::validate_media(&s.url)?;
     }
@@ -335,13 +333,7 @@ async fn download_start(
     wifi_only: bool,
 ) -> Result<Value, String> {
     network::validate_media(&url)?;
-    if headers.len() > 20
-        || headers.iter().any(|(k, v)| {
-            k.len() > 100 || v.len() > 4096 || k.contains(['\r', '\n']) || v.contains(['\r', '\n'])
-        })
-    {
-        return Err("En-têtes invalides".into());
-    }
+    network::validate_headers(&headers)?;
     mobile_call(
         &app,
         "downloadStart",

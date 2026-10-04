@@ -154,6 +154,13 @@ pub extern "system" fn Java_fr_azks_primio_PlayerActivity_nativeCreate(
                 "sub-visibility",
                 o["showSubtitles"].as_bool().unwrap_or(true),
             )?;
+            m.set_option(
+                "sub-delay",
+                o["subtitleDelay"]
+                    .as_f64()
+                    .unwrap_or(0.0)
+                    .clamp(-60.0, 60.0),
+            )?;
             if let Some(path) = o["caFile"].as_str() {
                 m.set_option("tls-ca-file", path)?;
             }

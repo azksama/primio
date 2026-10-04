@@ -710,7 +710,7 @@
   "Aidez-nous à comprendre ce problème. Le rapport masque les adresses, liens et identifiants privés. Il sera envoyé uniquement avec votre accord.": "Ayúdanos a entender el problema. El informe oculta direcciones, enlaces y credenciales privados. Solo se enviará con tu consentimiento.",
   "Consulter le rapport": "Ver informe",
   "Ne pas envoyer": "No enviar",
-  "Plus tard": "Más tarde",
+  "Plus tard": "Después",
   "Primio a rencontré un problème": "Primio encontró un problema",
   "Relancez l’interface pour retrouver votre bibliothèque.": "Recarga la interfaz para volver a tu biblioteca.",
   "Relancer": "Recargar",
@@ -729,5 +729,9 @@
   "Version originale": "Versión original",
   "Faire remonter les sources en langue originale et les éditions multilingues.": "Priorizar fuentes en idioma original y ediciones multilingües.",
   "Les débuts de Pixar": "Los inicios de Pixar",
-  "Un parcours des premiers longs métrages Pixar, dans leur ordre de sortie.": "Descubre los primeros largometrajes de Pixar por orden de estreno."
+  "Un parcours des premiers longs métrages Pixar, dans leur ordre de sortie.": "Descubre los primeros largometrajes de Pixar por orden de estreno.",
+  "Décalage des sous-titres": "Desfase de subtítulos",
+  "Plus tôt": "Antes",
+  "Réinitialiser": "Restablecer",
+  "Un décalage positif affiche les sous-titres plus tard.": "Un valor positivo muestra los subtítulos más tarde."
 }

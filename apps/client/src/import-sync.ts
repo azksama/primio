@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { api, writeSecure } from './platform'
+import { api } from './platform'
 import { snapshotState } from './preferences'
 import type { UserState } from './types'
 
@@ -50,62 +49,4 @@ export async function uploadImport(local: UserState, batch: PendingImport, token
     }
   }
   throw Error('Import synchronization conflict')
-}
-
-export function useImportSync(
-  state: UserState,
-  setState: Dispatch<SetStateAction<UserState>>,
-  token: string,
-  account: string,
-  ready: boolean,
-  setVersion: Dispatch<SetStateAction<number>>,
-) {
-  const current = useRef(state)
-  current.current = state
-  const flight = useRef<Promise<void> | null>(null)
-  const [syncing, setSyncing] = useState(false)
-  const owner = account.trim().toLowerCase()
-  const queueKey = (state.pendingImports ?? []).filter(batch => batch.account === owner).map(batch => batch.id).join(',')
-  useEffect(() => {
-    if (!ready || !token || !owner || !queueKey) return
-    let active = true
-    const synchronize = async () => {
-      if (flight.current) await flight.current
-      if (!active || flight.current || !navigator.onLine) return
-      const batch = current.current.pendingImports?.find(item => item.account === owner)
-      if (!batch) return
-      setSyncing(true)
-      const task = (async () => {
-        try {
-          // Persist the queue before networking so a restart can retry safely.
-          await writeSecure('state', JSON.stringify(snapshotState(current.current)))
-          const result = await uploadImport(current.current, batch, token)
-          if (!active) return
-          setState(s => ({ ...s, pendingImports: s.pendingImports?.filter(item => item.id !== batch.id) }))
-          // A newer remote library still requires the existing conflict resolution
-          // before a later full-state upload can replace it.
-          setVersion(version => version === result.previousVersion ? result.version : version)
-        } catch {
-          // Keep the import locally and retry on reconnect, focus or the timer.
-        } finally {
-          if (active) setSyncing(false)
-        }
-      })()
-      flight.current = task
-      await task
-      if (flight.current === task) flight.current = null
-    }
-    void synchronize()
-    const timer = window.setInterval(synchronize, 30000)
-    window.addEventListener('online', synchronize)
-    window.addEventListener('focus', synchronize)
-    return () => {
-      active = false
-      setSyncing(false)
-      window.clearInterval(timer)
-      window.removeEventListener('online', synchronize)
-      window.removeEventListener('focus', synchronize)
-    }
-  }, [token, owner, ready, queueKey, setState, setVersion])
-  return { syncing, pending: !!queueKey }
 }

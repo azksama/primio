@@ -64,9 +64,10 @@ export function needsCollectionMetadata(rules?: CollectionRules) {
   )
 }
 export function numericValue(meta: Meta, field: string): number | undefined {
+  const rating = meta.rating ?? meta.imdbRating
   const value =
     field === 'rating'
-      ? Number(meta.rating ?? meta.imdbRating)
+      ? rating === undefined || typeof rating === 'string' && !rating.trim() ? NaN : Number(rating)
       : field === 'year'
         ? Number(meta.releaseInfo?.match(/\b\d{4}\b/)?.[0])
         : durationMinutes(meta.runtime)

@@ -710,7 +710,7 @@
   "Aidez-nous à comprendre ce problème. Le rapport masque les adresses, liens et identifiants privés. Il sera envoyé uniquement avec votre accord.": "問題の調査にご協力ください。レポートでは個人のアドレス、リンク、認証情報を隠します。同意した場合のみ送信されます。",
   "Consulter le rapport": "レポートを確認",
   "Ne pas envoyer": "送信しない",
-  "Plus tard": "後で",
+  "Plus tard": "遅らせる",
   "Primio a rencontré un problème": "Primioで問題が発生しました",
   "Relancez l’interface pour retrouver votre bibliothèque.": "再読み込みしてライブラリに戻ってください。",
   "Relancer": "再読み込み",
@@ -729,5 +729,9 @@
   "Version originale": "オリジナル音声",
   "Faire remonter les sources en langue originale et les éditions multilingues.": "原語および多言語ソースを優先します。",
   "Les débuts de Pixar": "初期のピクサー",
-  "Un parcours des premiers longs métrages Pixar, dans leur ordre de sortie.": "ピクサー初期の長編作品を公開順に楽しめます。"
+  "Un parcours des premiers longs métrages Pixar, dans leur ordre de sortie.": "ピクサー初期の長編作品を公開順に楽しめます。",
+  "Décalage des sous-titres": "字幕のタイミング",
+  "Plus tôt": "早める",
+  "Réinitialiser": "リセット",
+  "Un décalage positif affiche les sous-titres plus tard.": "正の値を設定すると字幕が遅く表示されます。"
 }

@@ -44,17 +44,17 @@ fn client() -> Result<reqwest::Client, String> {
         .build()
         .map_err(|e| e.to_string())
 }
-async fn bounded(mut r: reqwest::Response) -> Result<String, String> {
+async fn bounded(r: reqwest::Response) -> Result<String, String> {
     if !r.status().is_success() {
         return Err("TV rejected the command".into());
     }
-    let mut data = Vec::new();
-    while let Some(chunk) = r.chunk().await.map_err(|_| "TV response interrupted")? {
-        if data.len() + chunk.len() > 262144 {
-            return Err("TV response too large".into());
-        }
-        data.extend_from_slice(&chunk);
-    }
+    let data = crate::network::read_body(
+        r,
+        262144,
+        "TV response interrupted",
+        "TV response too large",
+    )
+    .await?;
     String::from_utf8(data).map_err(|_| "Invalid TV response".into())
 }
 async fn describe(raw: String, peer: IpAddr) -> Result<Device, String> {

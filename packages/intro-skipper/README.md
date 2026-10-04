@@ -14,6 +14,9 @@ const segments = await skipper.resolve(media, videoId, {skipIntro:true,aniSkip:t
 - AniSkip : identifiants MyAnimeList directs, correspondances Kitsu/AniList → MyAnimeList. Pour les animes de première saison sans identifiant, seul un titre canonique ou alias documenté exact et unique est accepté, avec l’année si connue. Les titres approximatifs/ambigus et l’application aveugle de cette correspondance à une saison suivante sont refusés.
 - Un fournisseur communautaire peut implémenter `SkipProvider` et être enregistré avec `createIntroSkipper(fetchJson, providers)` lors de la compilation.
 - Cache en mémoire de dix minutes pour les correspondances/segments positifs, deux minutes pour les segments absents ; lectures concurrentes identiques partagées. Erreurs de fournisseur isolées, repli IntroDB pour les titres IMDb lorsque AniSkip est vide ou indisponible, segments invalides rejetés.
+- Les erreurs synchrones et résultats malformés d’un fournisseur ne suppriment pas les résultats des autres. `clearCache()` détache les requêtes en cours : elles peuvent terminer pour leurs appelants, mais ne repeuplent pas le nouveau cache. Une classification anime ajoutée au titre déclenche une nouvelle résolution ; les correspondances MAL contradictoires sont refusées.
+
+Vérification locale : `npm test` compile le package et exécute les régressions avec le runner Node, sans accès fournisseur réel.
 
 Ce plugin ne porte pas le logiciel Jellyfin Intro Skipper et ne réalise pas encore d’analyse acoustique des fichiers. Sans repères fournis, aucun intervalle n’est inventé. Les montages peuvent différer ; le lecteur contrôle la durée AniSkip et permet de désactiver le saut automatique ou d’annuler son compteur de trois secondes pour la session.
 

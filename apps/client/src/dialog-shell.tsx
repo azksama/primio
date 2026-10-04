@@ -82,7 +82,10 @@ export function DialogShell({
       open={isDesktop() || undefined}
       aria-label={title}
       aria-modal="true"
-      onCancel={onClose}
+      onCancel={(event) => {
+        event.preventDefault()
+        onClose()
+      }}
       onClick={(event) => {
         if (!isDesktop() && event.target === event.currentTarget) onClose()
       }}

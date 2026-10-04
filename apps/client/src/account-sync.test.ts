@@ -3,6 +3,16 @@ import { mergeAccount, mergeValue, synchronizeAccount } from './account-sync'
 import { createState, snapshotState } from './preferences'
 
 describe('automatic account synchronization', () => {
+  it('keeps source choices separate when different content uses the same video id', () => {
+    const preference = { videoId: '1', provider: 'source', quality: '', format: '', audio: [], subtitles: [] }
+    const movie = { ...preference, contentId: 'movie:1' }, series = { ...preference, contentId: 'series:show' }
+    const base = createState(), local = createState(), remote = createState()
+    base.settings.sourcePreferences = [movie, series]
+    local.settings.sourcePreferences = [{ ...movie, quality: '1080p' }, series]
+    remote.settings.sourcePreferences = [movie, { ...series, quality: '2160p' }]
+    const result = mergeAccount(base, local, snapshotState(remote))
+    expect(result.settings.sourcePreferences).toEqual([{ ...movie, quality: '1080p' }, { ...series, quality: '2160p' }])
+  })
   it('keeps the OLED accent when first connecting to a legacy state without it', () => {
     const local = createState(), remote = createState()
     local.settings.oledAccent = '#26CBA8'

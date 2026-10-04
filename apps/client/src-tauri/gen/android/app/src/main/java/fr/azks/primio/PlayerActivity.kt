@@ -1,6 +1,7 @@
 package fr.azks.primio
 
-import android.app.Activity
+import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import android.os.*
 import android.content.Context
 import android.content.pm.ActivityInfo
@@ -16,7 +17,7 @@ import java.security.KeyStore
 import java.util.Locale
 import kotlin.math.*
 
-class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
+class PlayerActivity:ComponentActivity(),SurfaceHolder.Callback,PrimioThemeOwner {
  override val primioTheme:JSONObject? get()=if(::options.isInitialized)options.optJSONObject("theme") else null
  companion object {private var active:java.lang.ref.WeakReference<PlayerActivity>?=null}
  class PipReceiver:android.content.BroadcastReceiver(){
@@ -62,7 +63,6 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
  private var countdownKey=""
  private var countdownElapsed=0f
  private lateinit var nextEpisodeButton:TextView
- private var nextEpisodeOffered=false
  private var currentSegment:JSONObject?=null
  private val skipped=mutableSetOf<Double>()
  private val cancelledSkips=mutableSetOf<Double>()
@@ -116,7 +116,9 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   super.onCreate(savedInstanceState)
   active?.get()?.let{previous->previous.handler.removeCallbacksAndMessages(null);previous.emit(true);previous.release();previous.finish()}
   active=java.lang.ref.WeakReference(this)
-  if(Build.VERSION.SDK_INT>=33)onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT){if(sheet!=null){sheet?.dismiss();sheet=null}else leavePlayer()}
+  onBackPressedDispatcher.addCallback(this,object:OnBackPressedCallback(true){
+   override fun handleOnBackPressed(){if(sheet!=null){sheet?.dismiss();sheet=null}else leavePlayer()}
+  })
   window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
   requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
   window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
@@ -303,6 +305,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   last=JSONObject(nativeState(handle));val nextPosition=last.optDouble("position",position);if(nextPosition!=position)stalledAt=SystemClock.elapsedRealtime();position=nextPosition;duration=last.optDouble("duration",duration)
   if(!loaded&&last.optBoolean("loaded")){loaded=true;showControls();if(options.optString("language")=="original"){val tracks=last.optJSONArray("tracks")?:JSONArray();val original=(0 until tracks.length()).map{tracks.getJSONObject(it)}.firstOrNull{it.optString("type")=="audio"&&Regex("(?i)\\boriginal\\b|\\bVO\\b").containsMatchIn(it.optString("title"))};original?.let{command("set","aid",it.optInt("id").toString())}};val subs=options.optJSONArray("subtitles")?:JSONArray();if(options.optBoolean("showSubtitles",true)&&options.optJSONObject("trackPreferences")?.optJSONObject("subtitle")==null){val preferred=options.optString("subtitleLanguage");val sub=(0 until subs.length()).map{subs.getJSONObject(it)}.firstOrNull{it.optString("lang")==preferred};if(sub!=null)selectExternalSubtitle(sub)};restoreTrackPreferences()}
   if(loaded)restoreTrackPreferences()
+  preview.playbackState(duration,loaded,last.optBoolean("buffering"),position,last.optDouble("bufferedUntil",position))
   loading.visibility=if(!reportedError&&!loaded)View.VISIBLE else View.GONE;buffering.visibility=if(loaded&&!scrubbing&&!reportedError&&last.optBoolean("buffering"))View.VISIBLE else View.GONE;if(!loaded)overlay.visibility=View.GONE
   if(!dragging){seek.fraction=if(duration>0)(position/duration).toFloat() else 0f;seek.buffered=if(duration>0)(last.optDouble("bufferedUntil",position)/duration).toFloat() else 0f;time.text=format(position)+" / "+format(duration);remaining.text=if(duration>position)"−"+format(duration-position) else ""}
   if(last.optBoolean("eof")){if(duration>0)position=duration;if(!cancelledNext&&options.optBoolean("autoNextEpisode",true)&&options.optString("nextVideoId").isNotBlank())requestEpisode(options.getString("nextVideoId"),true)else{emit(true);finish()};return}
@@ -334,7 +337,6 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   val hasOutro=validSegments.any{it.optString("kind")=="outro"}
   val nextThreshold=if(hasOutro)30.0 else 60.0
   val nextAvailable=loaded&&hasNext&&duration>0&&((duration-position).coerceAtLeast(0.0)<=nextThreshold||currentSegment?.optString("kind")=="outro")
-  if(nextAvailable)nextEpisodeOffered=true
   val fallbackCountdown=!hasOutro&&!cancelledNext&&hasNext&&duration>63&&duration-position>60&&duration-position<=63&&currentSegment==null
   countdownKey=upcoming?.let{it.optString("kind")+":"+it.optDouble("start")}?:if(fallbackCountdown)"next" else ""
   countdownElapsed=when{upcoming!=null->(3-(upcoming.optDouble("start")-position)).toFloat();fallbackCountdown->(63-(duration-position)).toFloat();else->3f}.coerceIn(0f,3f)
@@ -565,6 +567,20 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
    }
   }
   dialog.content.addView(columns)
+  dialog.section(tr("Décalage des sous-titres"))
+  val delayValue=text("",16f).apply{gravity=Gravity.CENTER;setPadding(0,dp(6),0,dp(10));accessibilityLiveRegion=View.ACCESSIBILITY_LIVE_REGION_POLITE}
+  fun refreshDelay(){delayValue.text=String.format(Locale.forLanguageTag(PrimioI18n.locale(this)),"%+.1f s",options.optDouble("subtitleDelay",0.0))}
+  fun adjustDelay(delta:Double?){
+   val value=if(delta==null)0.0 else (options.optDouble("subtitleDelay",0.0)+delta).coerceIn(-60.0,60.0)
+   options.put("subtitleDelay",value);command("set","sub-delay",value.toString());refreshDelay()
+  }
+  refreshDelay();dialog.content.addView(delayValue)
+  val delayControls=LinearLayout(this)
+  delayControls.addView(PrimioStyle.button(this,"− 0.5 s",tr("Plus tôt")){adjustDelay(-0.5)},LinearLayout.LayoutParams(0,-2,1f).apply{rightMargin=dp(8)})
+  delayControls.addView(PrimioStyle.button(this,tr("Réinitialiser")){adjustDelay(null)},LinearLayout.LayoutParams(0,-2,1f).apply{rightMargin=dp(8)})
+  delayControls.addView(PrimioStyle.button(this,"+ 0.5 s",tr("Plus tard")){adjustDelay(0.5)},LinearLayout.LayoutParams(0,-2,1f))
+  dialog.content.addView(delayControls)
+  dialog.content.addView(text(tr("Un décalage positif affiche les sous-titres plus tard."),12f).apply{setPadding(0,dp(8),0,dp(12))})
   dialog.section(tr("Style des sous-titres"))
   val styles=LinearLayout(this)
   styles.addView(button(tr("Style intégré")){forceSubtitleStyle=false;options.put("forceSubtitleStyle",false);command("set","sub-ass-override","no");dialog.dismiss()},LinearLayout.LayoutParams(0,-2,1f).apply{rightMargin=dp(12)})
@@ -582,7 +598,7 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
    val custom=options.optJSONObject("customFont")
    val font=when(options.optString("subtitleFont")){"custom"->custom?.optString("family","Roboto")?:"Roboto";"serif"->"Noto Serif";"monospace"->"Droid Sans Mono";else->"Roboto"}
    if(updatePlayer){command("set","sub-ass-override","force");command("set","sub-font-size",options.optInt("subtitleSize",40).toString());command("set","sub-font",font);command("set","sub-color",options.optString("subtitleColor","#FFFFFF"));command("set","sub-border-size",options.optInt("subtitleOutline",2).toString());command("set","sub-back-color",if(options.optBoolean("subtitleBackground"))"#99000000" else "#00000000")}
-   preview.textSize=options.optInt("subtitleSize",40)/2f;preview.typeface=if(options.optString("subtitleFont")=="custom"&&custom!=null)runCatching{android.graphics.Typeface.createFromFile(custom.getString("path"))}.getOrDefault(android.graphics.Typeface.DEFAULT) else android.graphics.Typeface.create(font,0);preview.setTextColor(Color.parseColor(options.optString("subtitleColor","#FFFFFF")));preview.setBackgroundColor(if(options.optBoolean("subtitleBackground"))0x99000000.toInt() else Color.TRANSPARENT);preview.setShadowLayer(options.optInt("subtitleOutline",2).toFloat(),0f,0f,Color.BLACK)
+   preview.textSize=options.optInt("subtitleSize",40)/2f;preview.typeface=if(options.optString("subtitleFont")=="custom"&&custom!=null)runCatching{android.graphics.Typeface.createFromFile(custom.getString("path"))}.getOrDefault(android.graphics.Typeface.DEFAULT) else android.graphics.Typeface.create(font,android.graphics.Typeface.NORMAL);preview.setTextColor(Color.parseColor(options.optString("subtitleColor","#FFFFFF")));preview.setBackgroundColor(if(options.optBoolean("subtitleBackground"))0x99000000.toInt() else Color.TRANSPARENT);preview.setShadowLayer(options.optInt("subtitleOutline",2).toFloat(),0f,0f,Color.BLACK)
   }
   applyStyle(false)
   fun choices(label:String,key:String,values:List<Pair<Any,String>>){
@@ -626,7 +642,6 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
   return try{sheet?.dismiss();emit(false);enterPictureInPictureMode(pipParams())}catch(e:Exception){false}
  }
  private fun leavePlayer(){if(reportedError||!enterPip())finish()}
- @Deprecated("Deprecated in Java") override fun onBackPressed(){if(sheet!=null){sheet?.dismiss();sheet=null}else leavePlayer()}
  override fun onUserLeaveHint(){super.onUserLeaveHint();if(Build.VERSION.SDK_INT<31)enterPip()}
  override fun onPictureInPictureModeChanged(inPip:Boolean,configuration:android.content.res.Configuration){
   super.onPictureInPictureModeChanged(inPip,configuration)
@@ -637,8 +652,8 @@ class PlayerActivity:Activity(),SurfaceHolder.Callback,PrimioThemeOwner {
  private var lifecycleStopped=false
  override fun onStart(){super.onStart();lifecycleStopped=false}
  override fun onStop(){super.onStop();lifecycleStopped=true;if(isInPictureInPictureMode){command("set","pause","yes");emit(false)}}
- override fun onPause(){endScrub(false);if(isInPictureInPictureMode){emit(false);super.onPause();return};resumeAfterPause=handle!=0L&&!last.optBoolean("paused");command("set","pause","yes");emit(false);super.onPause()}
- override fun onResume(){super.onResume();if(resumeAfterPause){command("set","pause","no");resumeAfterPause=false}}
+ override fun onPause(){if(::preview.isInitialized)preview.setActive(false);endScrub(false);if(isInPictureInPictureMode){emit(false);super.onPause();return};resumeAfterPause=handle!=0L&&!last.optBoolean("paused");command("set","pause","yes");emit(false);super.onPause()}
+ override fun onResume(){super.onResume();if(::preview.isInitialized)preview.setActive(true);if(resumeAfterPause){command("set","pause","no");resumeAfterPause=false}}
  private fun showSeekPreview(fraction:Float){
   previewTime.text=format(duration*fraction)
   val trackLocation=IntArray(2);val overlayLocation=IntArray(2)

@@ -7,10 +7,10 @@ import type { UserState } from './types'
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 const key = (v: any): string | undefined =>
   v && typeof v === 'object'
-    ? v.videoId
+    ? v.contentId
+      ? JSON.stringify(['content', v.contentId, v.videoId])
+      : v.videoId
       ? JSON.stringify([v.type, v.videoId])
-      : v.contentId
-        ? 'content:' + v.contentId
         : v.id
           ? JSON.stringify([v.type, v.id])
           : v.url

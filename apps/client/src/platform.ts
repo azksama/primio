@@ -8,13 +8,23 @@ export function scrollToTop() {
   else window.scrollTo(0, 0)
 }
 const memory = new Map<string, string>()
+const writes = new Map<string, Promise<void>>()
 export async function readSecure(key: string): Promise<string | null> {
+  await writes.get(key)?.catch(() => {})
   if (isTauri()) return invoke('secure_read', { key })
   return memory.get(key) ?? null
 }
 export async function writeSecure(key: string, value: string): Promise<void> {
-  if (isTauri()) return invoke('secure_write', { key, value })
-  memory.set(key, value)
+  // Native writes can complete out of order. Preserve call order for each key,
+  // including after a failed write, while unrelated keys remain independent.
+  const write = (writes.get(key) ?? Promise.resolve()).catch(() => {}).then(async () => {
+    if (isTauri()) await invoke('secure_write', { key, value })
+    else memory.set(key, value)
+  })
+  writes.set(key, write)
+  const cleanup = () => { if (writes.get(key) === write) writes.delete(key) }
+  void write.then(cleanup, cleanup)
+  return write
 }
 export async function api<T>(
   path: string,

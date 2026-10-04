@@ -144,6 +144,12 @@ describe('Smart collection rules', () => {
       ).map((m) => m.id),
     ).toEqual(['b', 'a', 'c'])
   })
+  it('keeps empty rating strings unknown rather than treating them as zero', () => {
+    const missing = { ...unknown, imdbRating: ' ' }
+    expect(matchesRules(missing, rules([condition('rating', '1', 'lte')]), [], defaults)).toBe(false)
+    expect(matchesRules(missing, rules([condition('rating', '5', 'not')]), [], defaults)).toBe(false)
+    expect(sortCollection([missing, movie], [{ key: 'rating', direction: 'asc' }], [missing, movie], [], [], defaults)).toEqual([movie, missing])
+  })
   it('saves rules per profile and merges remote changes without resurrecting exclusions', () => {
     const state = createState()
     state.library = [anime, movie]

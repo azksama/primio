@@ -5,7 +5,7 @@ import net from 'node:net'
 import path from 'node:path'
 
 const theme = process.env.PRIMIO_PLAYER_THEME ? JSON.parse(await fs.readFile(process.env.PRIMIO_PLAYER_THEME,'utf8')).theme : undefined
-const output = path.resolve(theme ? 'tmp/validation-neo-graphite/native' : 'tmp/validation-v0212')
+const output = path.resolve(theme ? 'tmp/validation-neo-graphite/native' : 'tmp/audit-2026-10-04/windows-preview')
 await fs.mkdir(output, { recursive: true })
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 async function until(read, test, timeout = 15000) {
@@ -96,12 +96,16 @@ async function run(outro) {
     if(theme) assert.equal((await get('user-data/primio/ui')).material, theme.material)
 
     await command('set_property','pause',true)
-    await command('seek',6,'absolute+exact')
-    await until(()=>get('user-data/primio/countdown'),v=>v?.visible&&v.key==='intro:10'&&v.position>=6)
+    await command('seek',8,'absolute+exact')
+    await until(()=>get('user-data/primio/countdown'),v=>v?.visible&&v.key==='intro:10'&&v.position>=8)
     const warning=await get('user-data/primio/countdown')
     assert.ok(warning.position<10,'Warn before the segment starts')
     await delay(400)
     assert.equal((await get('user-data/primio/countdown')).elapsed,warning.elapsed,'Paused video must pause the countdown')
+    const preloadStart=performance.now()
+    const cached=await until(()=>get('user-data/primio/preview-cache'),v=>v?.total>0&&v.frames>=v.total,60000)
+    assert.equal(cached.interval,1)
+    const preloadMs=performance.now()-preloadStart
     const before=await get('time-pos')
     const size=await get('osd-dimensions')
     const scale=size.h/720
@@ -109,10 +113,12 @@ async function run(outro) {
     await command('mouse',mx,my)
     await command('keypress','mouse_move')
     const target=(mx/scale-28)/(size.w/scale-56)*(await get('duration'))
-    const seconds=Math.floor(target/5)*5
+    const seconds=Math.floor(target)
+    const previewStart=performance.now()
     await until(()=>fs.stat(path.join(output,'preview.bgra.'+seconds+'.bgra')),info=>info.size===129600,20000)
     await until(async()=>{await command('mouse',mx,my);await command('keypress','mouse_move');return get('user-data/primio/preview')},preview=>preview?.visible&&preview.seconds===seconds&&Math.abs(preview.x-(mx-120))<2,20000)
     const preview=await get('user-data/primio/preview')
+    const previewMs=performance.now()-previewStart
     assert.ok(Math.abs(preview.x-(mx-120))<2,'Thumbnail follows the seek cursor horizontally')
     assert.ok(preview.y+135<(720-130)*scale,'Thumbnail sits above the timestamp and cursor')
     assert.ok(Math.abs((await get('time-pos'))-before)<0.1,'Preview must not seek the playing media')
@@ -126,6 +132,48 @@ async function run(outro) {
     }
     await command('script-message-to','primio_preview','hide')
     await until(()=>get('user-data/primio/preview'),p=>p&&!p.visible)
+
+    // Dragging the timeline previews the target and commits exactly once on release.
+    await command('mouse',Math.round(size.w*.25),my);await command('keypress','mouse_move')
+    await command('keydown','MBTN_LEFT')
+    const dragX=Math.round(size.w*.72)
+    await command('mouse',dragX,my);await command('keypress','mouse_move')
+    const dragTarget=(dragX/scale-28)/(size.w/scale-56)*((await get('duration'))-.001)
+    const drag=await until(()=>get('user-data/primio/ui'),ui=>ui?.scrubbing&&Math.abs(ui.seekTarget-dragTarget)<.05)
+    await until(()=>get('user-data/primio/preview'),p=>p?.visible&&p.seconds===Math.floor(drag.seekTarget),15000)
+    assert.ok(Math.abs((await get('time-pos'))-before)<.1,'Dragging must not repeatedly seek the playback decoder')
+    await command('screenshot-to-file',path.join(output,'windows-timeline-drag.png'),'window')
+    await command('keyup','MBTN_LEFT')
+    await until(()=>get('time-pos'),v=>Math.abs(v-drag.seekTarget)<.2)
+    assert.equal(await get('pause'),true)
+
+    await command('script-message-to','primio_ui','open','subtitle-delay')
+    await until(()=>get('user-data/primio/ui'),ui=>ui?.panel==='subtitle-delay')
+    const click=async(x,y)=>{await command('mouse',Math.round(x*scale),Math.round(y*scale));await command('keypress','MBTN_LEFT')}
+    const virtualWidth=size.w/scale,panelX=(virtualWidth-Math.min(860,virtualWidth-48))/2
+    await click(virtualWidth*.65,371)
+    await until(()=>get('sub-delay'),v=>Math.abs(v-.5)<.001)
+    await click(panelX+90,371)
+    await until(()=>get('sub-delay'),v=>Math.abs(v)<.001)
+    await click(panelX+90,371)
+    await until(()=>get('sub-delay'),v=>Math.abs(v+.5)<.001)
+    await command('screenshot-to-file',path.join(output,'windows-subtitle-delay.png'),'window')
+    await click(virtualWidth/2,431)
+    await until(()=>get('sub-delay'),v=>v===0)
+    await command('script-message-to','primio_ui','close')
+    const subtitles=path.join(output,'timing.srt')
+    await fs.writeFile(subtitles,'1\n00:00:01,000 --> 00:00:02,000\nSubtitle timing proof\n')
+    await command('sub-add',subtitles,'select')
+    await command('seek',1.2,'absolute+exact')
+    await until(()=>get('sub-text'),text=>text?.includes('Subtitle timing proof'))
+    await command('set_property','sub-delay',.5)
+    await command('seek',1.2,'absolute+exact')
+    await until(()=>get('sub-text'),text=>text==='')
+    await command('seek',1.8,'absolute+exact')
+    await until(()=>get('sub-text'),text=>text?.includes('Subtitle timing proof'))
+    await command('set_property','sub-delay',0)
+    await command('set_property','sid','no')
+    await fs.writeFile(path.join(output,'results.json'),JSON.stringify({cached,preloadMs,previewMs,timelineDrag:true,subtitleDelay:true},null,2))
 
     await command('keypress','z')
     await until(()=>get('panscan'),value=>value===1)
@@ -150,7 +198,11 @@ async function run(outro) {
     await until(()=>get('time-pos'),v=>Math.abs(v-11)<.15)
     assert.equal(await get('pause'),true,'Seeking retains the original pause state')
     console.log('PASS: Hold and horizontal drag seeks second by second and keeps pause state.')
-    console.log('PASS: Windows seek preview decoded a 240x135 frame without seeking playback; fit/fill shortcut works.')
-  } finally {socket?.destroy();if(child.exitCode===null)child.kill()}
+    console.log(`PASS: ${cached.frames} frames preloaded at 1/s, ${cached.bytes} bytes; cached preview ${Math.round(previewMs)} ms; timeline drag, subtitle delay +/-/reset and fit/fill verified.`)
+  } finally {
+    if(socket&&!socket.destroyed)socket.write(JSON.stringify({command:['quit']})+'\n')
+    await until(async()=>child.exitCode,value=>value!==null,3000).catch(()=>child.kill())
+    socket?.destroy()
+  }
 }
 await run(false)

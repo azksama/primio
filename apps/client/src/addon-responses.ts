@@ -48,6 +48,14 @@ export function parseAddonMeta(value: unknown, fallback?: Meta): Meta | null {
     ...numberFields(value, ['rating', 'seasonCount']),
     ...(value.category === 'anime' ? { category: 'anime' } : {}),
   }
+  for (const field of ['malId', 'idMal'] as const) {
+    const id = value[field]
+    if ((typeof id === 'number' || typeof id === 'string' && /^\d+$/.test(id)) &&
+        Number.isSafeInteger(Number(id)) && Number(id) > 0) {
+      if (field === 'malId') meta.malId = id
+      else meta.idMal = Number(id)
+    }
+  }
   for (const field of ['genres', 'cast', 'director', 'origin_country'] as const)
     if (strings(value[field])) meta[field] = strings(value[field])
   if (typeof value.country === 'string') meta.country = value.country

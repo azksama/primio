@@ -14,7 +14,10 @@
     }
   },
   "files": [
-    "dist",
+    "dist/index.js",
+    "dist/index.d.ts",
+    "dist/catalog.js",
+    "dist/catalog.d.ts",
     "examples",
     "README.md",
     "LICENSE"

@@ -2,6 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { catalog, inspectAddon, metadata, clearMetadataCache, streams, subtitles } from './addons'
 import { createCatalogPager } from './catalog-pager'
 import { sourceLanguages } from './sources'
+import { parseAddonMeta } from './addon-responses'
+import { createIntroSkipper } from '@primio/intro-skipper'
 import type { Addon } from './types'
 
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => false, invoke: vi.fn() }))
@@ -11,6 +13,22 @@ const addon: Addon = {
 }
 const respond = (value: unknown) => new Response(JSON.stringify(value))
 afterEach(() => { vi.unstubAllGlobals(); clearMetadataCache() })
+
+it('preserves exact MAL identifiers consumed by AniSkip instead of falling back to title matching', async () => {
+  for (const identity of [{ malId: '123' }, { idMal: '456' }]) {
+    const meta = parseAddonMeta({ id: 'provider:anime', type: 'anime', name: 'Anime', ...identity,
+      videos: [{ id: 'episode', title: 'Episode', season: 1, episode: 1 }] })!
+    const urls: string[] = []
+    const skipper = createIntroSkipper(async <T>(url: string) => { urls.push(url); return { found: false } as T })
+    await skipper.resolve(meta, 'episode', { aniSkip: true, skipIntro: false })
+    expect(urls).toEqual([expect.stringContaining(`/skip-times/${identity.malId ?? identity.idMal}/1?`)])
+  }
+  for (const id of [0, -1, 1.5, Infinity, {}, 'invalid', '0', '1.5']) {
+    const meta = parseAddonMeta({ id: 'a', type: 'anime', name: 'A', malId: id, idMal: id })
+    expect(meta).not.toHaveProperty('malId')
+    expect(meta).not.toHaveProperty('idMal')
+  }
+})
 
 it('rejects malformed capability restrictions before an addon reaches the UI', async () => {
   for (const changes of [

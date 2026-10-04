@@ -87,12 +87,17 @@ end
 local function pump()
   if not active or output=='' or not config.previewExecutable then return end
   if mp.get_property_native('paused-for-cache',false) then cancel_background(); status(); return end
-  if job then
-    if requested~=nil and not cache[requested] then cancel_background() end
-    return
-  end
   local path=mp.get_property('path')
   if not path then return end
+  local buffered=mp.get_property_number('demuxer-cache-duration',0)
+  local stream=mp.get_property('stream-open-filename',path)
+  local remote=path:match('^https?://') or stream:match('^https?://')
+  local remaining=mp.get_property_number('duration',0)-mp.get_property_number('time-pos',0)
+  local warming_buffer=remote and buffered>0 and buffered<math.min(12,math.max(0,remaining-.5)) and not mp.get_property_native('pause')
+  if job then
+    if warming_buffer or (requested~=nil and not cache[requested]) then cancel_background() end
+    return
+  end
   if requested~=nil and not cache[requested] and (failures[requested] or 0)<mp.get_time() then
     local key=requested
     local destination=output..'.'..key..'.bgra'
@@ -117,11 +122,7 @@ local function pump()
     return
   end
   if mp.get_time()<ready_at or bytes>=disk_budget then return end
-  local buffered=mp.get_property_number('demuxer-cache-duration',0)
-  local stream=mp.get_property('stream-open-filename',path)
-  local remote=path:match('^https?://') or stream:match('^https?://')
-  local remaining=mp.get_property_number('duration',0)-mp.get_property_number('time-pos',0)
-  if remote and buffered>0 and buffered<math.min(12,math.max(0,remaining-.5)) and not mp.get_property_native('pause') then return end
+  if warming_buffer then return end
   local total=math.ceil(mp.get_property_number('duration',0))
   if total<=0 or total==math.huge then return end
   while cursor<total and images[cursor] do cursor=cursor+1 end

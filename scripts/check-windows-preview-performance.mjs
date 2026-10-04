@@ -13,6 +13,8 @@ const executable = path.resolve('apps/client/src-tauri/resources/windows/mpv/pri
 const seconds = Number(process.env.PRIMIO_PERF_SECONDS ?? 24)
 assert.ok(seconds >= 10 && seconds <= 30)
 const mediaSize = (await fs.stat(media)).size
+const bufferPressure = process.argv.includes('--buffer-pressure')
+const fixtureBytes = bufferPressure ? await fs.readFile(media) : null
 await fs.mkdir(root, { recursive: true })
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function until(read, accepts, milliseconds = 10000) {
@@ -24,6 +26,7 @@ async function until(read, accepts, milliseconds = 10000) {
   throw new Error('Timed out')
 }
 let transferred = 0, requests = 0
+let previewOpened = 0, previewClosed = 0, previewTransferred = 0
 const server = http.createServer((request, response) => {
   if (request.url !== '/fixture.mp4') { response.writeHead(404).end(); return }
   requests++
@@ -35,6 +38,28 @@ const server = http.createServer((request, response) => {
     'content-type': 'video/mp4', 'accept-ranges': 'bytes', 'content-length': last - first + 1,
     ...(range ? { 'content-range': `bytes ${first}-${last}/${mediaSize}` } : {}),
   })
+  if (bufferPressure) {
+    const preview = request.headers['x-primio-preview'] === '1'
+    if (preview) previewOpened++
+    response.on('close', () => { if (preview) previewClosed++ })
+    // Main playback initially receives enough media to start warming. Its next
+    // bytes and the independent preview request then trickle below video bitrate.
+    // MP4 tail metadata stays fast so startup does not depend on atom placement.
+    void (async () => {
+      let cursor = first
+      while (cursor <= last && !response.destroyed) {
+        const fast = !preview && (cursor < 6 * 1024 * 1024 || first >= mediaSize - 512 * 1024)
+        const end = Math.min(last + 1, cursor + (fast ? 65536 : 1024))
+        const chunk = fixtureBytes.subarray(cursor, end)
+        transferred += chunk.length
+        if (preview) previewTransferred += chunk.length
+        response.write(chunk); cursor = end
+        await sleep(fast ? 10 : 200)
+      }
+      if (!response.destroyed) response.end()
+    })().catch(() => response.destroy())
+    return
+  }
   const stream = createReadStream(media, { start: first, end: last })
   stream.on('data', chunk => { transferred += chunk.length })
   response.on('close', () => stream.destroy())
@@ -69,12 +94,13 @@ try {
 `)
 
 async function run(transport, preload, closeDuringWarmup = false) {
-  const label = `${transport}-${preload ? 'on' : 'off'}${closeDuringWarmup ? '-close' : ''}`
+  const label = `${transport}-${preload ? 'on' : 'off'}${closeDuringWarmup ? '-close' : ''}${bufferPressure ? '-buffer-pressure' : ''}`
   const folder = path.join(root, label)
   await fs.mkdir(folder, { recursive: true })
   const config = path.join(folder, 'config.json'), previewPath = path.join(folder, 'preview')
   await fs.writeFile(config, JSON.stringify({ title: 'Primio performance fixture', locale: 'en',
-    previewPath, ...(preload ? { previewExecutable: executable } : {}), skipSegments: [] }))
+    previewPath, ...(preload ? { previewExecutable: executable } : {}), skipSegments: [],
+    ...(bufferPressure ? { previewHeaders: ['X-Primio-Preview: 1'] } : {}) }))
   const pipe = `\\\\.\\pipe\\primio-perf-${process.pid}-${label}`
   transferred = 0; requests = 0
   const started = performance.now()
@@ -82,6 +108,7 @@ async function run(transport, preload, closeDuringWarmup = false) {
     `--config-dir=${path.resolve('apps/client/src-tauri/resources/windows/player')}`,
     `--input-ipc-server=${pipe}`, '--fullscreen=yes', '--border=no', '--osc=no',
     '--no-audio', '--keep-open=yes', '--hwdec=auto-safe', '--pause=no',
+    ...(bufferPressure ? ['--demuxer-max-bytes=5MiB', '--demuxer-readahead-secs=30'] : []),
     transport === 'http' ? url : media,
   ], { env: { ...process.env, PRIMIO_PLAYER_CONFIG: config }, windowsHide: true, stdio: 'ignore' })
   const stop = path.join(folder, `stop-${process.pid}`)
@@ -118,13 +145,24 @@ async function run(transport, preload, closeDuringWarmup = false) {
     })
     const get = property => command('get_property', property)
     await until(() => get('time-pos'), position => typeof position === 'number' && position > 0)
-    const properties = ['time-pos', 'frame-drop-count', 'decoder-frame-drop-count',
+    const properties = ['time-pos', 'duration', 'frame-drop-count', 'decoder-frame-drop-count',
       'mistimed-frame-count', 'vo-delayed-frame-count', 'paused-for-cache', 'demuxer-cache-duration',
       'user-data/primio/preview-cache']
     const snapshot = async () => Object.fromEntries(await Promise.all(properties.map(async key => [key, await get(key)])))
     initial = await snapshot()
     const observationStarted = performance.now()
-    if (closeDuringWarmup) {
+    if (bufferPressure) {
+      await until(async () => {
+        const sample = await snapshot(); samples.push(sample); return sample
+      }, sample => sample['user-data/primio/preview-cache']?.running && previewOpened > 0, 15000)
+      final = await until(async () => {
+        const sample = await snapshot(); samples.push(sample); return sample
+      }, sample => sample['user-data/primio/preview-cache']?.running === false && previewClosed > 0, 25000)
+      const reserve = final['demuxer-cache-duration']
+      assert.ok(reserve > 0 && reserve < Math.min(12, final.duration - final['time-pos'] - .5), 'Preview stops below reserve threshold')
+      assert.equal(final['paused-for-cache'], false, 'Preview stops before playback buffers')
+      assert.ok(final['user-data/primio/preview-cache'].frames < final['user-data/primio/preview-cache'].total, 'Cancellation precedes completed warmup')
+    } else if (closeDuringWarmup) {
       const warming = await until(async () => ({
         cache: await get('user-data/primio/preview-cache'),
         files: (await fs.readdir(folder)).filter(name => name.startsWith('preview') && name.endsWith('.jpg')),
@@ -169,6 +207,8 @@ async function run(transport, preload, closeDuringWarmup = false) {
   const cacheDurations = samples.map(s => s['demuxer-cache-duration']).filter(Number.isFinite)
   const result = { label, observationSeconds: measuredMs / 1000, wallMs: performance.now() - started,
     ...(closeDuringWarmup ? { partialFramesOnClose } : {}),
+    ...(bufferPressure ? { pressure: { previewOpened, previewClosed, previewTransferred,
+      reserveOnCancellation: final['demuxer-cache-duration'], bufferingOnCancellation: final['paused-for-cache'] } } : {}),
     playingSeconds: final['time-pos'] - initial['time-pos'],
     drops: Object.fromEntries(['frame-drop-count','decoder-frame-drop-count','mistimed-frame-count','vo-delayed-frame-count'].map(key => [key, initial[key] === null || final[key] === null ? null : final[key] - initial[key]])),
     bufferingSamples: samples.filter(s => s['paused-for-cache']).length,
@@ -187,6 +227,9 @@ async function run(transport, preload, closeDuringWarmup = false) {
 }
 
 try {
+  if (bufferPressure) {
+    await run('http', true)
+  } else {
   const results = []
   // Recheck cancellation without repeating the four measured playback runs.
   for (const transport of ['local', 'http']) for (const preload of [false, true]) {
@@ -196,4 +239,5 @@ try {
   }
   results.push(await run('local', true, true))
   await fs.writeFile(path.join(root, 'results.json'), JSON.stringify({ mediaSize, method: `${seconds}-second active video-only playback; identical mpv UI. Owned process CPU/RAM sampled every ~100 ms; CPU can undercount processes exiting between samples. HTTP byte count includes bytes queued by the local range server. No phone or external network measured.`, results }, null, 2))
+  }
 } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }

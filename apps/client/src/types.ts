@@ -33,6 +33,8 @@ export interface Meta {
   releaseInfo?: string
   rating?: number
   ratingSource?: string
+  malId?: number | string
+  idMal?: number
   imdbRating?: string
   genres?: string[]
   cast?: string[]

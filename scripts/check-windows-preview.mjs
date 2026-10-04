@@ -5,7 +5,9 @@ import net from 'node:net'
 import path from 'node:path'
 
 const theme = process.env.PRIMIO_PLAYER_THEME ? JSON.parse(await fs.readFile(process.env.PRIMIO_PLAYER_THEME,'utf8')).theme : undefined
-const output = path.resolve(theme ? 'tmp/validation-neo-graphite/native' : 'tmp/audit-2026-10-04/windows-preview')
+const resources = path.resolve(process.env.PRIMIO_PLAYER_RESOURCES ?? 'apps/client/src-tauri/resources/windows')
+const executable = path.join(resources, 'mpv/primio-player.exe')
+const output = path.resolve(process.env.PRIMIO_PREVIEW_OUTPUT ?? (theme ? 'tmp/validation-neo-graphite/native' : 'tmp/audit-2026-10-04/windows-preview'))
 await fs.mkdir(output, { recursive: true })
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 async function until(read, test, timeout = 15000) {
@@ -25,7 +27,7 @@ async function run(outro) {
   await fs.writeFile(
     config,
     JSON.stringify({
-      title: 'Primio preview test', previewExecutable: path.resolve('apps/client/src-tauri/resources/windows/mpv/primio-player.exe'), previewPath: path.join(output, 'preview.bgra'),
+      title: 'Primio preview test', previewExecutable: executable, previewPath: path.join(output, 'preview.bgra'),
       locale: 'en', theme,
       skipSegments: outro ? [{ kind: 'outro', start: 10, end: 120 }] : [{kind:'intro',start:10,end:20}],
       autoSkipIntro:false, autoNextEpisode:false,
@@ -33,9 +35,9 @@ async function run(outro) {
   )
   const pipe = `\\\\.\\pipe\\primio-pip-qa-${process.pid}-${outro}`
   const child = spawn(
-    path.resolve('apps/client/src-tauri/resources/windows/mpv/primio-player.exe'),
+    executable,
     [
-      `--config-dir=${path.resolve('apps/client/src-tauri/resources/windows/player')}`,
+      `--config-dir=${path.join(resources, 'player')}`,
       `--input-ipc-server=${pipe}`,
       '--fullscreen=yes',
       '--border=no',

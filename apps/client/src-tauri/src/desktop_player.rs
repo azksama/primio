@@ -47,7 +47,7 @@ pub fn playing_download(id: &str) -> bool {
     })
 }
 
-fn decoded(value: &Value) -> Result<Value, String> {
+pub(super) fn decoded(value: &Value) -> Result<Value, String> {
     let value = match value {
         Value::String(raw) => serde_json::from_str(raw).map_err(|_| "Invalid player options")?,
         Value::Null => json!({}),
@@ -75,6 +75,10 @@ mod tests {
             json!(true),
             json!(42),
             json!("[]"),
+            json!("null"),
+            json!("true"),
+            json!("42"),
+            json!("\"options\""),
             json!("malformed"),
         ] {
             assert!(decoded(&invalid).is_err());

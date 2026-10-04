@@ -286,6 +286,10 @@ export default function App() {
     setSelected(null)
     setDetailLoading(false)
     setCollectionId('')
+    setSelectedLibrary([])
+    setSelectingLibrary(false)
+    setCollectionPicker(false)
+    setCastTarget(null)
     setPluginConfiguration(null)
   }, [playbackScope])
   const [discoveryFilters, setDiscoveryFilters] = useState<DiscoveryFilters>({})
@@ -2138,6 +2142,7 @@ export default function App() {
                 />
               )}
               <Collections
+                key={playbackScope}
                 state={state}
                 setState={setState}
                 selected={collectionId}
@@ -2602,6 +2607,7 @@ export default function App() {
                     {t('Changer de profil')}
                   </button>
                   <Profiles
+                    key={token ? email : 'local'}
                     state={state}
                     setState={setState}
                     authorize={profilePins.unlock}
@@ -2621,14 +2627,16 @@ export default function App() {
                     }}
                   />
                   <PinSettings
+                    key={playbackScope}
                     profile={activeProfile}
                     unlock={profilePins.unlock}
                     onChange={(pin) => {
+                      if (previousPlaybackScope.current !== playbackScope || latestState.current.activeProfileId !== activeProfile.id) return
                       profilePins.allow({ ...activeProfile, pin })
-                      setState((s) => ({
+                      setState((s) => s.activeProfileId !== activeProfile.id ? s : ({
                         ...s,
                         profiles: s.profiles.map((p) =>
-                          p.id === s.activeProfileId ? { ...p, pin } : p,
+                          p.id === activeProfile.id ? { ...p, pin } : p,
                         ),
                       }))
                     }}

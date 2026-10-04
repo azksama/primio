@@ -297,8 +297,7 @@ pub fn play(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
     if !file.exists() {
         return Err("Download file unavailable".into());
     }
-    let mut options: Value = serde_json::from_str(args["options"].as_str().unwrap_or("{}"))
-        .map_err(|e| e.to_string())?;
+    let mut options = crate::desktop_player::decoded(&args["options"])?;
     options["playerExtra"] = json!(options.to_string());
     options["progressContext"] = options["context"].clone();
     options["url"] = json!(file.to_string_lossy());

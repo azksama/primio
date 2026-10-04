@@ -51,6 +51,8 @@ try {
             return { streams: [{ name: 'Fixture source', url: 'https://fixture.invalid/video.mp4' }] }
           }
           if (command === 'download_list') return { items: [] }
+          if (command === 'cast_discover') return [{ id: 'fixture-tv', name: 'Fixture TV' }]
+          if (command === 'cast_control') return { position: 30, duration: 1000, connected: true }
           if (command === 'plugin:event|listen') return 1
           return null
         },
@@ -84,6 +86,35 @@ try {
     await page.evaluate(() => window.auditFixture.releaseSubtitles())
     await expect.poll(() => page.evaluate(() => document.querySelector('.source-loading') === null)).toBe(true)
     expect(await page.evaluate(() => window.auditFixture.commands.filter(command => command === 'play_media'))).toEqual([])
+
+    await page.locator('.bottom-nav').getByRole('button', { name: 'My list', exact: true }).click()
+    await page.getByRole('button', { name: 'Create collection', exact: true }).click()
+    const collectionDialog = page.locator('.collection-dialog')
+    await collectionDialog.locator('input').first().fill('Old profile draft')
+    async function remoteProfile(id) {
+      await page.evaluate(id => {
+        const fixture = window.auditFixture, previous = fixture.remote.profiles[0]
+        const profile = { ...previous, id, name: id, progress: [], collections: [] }
+        fixture.remote = { ...fixture.remote, ...profile, activeProfileId: id, profiles: [profile] }
+        fixture.version++
+        window.dispatchEvent(new Event('focus'))
+      }, id)
+      await expect.poll(() => page.evaluate(() => JSON.parse(window.auditFixture.store.state).activeProfileId)).toBe(id)
+    }
+    await remoteProfile('third')
+    await expect(collectionDialog).toHaveCount(0)
+    expect(await page.evaluate(() => JSON.parse(window.auditFixture.store.state).collections ?? [])).toEqual([])
+
+    await page.locator('.bottom-nav').getByRole('button', { name: 'Home', exact: true }).click()
+    await page.locator('.hero').getByRole('button', { name: 'Discover', exact: true }).click()
+    await page.getByRole('button', { name: 'Watch', exact: true }).click()
+    await sourceDialog.locator('.source-cast').first().click()
+    const castDialog = page.getByRole('dialog', { name: 'Cast to a TV', exact: true })
+    await page.getByRole('button', { name: 'Fixture TV', exact: true }).click()
+    await expect(castDialog).toBeVisible()
+    await remoteProfile('fourth')
+    await expect(castDialog).toHaveCount(0)
+    expect(await page.evaluate(() => JSON.parse(window.auditFixture.store.state).progress)).toEqual([])
     expect(errors).toEqual([])
     await page.close()
   }
@@ -98,7 +129,90 @@ try {
   await dialogPage.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
   await expect(dialogPage.getByText('Closed', { exact: true })).toBeVisible()
-  console.log('PASS: restoration failure/retry and playback profile race at 390/1440px; busy dialog Escape protection')
+
+  async function profilePage() {
+    const page = await browser.newPage()
+    await page.addInitScript(() => {
+      const fixture = window.profileFixture = { changes: [], unlocks: [], errors: [], hashPending: false, writePending: false }
+      window.isTauri = true
+      window.__TAURI_INTERNALS__ = { async invoke(command) {
+        if (command === 'secure_read') return null
+        if (command === 'secure_write') {
+          fixture.writePending = true
+          await new Promise(resolve => { fixture.releaseWrite = resolve })
+        }
+      } }
+      Object.defineProperty(crypto.subtle, 'deriveBits', { value: async () => {
+        fixture.hashPending = true
+        await new Promise(resolve => { fixture.releaseHash = resolve })
+        return new Uint8Array(32).buffer
+      } })
+    })
+    await page.goto(origin + '/tests/profile-regression.html')
+    return page
+  }
+  async function release(page, operation) {
+    await page.evaluate(async operation => {
+      window.profileFixture[operation]()
+      // All mocked continuations run as microtasks before the next rendered frame.
+      await new Promise(requestAnimationFrame)
+    }, operation)
+  }
+  for (const action of ['Change profile', 'Change account', 'Annuler', 'save']) {
+    const page = await profilePage()
+    await page.getByRole('button', { name: 'Protéger ce profil par un PIN', exact: true }).click()
+    await page.getByLabel('Nouveau PIN (4 à 8 chiffres)', { exact: true }).fill('1234')
+    await page.getByLabel('Confirmer le PIN', { exact: true }).fill('1234')
+    await page.locator('.pin-settings').getByRole('button', { name: 'Enregistrer', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => window.profileFixture.hashPending)).toBe(true)
+    if (action !== 'save') await page.getByRole('button', { name: action, exact: true }).click()
+    await release(page, 'releaseHash')
+    const changes = await page.evaluate(() => window.profileFixture.changes)
+    if (action === 'save') expect(changes).toEqual([{ account: 'one', id: 'first', pin: expect.any(Object) }])
+    else expect(changes).toEqual([])
+    await page.close()
+  }
+  {
+    const page = await profilePage()
+    await page.getByRole('button', { name: 'Unlock protected profile', exact: true }).click()
+    await page.getByRole('dialog', { name: 'PIN du profil', exact: true }).locator('input').fill('1234')
+    await page.getByRole('button', { name: 'Déverrouiller', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => window.profileFixture.hashPending)).toBe(true)
+    await release(page, 'releaseHash')
+    await expect.poll(() => page.evaluate(() => window.profileFixture.writePending)).toBe(true)
+    await page.evaluate(() => [...document.querySelectorAll('button')].find(button => button.textContent === 'Change account').click())
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Unlock protected profile', exact: true }).click()
+    await release(page, 'releaseWrite')
+    await expect(page.getByRole('dialog', { name: 'PIN du profil', exact: true })).toBeVisible()
+    expect(await page.evaluate(() => window.profileFixture.unlocks)).toEqual([{ account: 'one', allowed: false }])
+    await page.close()
+  }
+  for (const action of ['Keep current profile only', 'Change account', 'remove']) {
+    const page = await profilePage()
+    const errors = []
+    page.on('pageerror', error => errors.push(error.message))
+    await page.getByRole('button', { name: 'Supprimer First', exact: true }).click()
+    await page.getByRole('button', { name: 'Supprimer le profil', exact: true }).click()
+    await expect.poll(() => page.evaluate(() => window.profileFixture.removePending)).toBe(true)
+    if (action !== 'remove') await page.getByRole('button', { name: action, exact: true }).click()
+    await release(page, 'releaseRemove')
+    expect(await page.evaluate(() => window.profileFixture.state.profiles.map(profile => profile.id)))
+      .toEqual(action === 'Keep current profile only' ? ['first'] : action === 'Change account' ? ['first', 'second'] : ['second'])
+    expect(errors).toEqual([])
+    expect(await page.evaluate(() => window.profileFixture.errors)).toEqual([])
+    await page.close()
+  }
+  {
+    const page = await profilePage()
+    await expect(page.locator('.search-section')).toHaveCount(1)
+    await expect(page.locator('.search-section')).toContainText('Fixture movie')
+    await page.getByRole('button', { name: 'Choose series explicitly', exact: true }).click()
+    await expect(page.locator('.search-section')).toHaveCount(1)
+    await expect(page.locator('.search-section')).toContainText('Fixture series')
+    await page.close()
+  }
+  console.log('PASS: restoration/retry, playback/collection/cast scope at 390/1440px; dialog Escape; PIN/profile/account/cancellation and deletion races; natural search type')
 } finally {
   await browser.close()
 }

@@ -70,13 +70,24 @@ async fn latest_update(app: &tauri::AppHandle) -> Result<Option<Update>, String>
     } else {
         "windows"
     };
+    parse_update(&manifest, platform, &app.package_info().version.to_string())
+}
+fn parse_update(
+    manifest: &serde_json::Value,
+    platform: &str,
+    current: &str,
+) -> Result<Option<Update>, String> {
     let Some(artifact) = manifest["platforms"].get(platform) else {
         return Ok(None);
     };
-    let mut artifact = artifact.clone();
-    artifact["version"] = manifest["version"].clone();
-    let update: Update = serde_json::from_value(artifact).map_err(|_| "Invalid update manifest")?;
-    if valid(&update, &app.package_info().version.to_string()) {
+    let mut artifact = artifact
+        .as_object()
+        .cloned()
+        .ok_or("Invalid update manifest")?;
+    artifact.insert("version".into(), manifest["version"].clone());
+    let update: Update = serde_json::from_value(serde_json::Value::Object(artifact))
+        .map_err(|_| "Invalid update manifest")?;
+    if valid(&update, current) {
         Ok(Some(update))
     } else {
         Ok(None)
@@ -352,6 +363,37 @@ pub fn cleanup(app: &tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn malformed_release_artifacts_return_an_error_without_panicking() {
+        use serde_json::json;
+        for artifact in [
+            json!([]),
+            json!(true),
+            json!(42),
+            json!("artifact"),
+            json!(null),
+        ] {
+            let manifest = json!({"version":"1.1.0","platforms":{"windows":artifact}});
+            assert!(parse_update(&manifest, "windows", "1.0.0").is_err());
+        }
+        let manifest = json!({"version":"1.1.0","platforms":{"windows":{
+            "url": format!("https://github.com/azksama/primio/releases/download/v1.1.0/Primio.{}", extension()),
+            "sha256":"a".repeat(64),"size":1_000_000
+        }}});
+        assert_eq!(
+            parse_update(&manifest, "windows", "1.0.0")
+                .unwrap()
+                .unwrap()
+                .version,
+            "1.1.0"
+        );
+        assert!(parse_update(&manifest, "windows", "1.1.0")
+            .unwrap()
+            .is_none());
+        assert!(parse_update(&manifest, "missing", "1.0.0")
+            .unwrap()
+            .is_none());
+    }
     #[test]
     fn checksum_task_stays_small_on_the_webview_thread() {
         let update = Update {

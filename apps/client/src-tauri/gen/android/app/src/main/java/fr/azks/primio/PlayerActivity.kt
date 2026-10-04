@@ -165,7 +165,7 @@ class PlayerActivity:ComponentActivity(),SurfaceHolder.Callback,PrimioThemeOwner
   playerActions=LinearLayout(this).apply{gravity=Gravity.CENTER_VERTICAL}
   playerActions.addView(PrimioIconButton(this,"source",tr("Source")){requestEpisode(options.optString("currentVideoId"),false)},LinearLayout.LayoutParams(dp(48),dp(48)))
   playerActions.addView(View(this),LinearLayout.LayoutParams(0,1,1f))
-  playerActions.addView(PrimioIconButton(this,"speed",tr("Vitesse")){val dialog=PrimioSheet(this,tr("Vitesse de lecture"));sheet=dialog;dialog.setOnDismissListener{sheet=null;showControls()};listOf(0.5,0.75,1.0,1.25,1.5,1.75,2.0).forEach{speed->dialog.option("${speed}×",false){command("set","speed",speed.toString());dialog.dismiss()}};dialog.show()},LinearLayout.LayoutParams(dp(48),dp(48)).apply{rightMargin=dp(12)})
+  playerActions.addView(PrimioIconButton(this,"speed",tr("Vitesse")){val dialog=PrimioSheet(this,tr("Vitesse de lecture"));sheet=dialog;dialog.setOnDismissListener{sheet=null;showControls()};listOf(0.5,0.75,1.0,1.25,1.5,1.75,2.0).forEach{speed->dialog.option("${speed}×",false){options.put("playbackSpeed",speed);command("set","speed",speed.toString());dialog.dismiss()}};dialog.show()},LinearLayout.LayoutParams(dp(48),dp(48)).apply{rightMargin=dp(12)})
   playerActions.addView(PrimioIconButton(this,"subtitles",tr("Audio et sous-titres")){tracks()},LinearLayout.LayoutParams(dp(48),dp(48)))
   bottom.addView(playerActions)
   overlay.addView(bottom,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
@@ -292,7 +292,7 @@ class PlayerActivity:ComponentActivity(),SurfaceHolder.Callback,PrimioThemeOwner
   val file=File(filesDir,"system-ca.pem");val store=KeyStore.getInstance("AndroidCAStore").apply{load(null)}
   file.bufferedWriter().use{writer->val aliases=store.aliases();while(aliases.hasMoreElements()){val certificate=store.getCertificate(aliases.nextElement())?:continue;writer.write("-----BEGIN CERTIFICATE-----\n");writer.write(Base64.encodeToString(certificate.encoded,Base64.NO_WRAP).chunked(64).joinToString("\n"));writer.write("\n-----END CERTIFICATE-----\n")}};return file.absolutePath
  }
- override fun surfaceCreated(holder:SurfaceHolder){if(handle!=0L)return;try{loaded=false;reportedError=false;openedAt=SystemClock.elapsedRealtime();stalledAt=openedAt;options.put("position",if(position>0)position else options.optDouble("position",0.0));handle=nativeCreate(holder.surface,applicationContext,options.toString());handler.post(timer);showControls()}catch(e:Exception){showError(tr("Le lecteur n’a pas pu démarrer."))}}
+ override fun surfaceCreated(holder:SurfaceHolder){if(handle!=0L)return;try{loaded=false;reportedError=false;restoredPreferences.clear();openedAt=SystemClock.elapsedRealtime();stalledAt=openedAt;options.put("position",if(position>0)position else options.optDouble("position",0.0));handle=nativeCreate(holder.surface,applicationContext,options.toString());handler.post(timer);showControls()}catch(e:Exception){showError(tr("Le lecteur n’a pas pu démarrer."))}}
  override fun surfaceChanged(holder:SurfaceHolder,format:Int,width:Int,height:Int){
   // libmpv keeps its old EGL viewport until the embedding app supplies this size.
   // A PiP window otherwise scales the landscape frame, including its side bars.
@@ -524,10 +524,10 @@ class PlayerActivity:ComponentActivity(),SurfaceHolder.Callback,PrimioThemeOwner
  private val restoredPreferences=mutableSetOf<String>()
  private fun rememberTrack(type:String,track:JSONObject?,off:Boolean=false){
   restoredPreferences.add(if(type=="audio")"audio" else "subtitle")
-  val context=options.optJSONObject("context")?:return
-  val preferences=context.optJSONObject("trackPreferences")?:options.optJSONObject("trackPreferences")?:JSONObject()
+  val context=options.optJSONObject("context")
+  val preferences=context?.optJSONObject("trackPreferences")?:options.optJSONObject("trackPreferences")?:JSONObject()
   preferences.put(if(type=="audio")"audio" else "subtitle",JSONObject().put("language",languageCode(track?.optString("lang")?:"")).put("title",(track?.optString("title")?:"").take(200)).put("forced",track?.let{forcedTrack(it)}?:false).put("off",off))
-  context.put("trackPreferences",preferences);emit(false)
+  options.put("trackPreferences",preferences);context?.put("trackPreferences",preferences);emit(false)
  }
  private fun restoreTrackPreferences(){
   val preferences=options.optJSONObject("trackPreferences")?:return

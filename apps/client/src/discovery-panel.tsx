@@ -356,7 +356,9 @@ export function UniversalSearch({
   const parsed = parseDiscoveryQuery(query),
     combined = {
       ...parsed.filters,
-      ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined && v !== '')),
+      ...Object.fromEntries(Object.entries(filters).filter(([key, value]) =>
+        value !== undefined && value !== '' && (key !== 'type' || value !== 'all'),
+      )),
     }
   const signature = JSON.stringify(combined)
   useEffect(() => {

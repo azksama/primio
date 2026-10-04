@@ -6,6 +6,8 @@
 - Android : aperçus compatibles API 26, suspension du préchargement pendant buffering, chauffe, économie d'énergie et lorsque le lecteur n'est pas visible.
 - Synchronisation : suppressions appliquées avant le plafond d'historique ; événements de fermeture du lecteur conservés pendant un envoi en cours.
 - Restauration locale protégée : un échec de lecture du coffre propose de réessayer sans remplacer les données par un état vide. Les écritures d'une même clé conservent leur ordre.
+- Isolation renforcée des changements de profil pendant l’édition d’une collection, le calcul d’un PIN ou une opération différée ; le dernier profil ne peut pas être supprimé par une course de synchronisation.
+- Android conserve la vitesse et les pistes sélectionnées lorsque la surface vidéo est recréée. Les entrées invalides de mise à jour et de lecture d’un téléchargement retournent une erreur contrôlée.
 - Réponses d'addons normalisées, lectures différées annulées après un changement de compte/profil, recherche Tous corrigée et dialogues maintenus ouverts pendant leur sauvegarde.
 - Chemins inutilisés supprimés, modules spécialisés extraits et opérations réseau/fixtures mutualisées.
 - SDK 0.5.1 : URL malformées rejetées sans exception inattendue. Intro Skipper 0.2.2 : fournisseurs défaillants isolés, cache invalidé correctement et correspondances MAL ambiguës refusées.

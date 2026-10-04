@@ -704,6 +704,11 @@ export function Profiles({
   onError: (error: unknown) => void
 }) {
   const [deleting, setDeleting] = useState(false)
+  const alive = useRef(true)
+  useLayoutEffect(() => {
+    alive.current = true
+    return () => { alive.current = false }
+  }, [])
   const [editing, setEditing] = useState<string | null>(null),
     [name, setName] = useState(''),
     [color, setColor] = useState(profileColors[0]),
@@ -846,18 +851,21 @@ export function Profiles({
               setDeleting(true)
               try {
                 await beforeRemove(removing)
+                if (!alive.current) return
                 setState((s) => {
+                  const remaining = s.profiles.filter((p) => p.id !== removing)
+                  if (!remaining.length || remaining.length === s.profiles.length) return s
                   const next =
                     s.activeProfileId === removing
-                      ? switchProfile(s, s.profiles.find((p) => p.id !== removing)!.id)
+                      ? switchProfile(s, remaining[0].id)
                       : snapshotState(s)
                   return { ...next, profiles: next.profiles.filter((p) => p.id !== removing) }
                 })
                 setRemoving(null)
               } catch (error) {
-                onError(error)
+                if (alive.current) onError(error)
               } finally {
-                setDeleting(false)
+                if (alive.current) setDeleting(false)
               }
             }}
           >

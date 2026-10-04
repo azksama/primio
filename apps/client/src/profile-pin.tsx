@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { Profile } from './types'
 import { DialogShell } from './dialog-shell'
 import { readSecure, writeSecure } from './platform'
@@ -36,14 +36,22 @@ export function useProfilePin(account: string) {
     [revision, setRevision] = useState(0)
   const unlocked = useRef(new Map<string, string>()),
     resolve = useRef<((value: boolean) => void) | null>(null),
-    scope = useRef(account)
-  useEffect(() => {
+    scope = useRef(account),
+    request = useRef(0)
+  useLayoutEffect(() => {
+    ++request.current
     scope.current = account
     unlocked.current.clear()
     resolve.current?.(false)
     resolve.current = null
     setTarget(null)
+    setBusy(false)
     setRevision((r) => r + 1)
+    return () => {
+      ++request.current
+      resolve.current?.(false)
+      resolve.current = null
+    }
   }, [account])
   const isUnlocked = (p: Profile | undefined) =>
     !p?.pin || unlocked.current.get(account + ':' + p.id) === p.pin.hash
@@ -53,7 +61,9 @@ export function useProfilePin(account: string) {
   }
   const unlock = (p: Profile): Promise<boolean> => {
     if (isUnlocked(p)) return Promise.resolve(true)
+    ++request.current
     resolve.current?.(false)
+    setBusy(false)
     setPin('')
     setError('')
     setTarget(p)
@@ -63,6 +73,7 @@ export function useProfilePin(account: string) {
   }
   const close = () => {
     if (busy) return
+    ++request.current
     resolve.current?.(false)
     resolve.current = null
     setTarget(null)
@@ -71,9 +82,11 @@ export function useProfilePin(account: string) {
     if (!target?.pin || busy) return
     setBusy(true)
     setError('')
-    const owner = account
+    const owner = account, sequence = request.current
+    const current = () => scope.current === owner && request.current === sequence
     try {
       const raw = await readSecure('profilePinAttempts')
+      if (!current()) return
       let attempts: Record<string, { count: number; until: number }> = {}
       try {
         attempts = raw ? JSON.parse(raw) : {}
@@ -85,25 +98,27 @@ export function useProfilePin(account: string) {
         return
       }
       const hash = await hashPin(pin, target.pin.salt)
-      if (scope.current !== owner) return
+      if (!current()) return
       if (hash !== target.pin.hash) {
         const count = record.count + 1
         attempts[key] = { count, until: count >= 5 ? Date.now() + 60000 : 0 }
         await writeSecure('profilePinAttempts', JSON.stringify(attempts))
+        if (!current()) return
         setPin('')
         setError(t('PIN incorrect.'))
         return
       }
       delete attempts[key]
       await writeSecure('profilePinAttempts', JSON.stringify(attempts))
+      if (!current()) return
       allow(target)
       resolve.current?.(true)
       resolve.current = null
       setTarget(null)
     } catch {
-      setError(t('Impossible de vérifier le PIN. Réessayez.'))
+      if (current()) setError(t('Impossible de vérifier le PIN. Réessayez.'))
     } finally {
-      setBusy(false)
+      if (current()) setBusy(false)
     }
   }
   const dialog = target ? (
@@ -158,17 +173,22 @@ export function PinSettings({
     [confirmation, setConfirmation] = useState(''),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('')
-  useEffect(() => {
+  const operation = useRef(0)
+  useLayoutEffect(() => {
+    ++operation.current
     setOpen(false)
     setPin('')
     setConfirmation('')
-  }, [profile.id])
+    setBusy(false)
+    return () => { ++operation.current }
+  }, [profile.id, profile.pin?.hash])
   return (
     <section className="pin-settings">
       <button
         className="row"
         onClick={async () => {
-          if (await unlock(profile)) {
+          const sequence = operation.current
+          if (await unlock(profile) && sequence === operation.current) {
             setOpen(true)
             setError('')
           }
@@ -185,15 +205,18 @@ export function PinSettings({
               return
             }
             setBusy(true)
+            const sequence = operation.current
             try {
-              onChange(await createPin(pin))
+              const created = await createPin(pin)
+              if (sequence !== operation.current) return
+              onChange(created)
               setOpen(false)
               setPin('')
               setConfirmation('')
             } catch (e) {
-              setError(String(e))
+              if (sequence === operation.current) setError(String(e))
             } finally {
-              setBusy(false)
+              if (sequence === operation.current) setBusy(false)
             }
           }}
         >
@@ -238,7 +261,7 @@ export function PinSettings({
                 {t('Retirer le PIN')}
               </button>
             )}
-            <button type="button" onClick={() => setOpen(false)}>
+            <button type="button" onClick={() => { ++operation.current; setBusy(false); setOpen(false) }}>
               {t('Annuler')}
             </button>
           </div>

@@ -1113,8 +1113,8 @@ export default function App() {
     if (remote.state) {
       const restored = normalizeState(remote.state)
       const next = switchProfile(restored, restored.activeProfileId)
-      await writeSecure('accountSync', JSON.stringify({ account: address.trim().toLowerCase(), state: snapshotState(next) }))
       await writeSecure('state', JSON.stringify(snapshotState(next)))
+      await writeSecure('accountSync', JSON.stringify({ account: address.trim().toLowerCase(), state: snapshotState(next) }))
       await writeSecure('onboarding', 'done')
       setState(next)
       setOnboarding(false)

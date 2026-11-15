@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { api, readSecure, writeSecure } from './platform'
+import { api, readSecure } from './platform'
 import { normalizeState, snapshotState } from './preferences'
 import { mergePlaybackState } from './playback-sync'
 import type { UserState } from './types'
 import { createSyncQueue } from './sync-queue'
+import { persistAccountSync } from './sync-storage'
 
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 const key = (v: any): string | undefined =>
@@ -220,10 +221,6 @@ export function useAccountSync(
       try {
         const result = await synchronizeAccount(sent, baseline, token)
         if (!active) return
-        await writeSecure('accountSync', JSON.stringify({ account: owner, state: result.state }))
-        if (!active) return
-        baseline = result.state
-        version = result.version
         current.current = mergeAccount(syncSnapshot(sent), current.current, result.state)
         setState((now) => {
           const next = mergeAccount(syncSnapshot(sent), now, result.state)
@@ -232,6 +229,9 @@ export function useAccountSync(
           )
           return equal(now, next) ? now : next
         })
+        if (!(await persistAccountSync(owner, current.current, result.state, () => active))) return
+        baseline = result.state
+        version = result.version
         setVersion(result.version)
         setStatus({ syncing: false, error: '', lastSync: Date.now() })
       } catch (error) {

@@ -4,7 +4,7 @@ The Windows application shares the Android application's React client, addon SDK
 
 ## Installation
 
-Run `Primio-1.0.2-windows-x64-setup.exe`. The installer includes the native media player and registers `primio://` and `stremio://` links. Microsoft Edge WebView2 is required; the installer handles its bootstrap if it is missing. This installer is not code-signed. Current changes and verification are in [1.0.2 release notes](RELEASE-1.0.2.md); the dated checks below describe earlier releases.
+Run `Primio-1.0.3-windows-x64-setup.exe`. The installer includes the native media player and registers `primio://` and `stremio://` links. Microsoft Edge WebView2 is required; the installer handles its bootstrap if it is missing. This installer is not code-signed. Current changes and verification are in [1.0.3 release notes](RELEASE-1.0.3.md); the dated checks below describe earlier releases.
 
 The portable archive must be extracted completely: keep the `windows` directory beside `primio.exe`. Starting only the executable without its resources will prevent playback. Portable use does not register protocol associations.
 

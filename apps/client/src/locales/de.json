@@ -733,5 +733,10 @@
   "Décalage des sous-titres": "Untertitelverzögerung",
   "Plus tôt": "Früher",
   "Réinitialiser": "Zurücksetzen",
-  "Un décalage positif affiche les sous-titres plus tard.": "Ein positiver Wert zeigt Untertitel später an."
+  "Un décalage positif affiche les sous-titres plus tard.": "Ein positiver Wert zeigt Untertitel später an.",
+  "Créer ma session": "Meine Sitzung erstellen",
+  "Écran": "Bildschirm",
+  "Écran de lecture": "Wiedergabebildschirm",
+  "Écran {n}": "Bildschirm {n}",
+  "Aucun écran disponible": "Kein Bildschirm verfügbar"
 }

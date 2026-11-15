@@ -222,14 +222,38 @@ local function render_panel(a)
         for _,track in ipairs(mp.get_property_native('track-list',{}))do if track.type=='audio' then ac=ac+1 elseif track.type=='sub' then sc=sc+1 end end
         h=math.min(h,270+math.max(ac,sc)*52)
     elseif panel=='style' then h=math.min(h,610)
-    elseif panel=='subtitle-delay' then h=math.min(h,330) end
+    elseif panel=='subtitle-delay' then h=math.min(h,330)
+    elseif panel=='displays' then h=math.min(h,160+math.max(1,#(config.displays or {}))*60) end
     local y=(height-h)/2
     if neo then relief(a,x,y,w,h,24,false) else rect(a,x,y,w,h,24,'20231F','14',1) end
-    local title=panel=='episodes' and tr('Episodes','Épisodes') or panel=='style' and tr('Subtitle style','Style des sous-titres') or panel=='subtitle-delay' and tr('Subtitle delay','Décalage des sous-titres') or panel=='speed' and tr('Playback speed','Vitesse de lecture') or tr('Audio and subtitles','Audio et sous-titres')
+    local title=panel=='episodes' and tr('Episodes','Épisodes') or panel=='displays' and tr('Playback screen','Écran de lecture') or panel=='style' and tr('Subtitle style','Style des sous-titres') or panel=='subtitle-delay' and tr('Subtitle delay','Décalage des sous-titres') or panel=='speed' and tr('Playback speed','Vitesse de lecture') or tr('Audio and subtitles','Audio et sous-titres')
     label(a,x+24,y+35,title,26)
     button(a,x+w-66,y+14,44,44,'×',function()panel=nil end)
     local top=y+84
-    if panel=='tracks' then
+    if panel=='displays' then
+        local current=(mp.get_property_native('display-names',{}) or {})[1]
+        local displays=config.displays or {}
+        local count=math.max(1,math.floor((h-110)/60));scroll=math.max(0,math.min(scroll,math.max(0,#displays-count)))
+        if #displays==0 then label(a,x+24,top,tr('No screen available','Aucun écran disponible'),18)end
+        for i=1,count do local display=displays[i+scroll];if display then
+            local name=tr('Screen {n}','Écran {n}'):gsub('{n}',tostring(i+scroll))..' · '..display.width..' × '..display.height
+            button(a,x+24,top+(i-1)*60,w-48,48,name,function()
+                -- The Windows backend selects EnumDisplayMonitors indices;
+                -- screen-name is accepted by mpv but ignored by this backend.
+                local index=display.index or (i+scroll-1)
+                mp.set_property_native('fullscreen',false)
+                mp.set_property_number('screen',index);mp.set_property_number('fs-screen',index)
+                -- Let the window process the exit before applying fullscreen on
+                -- the destination. Playback and its tracks remain untouched.
+                mp.add_timeout(.1,function()
+                    mp.set_property_native('fullscreen',true)
+                    mp.set_property_native('user-data/primio/display',display.name)
+                    last_move=mp.get_time()
+                end)
+                panel=nil;last_move=mp.get_time()
+            end,display.name==current)
+        end end
+    elseif panel=='tracks' then
         local col=(w-64)/2
         label(a,x+24,top,'Audio',20);label(a,x+40+col,top,tr('Subtitles','Sous-titres'),20)
         local tracks=mp.get_property_native('track-list',{})
@@ -289,8 +313,7 @@ local function render_panel(a)
                 for _,ep in ipairs(config.episodes or {}) do if ep.id==config.currentVideoId then season=ep.season;break end end
                 season=season or seasons[1]
             end
-            button(a,x+24,top,w-48,44,season==0 and tr('Specials','Hors-série') or tr('Season ','Saison ')..season,function()season_picker=not season_picker;scroll=0 end,false,'chevron')
-            top=top+62
+            button(a,x+w-260,y+14,182,44,season==0 and tr('Specials','Hors-série') or tr('Season ','Saison ')..season,function()season_picker=not season_picker;scroll=0 end,false,'chevron')
         end
         if season_picker then
             local count=math.max(1,math.floor((y+h-top-24)/52));scroll=math.max(0,math.min(scroll,#seasons-count))
@@ -379,7 +402,7 @@ local function enter_pip()
     last_move=mp.get_time();return true
 end
 local function leave_player() if pip or not enter_pip() then mp.commandv('quit') end end
-mp.observe_property('focused','bool',function(_,focused)if focused==false then end_scrub(false);enter_pip()end end)
+mp.observe_property('focused','bool',function(_,focused)if focused==false then end_scrub(false)end end)
 mp.observe_property('window-minimized','bool',function(_,minimized)if minimized then enter_pip()end end)
 mp.add_forced_key_binding('MBTN_LEFT_DBL','primio-double',function()
     if pip then restore_player();return end
@@ -439,6 +462,7 @@ local function render()
             end
             if not scrub then
                 icon_button(a,28,height-64,48,'source',function()mp.commandv('script-message-to','primio','episode',config.currentVideoId)end)
+                button(a,88,height-64,156,48,tr('Screen','Écran'),function()open('displays')end)
                 icon_button(a,width-136,height-64,48,'speed',function()open('speed')end)
                 icon_button(a,width-76,height-64,48,'subtitles',function()open('tracks')end)
             end
@@ -527,6 +551,7 @@ mp.add_forced_key_binding('mouse_move','primio-move',function()
  elseif preview_visible then mp.commandv('script-message-to','primio_preview','hide');preview_visible=false end
 end)
 mp.add_key_binding('z','primio-fit',function()local fill=mp.get_property_number('panscan',0)==0;mp.set_property_number('panscan',fill and 1 or 0);mp.osd_message(fill and tr('Fill screen','Remplir l’écran') or tr('Fit screen','Ajuster à l’écran'))end)
+mp.add_key_binding('Ctrl+m','primio-displays',function()if not pip then open('displays')end end)
 mp.add_forced_key_binding('MBTN_LEFT','primio-click',function(event)
     local mx,my=mp.get_mouse_pos();mx=mx/scale;my=my/scale
     local function hit_at()

@@ -29,14 +29,22 @@ class PrimioSheet(context:Context,title:String,private val lateral:Boolean=false
  val scroll=ScrollView(context).apply{isFillViewport=false;addView(content)}
  private val Int.dp:Int get()=PrimioStyle.dp(context,this)
  private val panel=LinearLayout(context).apply{orientation=LinearLayout.VERTICAL;background=PrimioStyle.glass(context)}
+ private val head=LinearLayout(context).apply{gravity=Gravity.CENTER_VERTICAL;setPadding(20.dp,12.dp,16.dp,16.dp)}
  init {
-  val head=LinearLayout(context).apply{gravity=Gravity.CENTER_VERTICAL;setPadding(20.dp,12.dp,16.dp,16.dp)}
-  head.addView(PrimioStyle.text(context,title,20f),LinearLayout.LayoutParams(0,-2,1f))
+  head.addView(PrimioStyle.text(context,title,20f).apply{setSingleLine(true);ellipsize=android.text.TextUtils.TruncateAt.END},LinearLayout.LayoutParams(0,-2,1f))
   head.addView(PrimioStyle.button(context,"×",PrimioI18n.text(context,"Fermer")){dismiss()},LinearLayout.LayoutParams(48.dp,48.dp).apply{leftMargin=16.dp})
   panel.addView(head)
   panel.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
   requestWindowFeature(Window.FEATURE_NO_TITLE);setContentView(panel)
   window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+ }
+ fun headerChoice(label:String,action:()->Unit){
+  head.addView(PrimioStyle.button(context,label){action()}.apply{
+   textSize=13f;setSingleLine(true);ellipsize=android.text.TextUtils.TruncateAt.END
+   setPadding(10.dp,8.dp,10.dp,8.dp)
+   setCompoundDrawablesWithIntrinsicBounds(null,null,PrimioIconDrawable(context,"chevron"),null)
+   compoundDrawablePadding=4.dp
+  },1,LinearLayout.LayoutParams(132.dp,48.dp).apply{leftMargin=8.dp})
  }
  fun section(title:String){content.addView(PrimioStyle.text(context,title,12f).apply{setTextColor(PrimioStyle.palette(context).muted);setPadding(0,12.dp,0,10.dp)})}
  fun option(label:String,selected:Boolean=false,trailingIcon:String?=null,action:()->Unit){content.addView(PrimioStyle.button(context,(if(selected)"✓  " else "")+label,label){action()}.apply{gravity=Gravity.CENTER_VERTICAL or Gravity.START;isSelected=selected;if(selected)setTextColor(PrimioStyle.palette(context).accent);if(trailingIcon!=null){setCompoundDrawablesWithIntrinsicBounds(null,null,PrimioIconDrawable(context,trailingIcon),null);compoundDrawablePadding=12.dp}},LinearLayout.LayoutParams(-1,-2).apply{bottomMargin=10.dp})}

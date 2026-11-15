@@ -4,6 +4,7 @@ import { api } from './platform'
 import { snapshotState } from './preferences'
 import { progressKey } from './progress'
 import type { Progress, UserState } from './types'
+import { createSyncQueue } from './sync-queue'
 
 function mergePlayback(local: Progress[], remote: Progress[]) {
   const items = new Map<string, Progress>()
@@ -26,7 +27,10 @@ export function mergePlaybackState(
     return {
       ...p,
       deletedProgress,
-      progress: withoutDeleted(mergePlayback(p.progress, other?.progress ?? []), deletedProgress).slice(0, 500),
+      progress: withoutDeleted(
+        mergePlayback(p.progress, other?.progress ?? []),
+        deletedProgress,
+      ).slice(0, 500),
     }
   })
   return {
@@ -47,13 +51,12 @@ export function usePlaybackSync(
 ) {
   const current = useRef(state)
   current.current = state
+  const run = useRef<() => Promise<void>>(async () => {})
   useEffect(() => {
     if (!token || !ready) return
-    let active = true,
-      busy = false
-    const sync = async () => {
-      if (busy || !navigator.onLine) return
-      busy = true
+    let active = true
+    const queue = createSyncQueue(async () => {
+      if (!active || !navigator.onLine) return
       try {
         const local = snapshotState(current.current)
         const result = await api<{
@@ -71,6 +74,7 @@ export function usePlaybackSync(
           token,
         )
         if (!active) return
+        current.current = mergePlaybackState(current.current, result.profiles)
         setState((s) => {
           const snapshot = snapshotState(s)
           const next = mergePlaybackState(s, result.profiles)
@@ -78,10 +82,10 @@ export function usePlaybackSync(
         })
       } catch {
         /* Offline progress remains persisted locally and is retried on reconnect. */
-      } finally {
-        busy = false
       }
-    }
+    })
+    const sync = () => queue.request()
+    run.current = sync
     void sync()
     const timer = setInterval(sync, 10000)
     window.addEventListener('focus', sync)
@@ -89,10 +93,18 @@ export function usePlaybackSync(
     document.addEventListener('visibilitychange', sync)
     return () => {
       active = false
+      queue.stop()
+      run.current = async () => {}
       clearInterval(timer)
       window.removeEventListener('focus', sync)
       window.removeEventListener('online', sync)
       document.removeEventListener('visibilitychange', sync)
     }
   }, [token, ready])
+  const changes = JSON.stringify(
+    snapshotState(state).profiles.map((p) => [p.id, p.progress, p.deletedProgress]),
+  )
+  useEffect(() => {
+    void run.current()
+  }, [changes])
 }

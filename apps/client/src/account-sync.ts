@@ -3,6 +3,7 @@ import { api, readSecure, writeSecure } from './platform'
 import { normalizeState, snapshotState } from './preferences'
 import { mergePlaybackState } from './playback-sync'
 import type { UserState } from './types'
+import { createSyncQueue } from './sync-queue'
 
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 const key = (v: any): string | undefined =>
@@ -10,7 +11,7 @@ const key = (v: any): string | undefined =>
     ? v.contentId
       ? JSON.stringify(['content', v.contentId, v.videoId])
       : v.videoId
-      ? JSON.stringify([v.type, v.videoId])
+        ? JSON.stringify([v.type, v.videoId])
         : v.id
           ? JSON.stringify([v.type, v.id])
           : v.url
@@ -105,15 +106,25 @@ export function mergeAccount(
   const initial = !base
     ? {
         ...l,
-        settings: { ...r.settings, ...(r.settings.oledAccent === undefined && l.settings.oledAccent ? { oledAccent: l.settings.oledAccent } : {}) },
+        settings: {
+          ...r.settings,
+          ...(r.settings.oledAccent === undefined && l.settings.oledAccent
+            ? { oledAccent: l.settings.oledAccent }
+            : {}),
+        },
         profiles: l.profiles.map((p) => ({
           ...p,
           ...r.profiles.find((q) => q.id === p.id),
           library: p.library,
           progress: p.progress,
           collections: p.collections,
-          settings: { ...(r.profiles.find((q) => q.id === p.id)?.settings ?? p.settings),
-            ...(r.profiles.find(q => q.id === p.id)?.settings.oledAccent === undefined && p.settings.oledAccent ? { oledAccent: p.settings.oledAccent } : {}) },
+          settings: {
+            ...(r.profiles.find((q) => q.id === p.id)?.settings ?? p.settings),
+            ...(r.profiles.find((q) => q.id === p.id)?.settings.oledAccent === undefined &&
+            p.settings.oledAccent
+              ? { oledAccent: p.settings.oledAccent }
+              : {}),
+          },
         })),
       }
     : l
@@ -190,8 +201,8 @@ export function useAccountSync(
   useEffect(() => {
     if (!ready || !token || !account) return
     let active = true,
-      busy: Promise<void> | null = null,
-      baseline: UserState | null = null
+      baseline: UserState | null = null,
+      version = -1
     const owner = account.trim().toLowerCase()
     const loaded = readSecure('accountSync').then((raw) => {
       let saved: { account: string; state: UserState } | null = null
@@ -200,47 +211,43 @@ export function useAccountSync(
       } catch {}
       if (saved?.account === owner) baseline = saved.state
     })
-    const sync = () => {
-      if (busy) return busy
-      if (!active || !navigator.onLine) return Promise.resolve()
-      busy = (async () => {
-        await loaded
+    const queue = createSyncQueue(async () => {
+      if (!active || !navigator.onLine) return
+      await loaded
+      if (!active) return
+      setStatus((s) => ({ ...s, syncing: true, error: '' }))
+      const sent = current.current
+      try {
+        const result = await synchronizeAccount(sent, baseline, token)
         if (!active) return
-        setStatus((s) => ({ ...s, syncing: true, error: '' }))
-        const sent = current.current
-        try {
-          const result = await synchronizeAccount(sent, baseline, token)
-          if (!active) return
-          await writeSecure('accountSync', JSON.stringify({ account: owner, state: result.state }))
-          if (!active) return
-          baseline = result.state
-          setState((now) => {
-            const next = mergeAccount(syncSnapshot(sent), now, result.state)
-            next.pendingImports = now.pendingImports?.filter(
-              (p) => p.account !== owner || !sent.pendingImports?.some((s) => s.id === p.id),
-            )
-            return equal(now, next) ? now : next
-          })
-          setVersion(result.version)
-          setStatus({ syncing: false, error: '', lastSync: Date.now() })
-        } catch (error) {
-          if (active)
-            setStatus((s) => ({
-              ...s,
-              syncing: false,
-              error: error instanceof Error ? error.message : 'Synchronization unavailable',
-            }))
-        }
-      })()
-        .catch(() => {
-          if (active)
-            setStatus((s) => ({ ...s, syncing: false, error: 'Synchronization unavailable' }))
+        await writeSecure('accountSync', JSON.stringify({ account: owner, state: result.state }))
+        if (!active) return
+        baseline = result.state
+        version = result.version
+        current.current = mergeAccount(syncSnapshot(sent), current.current, result.state)
+        setState((now) => {
+          const next = mergeAccount(syncSnapshot(sent), now, result.state)
+          next.pendingImports = now.pendingImports?.filter(
+            (p) => p.account !== owner || !sent.pendingImports?.some((s) => s.id === p.id),
+          )
+          return equal(now, next) ? now : next
         })
-        .finally(() => {
-          busy = null
-        })
-      return busy
-    }
+        setVersion(result.version)
+        setStatus({ syncing: false, error: '', lastSync: Date.now() })
+      } catch (error) {
+        if (active)
+          setStatus((s) => ({
+            ...s,
+            syncing: false,
+            error: error instanceof Error ? error.message : 'Synchronization unavailable',
+          }))
+      }
+    })
+    const sync = () =>
+      queue.request().catch(() => {
+        if (active)
+          setStatus((s) => ({ ...s, syncing: false, error: 'Synchronization unavailable' }))
+      })
     run.current = sync
     void sync()
     const visible = () => {
@@ -249,13 +256,36 @@ export function useAccountSync(
     const timer = window.setInterval(() => {
       if (document.visibilityState !== 'hidden') void sync()
     }, 30000)
+    // Read only the revision while idle. Download/merge the snapshot as soon as
+    // another device changes addons, profiles, settings or playback.
+    let checking = false
+    const changesTimer = window.setInterval(async () => {
+      if (!active || checking || !navigator.onLine || document.visibilityState === 'hidden') return
+      checking = true
+      try {
+        const result = await api<{ version: number }>(
+          '/account/sync/version',
+          'GET',
+          undefined,
+          token,
+        )
+        if (active && Number.isSafeInteger(result?.version) && result.version !== version)
+          await sync()
+      } catch {
+        /* The regular reconciliation also supports older/offline servers. */
+      } finally {
+        checking = false
+      }
+    }, 1500)
     window.addEventListener('online', sync)
     window.addEventListener('focus', sync)
     document.addEventListener('visibilitychange', visible)
     return () => {
       active = false
+      queue.stop()
       run.current = async () => {}
       clearInterval(timer)
+      clearInterval(changesTimer)
       window.removeEventListener('online', sync)
       window.removeEventListener('focus', sync)
       document.removeEventListener('visibilitychange', visible)
@@ -267,8 +297,7 @@ export function useAccountSync(
     pending: state.pendingImports,
   })
   useEffect(() => {
-    const timer = setTimeout(() => void trigger(), 1800)
-    return () => clearTimeout(timer)
+    void trigger()
   }, [changes, trigger])
   return { ...status, sync: trigger }
 }

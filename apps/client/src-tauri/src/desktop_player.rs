@@ -12,6 +12,7 @@ use std::{
     time::Duration,
 };
 use tauri::Emitter;
+use tauri::Manager;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::windows::named_pipe::ClientOptions;
 
@@ -22,6 +23,7 @@ struct ActivePlayer {
 
 static PLAYER: Mutex<Option<ActivePlayer>> = Mutex::new(None);
 static GENERATION: AtomicU64 = AtomicU64::new(0);
+static DISPLAY: Mutex<Option<String>> = Mutex::new(None);
 
 pub fn stop() {
     if let Ok(mut current) = PLAYER.lock() {
@@ -111,6 +113,24 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
     );
     let config = desktop::data_dir(app)?.join(format!("player-{generation}.json"));
     let mut settings = extra.clone();
+    let monitors = app.available_monitors().unwrap_or_default();
+    settings["displays"] = json!(monitors
+        .iter()
+        .enumerate()
+        .filter_map(|(index, monitor)| monitor.name().map(|name| {
+            json!({"index": index, "name": name, "width": monitor.size().width, "height": monitor.size().height})
+        }))
+        .collect::<Vec<_>>());
+    let display = DISPLAY
+        .lock()
+        .ok()
+        .and_then(|saved| saved.clone())
+        .filter(|name| monitors.iter().any(|monitor| monitor.name() == Some(name)))
+        .or_else(|| {
+            app.get_webview_window("main")
+                .and_then(|window| window.current_monitor().ok().flatten())
+                .and_then(|monitor| monitor.name().cloned())
+        });
     settings["title"] = args["title"].clone();
     settings["previewExecutable"] = json!(player_path(&executable));
     settings["previewPath"] = json!(player_path(
@@ -142,6 +162,14 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
     settings["cacheLimitBytes"] = json!(cache_bytes);
     std::fs::write(&config, settings.to_string()).map_err(|e| e.to_string())?;
     let mut command = Command::new(executable);
+    if let Some(index) = display.and_then(|name| {
+        monitors
+            .iter()
+            .position(|monitor| monitor.name() == Some(&name))
+    }) {
+        command.arg(format!("--screen={index}"));
+        command.arg(format!("--fs-screen={index}"));
+    }
     if let Some(directory) = extra["customFont"]["directory"].as_str() {
         command.arg(format!("--sub-fonts-dir={directory}"));
     }
@@ -159,6 +187,7 @@ pub fn start(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
         .arg("--keep-open=no")
         .arg("--save-position-on-quit=no")
         .arg("--fullscreen=yes")
+        .arg("--ontop=no")
         .arg("--geometry=50%:50%")
         .arg(format!("--config-dir={}", player_path(&config_dir)))
         .arg(format!("--input-ipc-server={pipe_name}"))
@@ -376,6 +405,7 @@ async fn run(
         (6, "paused-for-cache"),
         (7, "user-data/primio/episode-images"),
         (8, "user-data/primio/inferred-watched"),
+        (9, "user-data/primio/display"),
     ] {
         send(&mut pipe, json!(["observe_property", id, prop])).await?;
     }
@@ -399,6 +429,11 @@ async fn run(
                 let Ok(event)=serde_json::from_str::<Value>(&line) else {continue};
                 match event["event"].as_str().unwrap_or("") {
                     "property-change"=>match event["name"].as_str().unwrap_or("") {
+                        "user-data/primio/display"=>if let Some(name)=event["data"].as_str() {
+                            if app.available_monitors().unwrap_or_default().iter().any(|monitor| monitor.name().is_some_and(|current| current == name)) {
+                                if let Ok(mut saved)=DISPLAY.lock() {*saved=Some(name.to_owned());}
+                            }
+                        },
                         "time-pos"=>if let Some(v)=event["data"].as_f64(){if v != *position {last_advance=std::time::Instant::now();} *position=v},
                         "duration"=>if let Some(v)=event["data"].as_f64(){*duration=v},
                         "user-data/primio/request"=>if event["data"]["id"].as_str().is_some(){if event["data"]["completed"]==true && *duration>0.0 {*position = *duration;}publish(app,context,*position,*duration,true,Some(&event["data"]));break},

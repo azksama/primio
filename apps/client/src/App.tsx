@@ -57,6 +57,7 @@ import { matchesDiscovery, type DiscoveryFilters } from './discovery'
 import { setLocale } from './i18n'
 import { Recommendations } from './recommendations'
 import { Onboarding } from './onboarding'
+import { CreateSession } from './create-session'
 import { episodeQueue, playbackTitle, watchVideoId } from './episodes'
 import { version } from '../package.json'
 import { MediaImage, CardSkeleton } from './media-image'
@@ -113,6 +114,7 @@ import { AddonIcon, Episodes, Preferences, Profiles } from './components'
 import {
   audioPreference,
   createState,
+  normalizeState,
   avatarUrl,
   switchProfile,
   snapshotState,
@@ -165,6 +167,8 @@ export default function App() {
   const [trailer, setTrailer] = useState<{ url: string; name: string } | null>(null)
   const [crashPending, setCrashPending] = useState(true)
   const [profileGate, setProfileGate] = useState(false)
+  const [mustChooseProfile, setMustChooseProfile] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
   const [startupProfile, setStartupProfile] = useState('ask')
   const startupChecked = useRef('')
   const sourceResume = useRef<{ videoId: string; position: number } | null>(null)
@@ -308,7 +312,7 @@ export default function App() {
     [state.library, releases.metas],
   )
   const currentPlayback = useRef<Playback | null>(null)
-  usePlaybackSync(state, setState, token, ready)
+  usePlaybackSync(state, setState, token, ready && !loggingOut)
   const profilePins = useProfilePin(token ? email.toLowerCase() : 'local')
   const activeProfile = state.profiles.find((p) => p.id === state.activeProfileId)!
   const profileLocked = !profilePins.isUnlocked(activeProfile)
@@ -320,7 +324,7 @@ export default function App() {
     setState,
     token,
     email,
-    ready,
+    ready && !loggingOut,
     setSyncVersion,
   )
   const importSync = { syncing: accountSync.syncing, pending: !!state.pendingImports?.length }
@@ -349,7 +353,7 @@ export default function App() {
   }, [restoreAttempt])
   const savedPinSignature = useRef('')
   useEffect(() => {
-    if (!ready) return
+    if (!ready || loggingOut) return
     const pinSignature = JSON.stringify(state.profiles.map((p) => [p.id, p.pin]))
     const pinChanged = pinSignature !== savedPinSignature.current
     savedPinSignature.current = pinSignature
@@ -360,11 +364,11 @@ export default function App() {
       pinChanged ? 0 : 400,
     )
     return () => clearTimeout(timer)
-  }, [state, ready])
+  }, [state, ready, loggingOut])
   useEffect(() => {
-    if (ready)
+    if (ready && !loggingOut)
       writeSecure('session', JSON.stringify({ token, email, version: syncVersion })).catch(fail)
-  }, [token, email, syncVersion, ready])
+  }, [token, email, syncVersion, ready, loggingOut])
   useEffect(() => {
     if (ready) writeSecure('plugins', JSON.stringify(installedPlugins)).catch(fail)
     const theme = applyTheme(plugins, state.settings.oledAccent)
@@ -654,7 +658,7 @@ export default function App() {
   backAction.current = () => {
     if (document.querySelector('dialog[open],.choice-options')) return
     if (onboarding || profileLocked) return
-    if (profileGate) { setProfileGate(false); return }
+    if (profileGate) { if (!mustChooseProfile) setProfileGate(false); return }
     goBack()
   }
   useEffect(() => {
@@ -1101,6 +1105,22 @@ export default function App() {
     (VerificationChallenge & { register: boolean }) | null
   >(null)
   async function finishAuthentication(result: Authenticated, address: string, signup: boolean) {
+    // Restore the account before enabling either sync hook: a fresh installation
+    // must not upload its placeholder "main" profile into an existing account.
+    const remote = await api<{ version: number; state: UserState | null }>(
+      '/account/sync', 'GET', undefined, result.token,
+    )
+    if (remote.state) {
+      const restored = normalizeState(remote.state)
+      const next = switchProfile(restored, restored.activeProfileId)
+      await writeSecure('accountSync', JSON.stringify({ account: address.trim().toLowerCase(), state: snapshotState(next) }))
+      await writeSecure('state', JSON.stringify(snapshotState(next)))
+      await writeSecure('onboarding', 'done')
+      setState(next)
+      setOnboarding(false)
+      setMustChooseProfile(true)
+      setProfileGate(true)
+    }
     setToken(result.token)
     setEmail(address)
     setAuthOpen(false)
@@ -1113,9 +1133,9 @@ export default function App() {
           ),
         }
       : state
-    if (signup) setState(next)
-    setSyncVersion(0)
-    startupChecked.current = ''
+    if (signup && !remote.state) setState(next)
+    setSyncVersion(remote.version)
+    startupChecked.current = remote.state ? address.toLowerCase() : ''
     notify(signup ? t('Compte créé') : t('Connexion réussie'))
   }
 
@@ -1213,16 +1233,31 @@ export default function App() {
     setSyncVersion(result.version)
   }
   async function logout() {
+    if (loggingOut) return
+    setLoggingOut(true)
+    const previousToken = token
     try {
-      if (token) await api('/account/logout', 'POST', undefined, token)
+      // Local sign-out also works offline or with an expired/revoked token.
+      // Persist the empty credential first, including for the native player.
+      await writeSecure('session', JSON.stringify({ token: '', email: '', version: 0 }))
+      const next = createState()
+      next.settings.uiLanguage = state.settings.uiLanguage
+      await writeSecure('accountSync', '')
+      await writeSecure('state', JSON.stringify(snapshotState(next)))
+      await writeSecure('onboarding', '')
       setToken('')
       setEmail('')
       setSyncVersion(0)
-      setState(createState())
+      setState(next)
+      setProfileGate(false)
+      setMustChooseProfile(false)
+      setOnboarding(true)
+      navigate('home')
       notify(t('Déconnecté'))
+      if (previousToken) void api('/account/logout', 'POST', undefined, previousToken).catch(() => {})
     } catch (e) {
       fail(e)
-    }
+    } finally { setLoggingOut(false) }
   }
   const featured = useFeatured(
     catalogAddons,
@@ -2644,7 +2679,7 @@ export default function App() {
                   <h2>{t('Compte')}</h2>
                   {token ? (
                     <>
-                      <button className="row" onClick={logout}>
+                      <button className="row" onClick={logout} disabled={loggingOut}>
                         {t('Se déconnecter')}
                         <ChevronRight />
                       </button>
@@ -2732,10 +2767,11 @@ export default function App() {
         <div className="profile-picker">
           <header className="onboarding-top">
             <span className="wordmark">PRIMIO</span>
+            {token && <button className="secondary" onClick={logout} disabled={loggingOut}>{t('Se déconnecter')}</button>}
             <button
               className="icon"
               aria-label={t('Fermer')}
-              disabled={profileLocked}
+              disabled={profileLocked || mustChooseProfile}
               onClick={() => setProfileGate(false)}
             >
               <X />
@@ -2751,6 +2787,7 @@ export default function App() {
                   onClick={async () => {
                     if (!(await profilePins.unlock(p))) return
                     setState((s) => switchProfile(s, p.id))
+                    setMustChooseProfile(false)
                     setProfileGate(false)
                     navigate('home')
                   }}
@@ -2763,6 +2800,11 @@ export default function App() {
                 </button>
               ))}
             </div>
+            <CreateSession state={state} setState={setState} onCreated={() => {
+              setMustChooseProfile(false)
+              setProfileGate(false)
+              navigate('home')
+            }} />
           </main>
         </div>
       )}

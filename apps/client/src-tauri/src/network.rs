@@ -188,6 +188,7 @@ pub async fn api_request(
         "/account/profile",
         "/account/logout",
         "/account/sync",
+        "/account/sync/version",
         "/account/progress",
         "/account/diagnostics",
         "/account/integrations",

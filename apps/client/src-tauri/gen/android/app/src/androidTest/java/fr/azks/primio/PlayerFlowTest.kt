@@ -43,11 +43,12 @@ class PlayerFlowTest {
         context.getSharedPreferences("primio-settings",0).edit().putString("language",previousLanguage).commit()
     }
 
-    private fun start(position: Double = 0.0, automatic: Boolean = false, outro: Boolean = false, next: Boolean = true, multiTrack: Boolean = false, externalUrl: String = "", forceStyle: Boolean = false, previewFrame: Boolean = false, intro: Boolean = false, customFont: Boolean = false, segmentKind: String = "intro") {
+    private fun start(position: Double = 0.0, automatic: Boolean = false, outro: Boolean = false, next: Boolean = true, multiTrack: Boolean = false, externalUrl: String = "", forceStyle: Boolean = false, previewFrame: Boolean = false, intro: Boolean = false, customFont: Boolean = false, segmentKind: String = "intro", secondSeason:Boolean=false) {
         val file = File(context.getExternalFilesDir(null), if(previewFrame) "validation-preview.mp4" else if(multiTrack) "validation.mkv" else "validation.mp4")
         assertTrue("Run scripts/test-android-player.ps1 to install the video fixture", file.isFile)
         val episodes = JSONArray().put(JSONObject().put("id", "qa:1").put("title", "Premier épisode").put("season", 1).put("episode", 1))
             .put(JSONObject().put("id", "qa:2").put("title", "Deuxième épisode").put("season", 1).put("episode", 2))
+        if(secondSeason)episodes.put(JSONObject().put("id","qa:3").put("title","Nouvelle saison").put("season",2).put("episode",1))
         val options = JSONObject().put("url", file.absolutePath).put("offline", true).put("title", "Validation du lecteur")
             .put("position", position).put("hardwareDecoding", false).put("cacheSizeGb", 0).put("reduceMotion", true)
             .put("subtitleFont", "serif").put("subtitleColor", "#F5DE93").put("subtitleOutline", 3).put("subtitleBackground", true)
@@ -159,9 +160,27 @@ class PlayerFlowTest {
         instrumentation.runOnMainSync{timeline.onSeek((seconds/duration).toFloat(),true)}
         waitUntil("Seek did not settle"){kotlin.math.abs(playerState().optDouble("position")-seconds)<.2}
     }
+    @Test fun seasonSelectorStaysBesideEpisodeHeading() {
+        start(secondSeason=true)
+        waitUntil("Player did not load"){find("Lecture ou pause")!=null}
+        click("Lecture ou pause")
+        click("Choisir un épisode")
+        waitUntil("Season selector missing"){find("Saison 1")!=null}
+        val selector=find("Saison 1")!!;val title=(selector.parent as ViewGroup).getChildAt(0)
+        val a=IntArray(2);val b=IntArray(2)
+        instrumentation.runOnMainSync{title.getLocationOnScreen(a);selector.getLocationOnScreen(b)}
+        assertTrue("Season follows Episodes on the right",b[0]>=a[0]+title.width)
+        assertTrue("Season shares the header row",kotlin.math.abs(a[1]+title.height/2-b[1]-selector.height/2)<PrimioStyle.dp(context,4))
+        capture("native-season-header")
+        click("Saison 1");click("Saison 2")
+        waitUntil("Selected season must filter episodes"){find("1. Nouvelle saison")!=null}
+        assertNull(find("2. Deuxième épisode"))
+        click("1. Nouvelle saison")
+        waitUntil("Episode selection must preserve the episode id"){journal().optString("requestedVideoId")=="qa:3"}
+    }
     @Test fun segmentWarningsPrecedeStartAndFollowPausedVideo() {
         for((kind,label) in listOf("intro" to "Passer l’intro","recap" to "Passer le récap","outro" to "Passer le générique")){
-            start(position=6.0,next=false,intro=true,segmentKind=kind)
+            start(position=7.5,next=false,intro=true,segmentKind=kind)
             waitUntil("Missing player controls"){find("Lecture ou pause")!=null}
             click("Lecture ou pause")
             waitUntil("Player must pause"){playerState().optBoolean("paused")}

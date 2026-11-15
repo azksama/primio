@@ -733,5 +733,10 @@
   "Décalage des sous-titres": "Desfase de subtítulos",
   "Plus tôt": "Antes",
   "Réinitialiser": "Restablecer",
-  "Un décalage positif affiche les sous-titres plus tard.": "Un valor positivo muestra los subtítulos más tarde."
+  "Un décalage positif affiche les sous-titres plus tard.": "Un valor positivo muestra los subtítulos más tarde.",
+  "Créer ma session": "Crear mi sesión",
+  "Écran": "Pantalla",
+  "Écran de lecture": "Pantalla de reproducción",
+  "Écran {n}": "Pantalla {n}",
+  "Aucun écran disponible": "Ninguna pantalla disponible"
 }

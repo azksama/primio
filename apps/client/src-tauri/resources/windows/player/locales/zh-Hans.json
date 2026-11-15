@@ -733,5 +733,10 @@
   "Décalage des sous-titres": "字幕延迟",
   "Plus tôt": "提前",
   "Réinitialiser": "重置",
-  "Un décalage positif affiche les sous-titres plus tard.": "正值会让字幕更晚显示。"
+  "Un décalage positif affiche les sous-titres plus tard.": "正值会让字幕更晚显示。",
+  "Créer ma session": "创建我的会话",
+  "Écran": "屏幕",
+  "Écran de lecture": "播放屏幕",
+  "Écran {n}": "屏幕 {n}",
+  "Aucun écran disponible": "没有可用屏幕"
 }

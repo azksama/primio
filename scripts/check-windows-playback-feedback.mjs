@@ -17,8 +17,8 @@ try { await access(video) } catch (error) {
     '-t', '120', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '36', '-pix_fmt', 'yuv420p', '-y', video], { windowsHide: true })
 }
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
-async function until(read, test, message = 'player state') {
-  const end = Date.now() + 15000
+async function until(read, test, message = 'player state', timeout = 15000) {
+  const end = Date.now() + timeout
   let latest
   while (Date.now() < end) {
     try { const value = await read(); latest = value; if (test(value)) return value } catch {}
@@ -37,7 +37,9 @@ const episodes = [
 const base = { locale: 'en', title: 'QA Show · Episode 20', currentVideoId: 's1e20', nextVideoId: 's1e21', episodes,
   autoSkipIntro: true, autoNextEpisode: true, reduceMotion: true,
   theme: { material: 'glass', accent: '#26CBA8', background: '#000000', surface: '#121212', text: '#FFFFFF', muted: '#C4C4C4' } }
+const cases = []
 async function player(name, extra, inspect) {
+  if (process.env.PRIMIO_PLAYER_CASES && !process.env.PRIMIO_PLAYER_CASES.split(',').includes(name)) return
   const directory = path.join(output, name)
   await mkdir(directory, { recursive: true })
   const images = path.join(directory, 'images')
@@ -51,7 +53,7 @@ async function player(name, extra, inspect) {
     '--load-scripts=no', `--script=${path.join(root, 'apps/client/src-tauri/resources/windows/player/scripts/primio.lua')}`,
     `--script=${path.join(root, 'apps/client/src-tauri/resources/windows/player/scripts/primio-ui.lua')}`,
     `--input-ipc-server=${pipe}`, '--fullscreen=no', '--geometry=1280x720', '--keepaspect-window=no', '--border=no',
-    '--osc=no', '--osd-level=0', '--pause=yes', '--volume=0', '--keep-open=yes', `--log-file=${log}`, video],
+    '--title=Primio playback regression', '--osc=no', '--osd-level=0', '--pause=yes', '--volume=0', '--keep-open=yes', `--log-file=${log}`, video],
     { windowsHide: true, env: { ...process.env, PRIMIO_PLAYER_CONFIG: config }, stdio: 'ignore' })
   let socket
   try {
@@ -95,6 +97,7 @@ async function player(name, extra, inspect) {
     await inspect({ command, get, seek, click, capture })
     const text = await readFile(log, 'utf8')
     assert(!/Lua error|stack traceback|\[e\]\[primio(?:_ui)?\]/.test(text), 'No Lua errors')
+    cases.push(name)
   } finally { socket?.destroy(); if (child.exitCode === null) child.kill() }
 }
 await player('segments', { skipSegments: [{ start: 12, end: 20, kind: 'intro' }, { start: 105, end: 120, kind: 'outro' }] }, async ({ command, get, seek, click, capture }) => {
@@ -111,10 +114,10 @@ await player('segments', { skipSegments: [{ start: 12, end: 20, kind: 'intro' },
   const artwork = await until(() => get('user-data/primio/episode-images'), r => r?.indices?.length > 0, 'current episode scrolling')
   assert.deepEqual(artwork.indices, [18, 19, 21, 22], 'Episode 20 is centered with its thumbnail fixture present')
   await capture('episodes-current')
-  await click(1194, 314)
+  await click(1194, 252)
   await until(() => get('user-data/primio/watched'), w => w?.videoId === 's1e19' && w.watched === true)
   assert.equal((await get('user-data/primio/ui')).panel, 'episodes', 'Marking watched keeps the list open')
-  await click(1194, 314)
+  await click(1194, 252)
   await until(() => get('user-data/primio/watched'), w => w?.videoId === 's1e19' && w.watched === false)
   assert.equal((await get('user-data/primio/ui')).panel, 'episodes', 'Marking unwatched keeps the list open')
   await command('script-message-to', 'primio_ui', 'close')
@@ -159,7 +162,7 @@ await player('repeated-seeks', { skipSegments: [], autoNextEpisode: false, reduc
   await capture('backward-10')
 })
 await player('fallback', { skipSegments: [] }, async ({ command, get, seek, click }) => {
-  await seek(87.5)
+  await seek(57.5)
   await until(() => get('user-data/primio/countdown'), c => c.visible && c.key === 'next', 'fallback countdown')
   await click(1228, 564)
   await seek(119.6)
@@ -167,7 +170,48 @@ await player('fallback', { skipSegments: [] }, async ({ command, get, seek, clic
   await command('script-message-to', 'primio', 'next')
   await until(() => get('user-data/primio/request'), r => r?.id === 's1e21' && r.auto && !r.completed, 'manual next remains available')
 })
-await writeFile(path.join(output, 'results.json'), JSON.stringify({ countdownSeconds: 3, clickCancelsOpeningAndEnding: true,
+const displays = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-Command',
+  'Add-Type -AssemblyName System.Windows.Forms; ConvertTo-Json -Compress -InputObject @([System.Windows.Forms.Screen]::AllScreens | ForEach-Object { @{name=$_.DeviceName; width=$_.Bounds.Width; height=$_.Bounds.Height} })'],
+  { encoding: 'utf8', windowsHide: true }).trim())
+await player('screens-and-seasons', { displays, autoNextEpisode: false }, async ({ command, get, click, capture, seek }) => {
+  await seek(10)
+  await command('script-message-to', 'primio_ui', 'open', 'episodes')
+  await until(() => get('user-data/primio/ui'), ui => ui.panel === 'episodes', 'episode header')
+  await capture('season-in-header')
+  await click(1070, 60)
+  await click(980, 234)
+  await capture('season-two')
+  await click(930, 150)
+  await until(() => get('user-data/primio/request'), r => r?.id === 's2e1', 'episode selected from season two')
+})
+await player('multimonitor-focus', { displays, episodes: [], autoNextEpisode: false }, async ({ command, get, click, capture, seek }) => {
+  await seek(10)
+  await command('set_property', 'fullscreen', true)
+  for (let i = 0; i < displays.length; i++) {
+    await command('keypress', 'Ctrl+m')
+    await until(() => get('user-data/primio/ui'), ui => ui.panel === 'displays', 'screen menu')
+    await capture('screen-menu-' + i)
+    const dimensions = await get('osd-dimensions'), width = dimensions.w / dimensions.h * 720
+    const h = Math.min(672, 160 + displays.length * 60)
+    await click(width / 2, (720 - h) / 2 + 84 + i * 60 + 24)
+    await until(() => get('display-names'), names => names?.[0] === displays[i].name, 'display switch ' + i)
+    await until(() => get('fullscreen'), value => value === true, 'fullscreen restored on destination')
+    assert.equal((await get('user-data/primio/ui')).pip, false)
+    assert(Math.abs(await get('time-pos') - 10) < .2, 'Screen switch keeps playback position')
+  }
+  await command('set_property', 'pause', false)
+  const helper = spawn(binary, ['--no-config', '--pause=yes', '--volume=0', '--keep-open=yes', '--screen=0', '--geometry=320x240', '--title=Primio focus regression', video], { windowsHide: true, stdio: 'ignore' })
+  try {
+    console.log('Focus the owned window named Primio focus regression to verify fullscreen playback on the other display.')
+    await until(() => get('focused'), focused => focused === false, 'focus on another owned window', Number(process.env.PRIMIO_QA_FOCUS_WAIT ?? 15000))
+    await until(() => get('time-pos'), position => position > 11, 'unfocused playback keeps advancing')
+    assert.equal(await get('fullscreen'), true)
+    assert.equal(await get('window-minimized'), false)
+    assert.equal((await get('user-data/primio/ui')).pip, false)
+    await capture('fullscreen-without-focus')
+  } finally { helper.kill() }
+})
+await writeFile(path.join(output, 'results.json'), JSON.stringify({ cases, ...(process.env.PRIMIO_PLAYER_CASES ? {} : { displaysTested: displays.length, fullscreenWithoutFocus: true, seasonSelectorInHeader: true, countdownSeconds: 3, clickCancelsOpeningAndEnding: true,
   manualSkipStillWorks: true, fixedEpisodeRowsAndCurrentScroll: true, priorEpisodesAfter50Percent: true,
-  manualWatchedChoicePreserved: true, pipAspect4x3: true, cancelledFallbackPreventsAutoNext: true, luaErrors: false }, null, 2) + '\n')
-console.log('PASS: native Windows countdown cancellation, episode rows and scroll, watched inference, manual overrides, and 4:3 PiP.')
+  manualWatchedChoicePreserved: true, pipAspect4x3: true, cancelledFallbackPreventsAutoNext: true, luaErrors: false }) }, null, 2) + '\n')
+console.log('PASS: native Windows cases: ' + cases.join(', '))

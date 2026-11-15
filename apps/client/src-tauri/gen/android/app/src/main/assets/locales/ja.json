@@ -733,5 +733,10 @@
   "Décalage des sous-titres": "字幕のタイミング",
   "Plus tôt": "早める",
   "Réinitialiser": "リセット",
-  "Un décalage positif affiche les sous-titres plus tard.": "正の値を設定すると字幕が遅く表示されます。"
+  "Un décalage positif affiche les sous-titres plus tard.": "正の値を設定すると字幕が遅く表示されます。",
+  "Créer ma session": "自分のセッションを作成",
+  "Écran": "画面",
+  "Écran de lecture": "再生画面",
+  "Écran {n}": "画面 {n}",
+  "Aucun écran disponible": "利用できる画面がありません"
 }

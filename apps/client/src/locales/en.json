@@ -885,5 +885,10 @@
   "Un parcours des premiers longs métrages Pixar, dans leur ordre de sortie.": "Explore the earliest Pixar feature films in release order.",
   "Décalage des sous-titres": "Subtitle delay",
   "Plus tôt": "Earlier",
-  "Un décalage positif affiche les sous-titres plus tard.": "A positive delay shows subtitles later."
+  "Un décalage positif affiche les sous-titres plus tard.": "A positive delay shows subtitles later.",
+  "Créer ma session": "Create my session",
+  "Écran": "Screen",
+  "Écran de lecture": "Playback screen",
+  "Écran {n}": "Screen {n}",
+  "Aucun écran disponible": "No screen available"
 }

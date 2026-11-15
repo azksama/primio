@@ -412,7 +412,7 @@ class PlayerActivity:ComponentActivity(),SurfaceHolder.Callback,PrimioThemeOwner
   val current=options.optString("currentVideoId")
   val season=episodeSeason?:entries.firstOrNull{it.optString("id")==current}?.optInt("season",1)?:seasons.firstOrNull()?:1
   val dialog=PrimioSheet(this,tr("Épisodes"),true)
-  if(seasons.size>1)dialog.option(if(season==0)tr("Hors-série") else PrimioI18n.text(this,"Saison {n}",mapOf("n" to season)),trailingIcon="chevron"){
+  if(seasons.size>1)dialog.headerChoice(if(season==0)tr("Hors-série") else PrimioI18n.text(this,"Saison {n}",mapOf("n" to season))){
    dialog.dismiss();val selector=PrimioSheet(this,tr("Saison"),true)
    seasons.forEach{s->selector.option(if(s==0)tr("Hors-série") else PrimioI18n.text(this,"Saison {n}",mapOf("n" to s)),s==season){episodeSeason=s;selector.dismiss();episodes(false)}}
    sheet=selector;selector.setOnDismissListener{if(sheet===selector)sheet=null};selector.show()

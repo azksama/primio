@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$DeviceSerial)
+param([Parameter(Mandatory=$true)][string]$DeviceSerial,[string]$TestClass='fr.azks.primio.PlayerFlowTest')
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot
 $env:JAVA_HOME='C:/Program Files/Android/Android Studio/jbr'
@@ -40,10 +40,10 @@ if($LASTEXITCODE -ne 0){throw 'Multitrack fixture transfer failed'}
 
 & $adb -s $DeviceSerial shell pm grant fr.azks.primio android.permission.POST_NOTIFICATIONS
 try {
- $result=& $adb -s $DeviceSerial shell am instrument -w -r -e class fr.azks.primio.PlayerFlowTest fr.azks.primio.test/androidx.test.runner.AndroidJUnitRunner
+ $result=& $adb -s $DeviceSerial shell am instrument -w -r -e class $TestClass fr.azks.primio.test/androidx.test.runner.AndroidJUnitRunner
  $result | Set-Content (Join-Path $output 'instrumentation.txt') -Encoding utf8
  $result
- if(($result -join "`n") -notmatch 'OK \(17 tests\)'){throw 'Player instrumentation tests failed'}
+ if(($result -join "`n") -notmatch 'OK \(\d+ tests\)'){throw 'Player instrumentation tests failed'}
 } finally {
  & $adb -s $DeviceSerial shell rm -f /sdcard/Android/data/fr.azks.primio/files/validation.mp4 /sdcard/Android/data/fr.azks.primio/files/validation.mkv /sdcard/Android/data/fr.azks.primio/files/validation-preview.mp4
 }

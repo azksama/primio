@@ -4,7 +4,7 @@ The Windows application shares the Android application's React client, addon SDK
 
 ## Installation
 
-Run `Primio-0.2.17-windows-x64-setup.exe`. The installer includes the native media player and registers `primio://` and `stremio://` links. Microsoft Edge WebView2 is required; the installer handles its bootstrap if it is missing. This preview is not code-signed. Current changes and verification are in [0.2.17 release notes](RELEASE-0.2.17.md); the dated checks below describe earlier releases.
+Run `Primio-1.0.2-windows-x64-setup.exe`. The installer includes the native media player and registers `primio://` and `stremio://` links. Microsoft Edge WebView2 is required; the installer handles its bootstrap if it is missing. This installer is not code-signed. Current changes and verification are in [1.0.2 release notes](RELEASE-1.0.2.md); the dated checks below describe earlier releases.
 
 The portable archive must be extracted completely: keep the `windows` directory beside `primio.exe`. Starting only the executable without its resources will prevent playback. Portable use does not register protocol associations.
 
@@ -38,7 +38,7 @@ npm ci
 npm run tauri -- build --bundles nsis
 ```
 
-The platform-specific Tauri configuration is merged automatically on Windows. Android's native player and window configuration remain separate. Player downloads are pinned by SHA-256; third-party licenses and source references ship in `windows/licenses`.
+The platform-specific Tauri configuration is merged automatically on Windows. Android's native player and window configuration remain separate. The mpv archive is mirrored in the [Windows dependency release](https://github.com/azksama/primio/releases/tag/windows-runtime-20260923), byte-for-byte with the original dated upstream archive. For older source archives, save that asset as `tmp/windows-deps/mpv.7z` before running the preparation script. Player downloads are pinned by SHA-256; third-party licenses and source references ship in `windows/licenses`.
 
 ## Native integration checks
 

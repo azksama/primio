@@ -9,7 +9,7 @@ function Get-VerifiedArchive($Name, $Url, $Hash) {
     if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $Hash) { throw "Invalid SHA256: $Name" }
     return $archive
 }
-$mpv = Get-VerifiedArchive 'mpv.7z' 'https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260923/mpv-x86_64-20260923-git-6fd80b2003.7z' 'a2fc7178ee5d49869b7719e907ed402d6191e27167d4631ff9aa2592910632aa'
+$mpv = Get-VerifiedArchive 'mpv.7z' 'https://github.com/azksama/primio/releases/download/windows-runtime-20260923/mpv-x86_64-20260923-git-6fd80b2003.7z' 'a2fc7178ee5d49869b7719e907ed402d6191e27167d4631ff9aa2592910632aa'
 $uosc = Get-VerifiedArchive 'uosc.zip' 'https://github.com/tomasklaen/uosc/releases/download/5.13.0/uosc.zip' '4be9da3289285300fa374496c3f1bfd7bb20ac08e890d25bd5a06b28eebe4882'
 $sevenZip = (Get-Command 7z -ErrorAction SilentlyContinue).Source
 if (!$sevenZip) { $sevenZip = 'C:\Program Files\7-Zip\7z.exe' }
